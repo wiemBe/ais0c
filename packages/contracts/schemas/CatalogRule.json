@@ -1,0 +1,63 @@
+{
+  "$defs": {
+    "CatalogMode": {
+      "enum": [
+        "analyze",
+        "skip"
+      ],
+      "title": "CatalogMode",
+      "type": "string"
+    },
+    "Level": {
+      "description": "Severity level. Values compare as strings, not by severity.",
+      "enum": [
+        "low",
+        "medium",
+        "high",
+        "critical"
+      ],
+      "title": "Level",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "context_note": {
+      "anyOf": [
+        {
+          "maxLength": 600,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Context Note"
+    },
+    "min_level": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Level"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "mode": {
+      "$ref": "#/$defs/CatalogMode"
+    },
+    "rule_id": {
+      "title": "Rule Id",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "rule_id",
+    "mode"
+  ],
+  "title": "CatalogRule",
+  "type": "object"
+}

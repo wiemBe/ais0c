@@ -1,0 +1,258 @@
+{
+  "$defs": {
+    "Claim": {
+      "additionalProperties": false,
+      "properties": {
+        "evidence_ids": {
+          "items": {
+            "pattern": "^ev_\\S+$",
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Evidence Ids",
+          "type": "array"
+        },
+        "text": {
+          "maxLength": 300,
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "text",
+        "evidence_ids"
+      ],
+      "title": "Claim",
+      "type": "object"
+    },
+    "CoverageEntry": {
+      "additionalProperties": false,
+      "description": "One month x log source type cell. Comes from the database; never written by an LLM.",
+      "properties": {
+        "log_source_type": {
+          "title": "Log Source Type",
+          "type": "string"
+        },
+        "month": {
+          "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+          "title": "Month",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "covered",
+            "no_data",
+            "not_parsed",
+            "not_visible"
+          ],
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "month",
+        "log_source_type",
+        "status"
+      ],
+      "title": "CoverageEntry",
+      "type": "object"
+    },
+    "DataGap": {
+      "additionalProperties": false,
+      "properties": {
+        "period_end": {
+          "format": "date-time",
+          "title": "Period End",
+          "type": "string"
+        },
+        "period_start": {
+          "format": "date-time",
+          "title": "Period Start",
+          "type": "string"
+        },
+        "reason": {
+          "$ref": "#/$defs/DataGapReason"
+        },
+        "source": {
+          "title": "Source",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source",
+        "period_start",
+        "period_end",
+        "reason"
+      ],
+      "title": "DataGap",
+      "type": "object"
+    },
+    "DataGapReason": {
+      "enum": [
+        "no_data",
+        "not_parsed",
+        "not_visible",
+        "query_failed",
+        "budget_exhausted"
+      ],
+      "title": "DataGapReason",
+      "type": "string"
+    },
+    "DetectionProposal": {
+      "additionalProperties": false,
+      "properties": {
+        "sigma_yaml": {
+          "title": "Sigma Yaml",
+          "type": "string"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "title",
+        "sigma_yaml"
+      ],
+      "title": "DetectionProposal",
+      "type": "object"
+    },
+    "HuntOutcome": {
+      "enum": [
+        "supported",
+        "refuted",
+        "inconclusive"
+      ],
+      "title": "HuntOutcome",
+      "type": "string"
+    },
+    "HuntVersions": {
+      "additionalProperties": false,
+      "properties": {
+        "models": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Models",
+          "type": "object"
+        },
+        "pack": {
+          "title": "Pack",
+          "type": "string"
+        },
+        "prompts": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Prompts",
+          "type": "object"
+        }
+      },
+      "required": [
+        "pack",
+        "prompts",
+        "models"
+      ],
+      "title": "HuntVersions",
+      "type": "object"
+    },
+    "HypothesisResult": {
+      "additionalProperties": false,
+      "properties": {
+        "claims": {
+          "items": {
+            "$ref": "#/$defs/Claim"
+          },
+          "title": "Claims",
+          "type": "array"
+        },
+        "data_gaps": {
+          "items": {
+            "$ref": "#/$defs/DataGap"
+          },
+          "title": "Data Gaps",
+          "type": "array"
+        },
+        "hypothesis_id": {
+          "title": "Hypothesis Id",
+          "type": "string"
+        },
+        "outcome": {
+          "$ref": "#/$defs/HuntOutcome"
+        },
+        "rationale_tr": {
+          "maxLength": 600,
+          "title": "Rationale Tr",
+          "type": "string"
+        }
+      },
+      "required": [
+        "hypothesis_id",
+        "outcome",
+        "rationale_tr",
+        "claims",
+        "data_gaps"
+      ],
+      "title": "HypothesisResult",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "coverage": {
+      "items": {
+        "$ref": "#/$defs/CoverageEntry"
+      },
+      "title": "Coverage",
+      "type": "array"
+    },
+    "detection_proposals": {
+      "items": {
+        "$ref": "#/$defs/DetectionProposal"
+      },
+      "title": "Detection Proposals",
+      "type": "array"
+    },
+    "findings": {
+      "items": {
+        "$ref": "#/$defs/Claim"
+      },
+      "title": "Findings",
+      "type": "array"
+    },
+    "hunt_id": {
+      "title": "Hunt Id",
+      "type": "string"
+    },
+    "hypotheses": {
+      "items": {
+        "$ref": "#/$defs/HypothesisResult"
+      },
+      "title": "Hypotheses",
+      "type": "array"
+    },
+    "outcome": {
+      "$ref": "#/$defs/HuntOutcome"
+    },
+    "summary_tr": {
+      "maxLength": 600,
+      "title": "Summary Tr",
+      "type": "string"
+    },
+    "versions": {
+      "$ref": "#/$defs/HuntVersions"
+    }
+  },
+  "required": [
+    "hunt_id",
+    "summary_tr",
+    "outcome",
+    "hypotheses",
+    "coverage",
+    "findings",
+    "detection_proposals",
+    "versions"
+  ],
+  "title": "HuntReport",
+  "type": "object"
+}

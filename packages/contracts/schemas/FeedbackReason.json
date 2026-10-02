@@ -1,0 +1,12 @@
+{
+  "enum": [
+    "correct",
+    "was_tp_not_fp",
+    "was_fp_not_tp",
+    "missing_context",
+    "wrong_urgent_events",
+    "other"
+  ],
+  "title": "FeedbackReason",
+  "type": "string"
+}

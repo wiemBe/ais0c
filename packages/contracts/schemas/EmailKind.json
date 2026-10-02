@@ -1,0 +1,9 @@
+{
+  "enum": [
+    "case_alert",
+    "group_alert",
+    "hunt_report"
+  ],
+  "title": "EmailKind",
+  "type": "string"
+}

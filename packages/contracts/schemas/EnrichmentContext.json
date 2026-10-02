@@ -1,0 +1,305 @@
+{
+  "$defs": {
+    "CatalogContext": {
+      "additionalProperties": false,
+      "description": "Trusted context from the Analysis Catalog (D-25); goes to the `org_context` section.",
+      "properties": {
+        "log_sources": {
+          "items": {
+            "$ref": "#/$defs/CatalogLogSource"
+          },
+          "title": "Log Sources",
+          "type": "array"
+        },
+        "rules": {
+          "items": {
+            "$ref": "#/$defs/CatalogRule"
+          },
+          "title": "Rules",
+          "type": "array"
+        }
+      },
+      "required": [
+        "rules",
+        "log_sources"
+      ],
+      "title": "CatalogContext",
+      "type": "object"
+    },
+    "CatalogLogSource": {
+      "additionalProperties": false,
+      "properties": {
+        "context_note": {
+          "anyOf": [
+            {
+              "maxLength": 600,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Context Note"
+        },
+        "criticality": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Level"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "description": {
+          "anyOf": [
+            {
+              "maxLength": 300,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        },
+        "log_source_id": {
+          "title": "Log Source Id",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "log_source_id"
+      ],
+      "title": "CatalogLogSource",
+      "type": "object"
+    },
+    "CatalogMode": {
+      "enum": [
+        "analyze",
+        "skip"
+      ],
+      "title": "CatalogMode",
+      "type": "string"
+    },
+    "CatalogRule": {
+      "additionalProperties": false,
+      "properties": {
+        "context_note": {
+          "anyOf": [
+            {
+              "maxLength": 600,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Context Note"
+        },
+        "min_level": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Level"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "mode": {
+          "$ref": "#/$defs/CatalogMode"
+        },
+        "rule_id": {
+          "title": "Rule Id",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "rule_id",
+        "mode"
+      ],
+      "title": "CatalogRule",
+      "type": "object"
+    },
+    "Confidence": {
+      "enum": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "title": "Confidence",
+      "type": "string"
+    },
+    "CriticalAssetHit": {
+      "additionalProperties": false,
+      "properties": {
+        "label": {
+          "title": "Label",
+          "type": "string"
+        },
+        "level": {
+          "$ref": "#/$defs/Level"
+        },
+        "value": {
+          "title": "Value",
+          "type": "string"
+        }
+      },
+      "required": [
+        "value",
+        "label",
+        "level"
+      ],
+      "title": "CriticalAssetHit",
+      "type": "object"
+    },
+    "EntityResolution": {
+      "additionalProperties": false,
+      "properties": {
+        "host": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Host"
+        },
+        "ip": {
+          "title": "Ip",
+          "type": "string"
+        },
+        "time": {
+          "format": "date-time",
+          "title": "Time",
+          "type": "string"
+        },
+        "user": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "User"
+        }
+      },
+      "required": [
+        "ip",
+        "time"
+      ],
+      "title": "EntityResolution",
+      "type": "object"
+    },
+    "IocHit": {
+      "additionalProperties": false,
+      "properties": {
+        "confidence": {
+          "$ref": "#/$defs/Confidence"
+        },
+        "source": {
+          "title": "Source",
+          "type": "string"
+        },
+        "type": {
+          "title": "Type",
+          "type": "string"
+        },
+        "value": {
+          "title": "Value",
+          "type": "string"
+        }
+      },
+      "required": [
+        "value",
+        "type",
+        "source",
+        "confidence"
+      ],
+      "title": "IocHit",
+      "type": "object"
+    },
+    "Level": {
+      "description": "Severity level. Values compare as strings, not by severity.",
+      "enum": [
+        "low",
+        "medium",
+        "high",
+        "critical"
+      ],
+      "title": "Level",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Output of the deterministic enrichment.",
+  "properties": {
+    "catalog": {
+      "$ref": "#/$defs/CatalogContext"
+    },
+    "critical_asset_hits": {
+      "items": {
+        "$ref": "#/$defs/CriticalAssetHit"
+      },
+      "title": "Critical Asset Hits",
+      "type": "array"
+    },
+    "entity_resolutions": {
+      "items": {
+        "$ref": "#/$defs/EntityResolution"
+      },
+      "title": "Entity Resolutions",
+      "type": "array"
+    },
+    "floor_level": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Level"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "group_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Group Id"
+    },
+    "ioc_hits": {
+      "items": {
+        "$ref": "#/$defs/IocHit"
+      },
+      "title": "Ioc Hits",
+      "type": "array"
+    }
+  },
+  "required": [
+    "catalog",
+    "critical_asset_hits",
+    "ioc_hits",
+    "entity_resolutions"
+  ],
+  "title": "EnrichmentContext",
+  "type": "object"
+}

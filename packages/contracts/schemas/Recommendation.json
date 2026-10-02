@@ -1,0 +1,49 @@
+{
+  "$defs": {
+    "ActionType": {
+      "enum": [
+        "investigate_further",
+        "contain_host_manual",
+        "reset_credentials_manual",
+        "block_ioc_manual",
+        "tune_rule",
+        "close_as_fp",
+        "notify_user"
+      ],
+      "title": "ActionType",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "action_type": {
+      "$ref": "#/$defs/ActionType"
+    },
+    "evidence_ids": {
+      "items": {
+        "pattern": "^ev_\\S+$",
+        "type": "string"
+      },
+      "title": "Evidence Ids",
+      "type": "array"
+    },
+    "rationale": {
+      "maxLength": 300,
+      "title": "Rationale",
+      "type": "string"
+    },
+    "target": {
+      "maxLength": 200,
+      "title": "Target",
+      "type": "string"
+    }
+  },
+  "required": [
+    "action_type",
+    "target",
+    "rationale",
+    "evidence_ids"
+  ],
+  "title": "Recommendation",
+  "type": "object"
+}

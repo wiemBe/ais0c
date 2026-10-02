@@ -1,0 +1,9 @@
+{
+  "enum": [
+    "completed",
+    "budget_exhausted",
+    "failed"
+  ],
+  "title": "RunStatus",
+  "type": "string"
+}

@@ -1,0 +1,21 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "end": {
+      "format": "date-time",
+      "title": "End",
+      "type": "string"
+    },
+    "start": {
+      "format": "date-time",
+      "title": "Start",
+      "type": "string"
+    }
+  },
+  "required": [
+    "start",
+    "end"
+  ],
+  "title": "TimeWindow",
+  "type": "object"
+}

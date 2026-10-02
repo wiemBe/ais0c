@@ -1,0 +1,112 @@
+{
+  "additionalProperties": false,
+  "description": "Offense summary read from QRadar.\n\n`description`, `rule_names` and the user names are untrusted: they reach a prompt only\ninside the `untrusted_*` wrapper.",
+  "properties": {
+    "categories": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Categories",
+      "type": "array"
+    },
+    "description": {
+      "maxLength": 500,
+      "title": "Description",
+      "type": "string"
+    },
+    "destination_ips": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 50,
+      "title": "Destination Ips",
+      "type": "array"
+    },
+    "event_count": {
+      "title": "Event Count",
+      "type": "integer"
+    },
+    "last_updated_time": {
+      "format": "date-time",
+      "title": "Last Updated Time",
+      "type": "string"
+    },
+    "log_source_ids": {
+      "items": {
+        "type": "integer"
+      },
+      "title": "Log Source Ids",
+      "type": "array"
+    },
+    "magnitude": {
+      "title": "Magnitude",
+      "type": "integer"
+    },
+    "offense_id": {
+      "title": "Offense Id",
+      "type": "integer"
+    },
+    "offense_source": {
+      "title": "Offense Source",
+      "type": "string"
+    },
+    "offense_type": {
+      "title": "Offense Type",
+      "type": "string"
+    },
+    "rule_ids": {
+      "items": {
+        "type": "integer"
+      },
+      "title": "Rule Ids",
+      "type": "array"
+    },
+    "rule_names": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Rule Names",
+      "type": "array"
+    },
+    "source_ips": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 50,
+      "title": "Source Ips",
+      "type": "array"
+    },
+    "start_time": {
+      "format": "date-time",
+      "title": "Start Time",
+      "type": "string"
+    },
+    "usernames": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 50,
+      "title": "Usernames",
+      "type": "array"
+    }
+  },
+  "required": [
+    "offense_id",
+    "description",
+    "offense_type",
+    "offense_source",
+    "rule_ids",
+    "rule_names",
+    "categories",
+    "magnitude",
+    "start_time",
+    "last_updated_time",
+    "event_count",
+    "log_source_ids",
+    "source_ips",
+    "destination_ips",
+    "usernames"
+  ],
+  "title": "OffenseSnapshot",
+  "type": "object"
+}

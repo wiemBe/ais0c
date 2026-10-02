@@ -1,0 +1,120 @@
+{
+  "additionalProperties": false,
+  "description": "An event the operator should look at first (architecture §9).",
+  "properties": {
+    "aql": {
+      "anyOf": [
+        {
+          "maxLength": 2000,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Aql"
+    },
+    "checklist": {
+      "items": {
+        "maxLength": 300,
+        "type": "string"
+      },
+      "maxItems": 5,
+      "title": "Checklist",
+      "type": "array"
+    },
+    "destination": {
+      "anyOf": [
+        {
+          "maxLength": 100,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Destination"
+    },
+    "event_name": {
+      "maxLength": 200,
+      "title": "Event Name",
+      "type": "string"
+    },
+    "evidence_id": {
+      "pattern": "^ev_\\S+$",
+      "title": "Evidence Id",
+      "type": "string"
+    },
+    "log_source": {
+      "maxLength": 120,
+      "title": "Log Source",
+      "type": "string"
+    },
+    "qid": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Qid"
+    },
+    "rank": {
+      "minimum": 1,
+      "title": "Rank",
+      "type": "integer"
+    },
+    "reason": {
+      "maxLength": 300,
+      "title": "Reason",
+      "type": "string"
+    },
+    "source": {
+      "anyOf": [
+        {
+          "maxLength": 100,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Source"
+    },
+    "time": {
+      "format": "date-time",
+      "title": "Time",
+      "type": "string"
+    },
+    "username": {
+      "anyOf": [
+        {
+          "maxLength": 100,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Username"
+    }
+  },
+  "required": [
+    "rank",
+    "time",
+    "log_source",
+    "event_name",
+    "reason",
+    "checklist",
+    "evidence_id"
+  ],
+  "title": "UrgentEvent",
+  "type": "object"
+}

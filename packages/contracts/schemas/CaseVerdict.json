@@ -1,0 +1,9 @@
+{
+  "enum": [
+    "tp",
+    "fp",
+    "suspicious"
+  ],
+  "title": "CaseVerdict",
+  "type": "string"
+}

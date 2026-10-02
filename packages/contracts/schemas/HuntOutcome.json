@@ -1,0 +1,9 @@
+{
+  "enum": [
+    "supported",
+    "refuted",
+    "inconclusive"
+  ],
+  "title": "HuntOutcome",
+  "type": "string"
+}

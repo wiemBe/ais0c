@@ -1,0 +1,11 @@
+{
+  "enum": [
+    "random_sample",
+    "verifier_conflict",
+    "injection_suspected",
+    "low_confidence",
+    "fp_with_data_gap"
+  ],
+  "title": "QAReason",
+  "type": "string"
+}

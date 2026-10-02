@@ -1,0 +1,8 @@
+{
+  "enum": [
+    "analyze",
+    "skip"
+  ],
+  "title": "CatalogMode",
+  "type": "string"
+}

@@ -1,0 +1,9 @@
+{
+  "enum": [
+    "low",
+    "medium",
+    "high"
+  ],
+  "title": "CostClass",
+  "type": "string"
+}

@@ -1,0 +1,25 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "status": {
+      "enum": [
+        "supported",
+        "refuted",
+        "open"
+      ],
+      "title": "Status",
+      "type": "string"
+    },
+    "text": {
+      "maxLength": 300,
+      "title": "Text",
+      "type": "string"
+    }
+  },
+  "required": [
+    "text",
+    "status"
+  ],
+  "title": "InvestigationHypothesis",
+  "type": "object"
+}

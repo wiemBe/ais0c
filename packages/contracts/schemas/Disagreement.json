@@ -1,0 +1,21 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "claim_text": {
+      "maxLength": 300,
+      "title": "Claim Text",
+      "type": "string"
+    },
+    "reason": {
+      "maxLength": 300,
+      "title": "Reason",
+      "type": "string"
+    }
+  },
+  "required": [
+    "claim_text",
+    "reason"
+  ],
+  "title": "Disagreement",
+  "type": "object"
+}

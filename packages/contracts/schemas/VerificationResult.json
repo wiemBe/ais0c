@@ -1,0 +1,213 @@
+{
+  "$defs": {
+    "CaseVerdict": {
+      "enum": [
+        "tp",
+        "fp",
+        "suspicious"
+      ],
+      "title": "CaseVerdict",
+      "type": "string"
+    },
+    "Claim": {
+      "additionalProperties": false,
+      "properties": {
+        "evidence_ids": {
+          "items": {
+            "pattern": "^ev_\\S+$",
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Evidence Ids",
+          "type": "array"
+        },
+        "text": {
+          "maxLength": 300,
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "text",
+        "evidence_ids"
+      ],
+      "title": "Claim",
+      "type": "object"
+    },
+    "Confidence": {
+      "enum": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "title": "Confidence",
+      "type": "string"
+    },
+    "DataGap": {
+      "additionalProperties": false,
+      "properties": {
+        "period_end": {
+          "format": "date-time",
+          "title": "Period End",
+          "type": "string"
+        },
+        "period_start": {
+          "format": "date-time",
+          "title": "Period Start",
+          "type": "string"
+        },
+        "reason": {
+          "$ref": "#/$defs/DataGapReason"
+        },
+        "source": {
+          "title": "Source",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source",
+        "period_start",
+        "period_end",
+        "reason"
+      ],
+      "title": "DataGap",
+      "type": "object"
+    },
+    "DataGapReason": {
+      "enum": [
+        "no_data",
+        "not_parsed",
+        "not_visible",
+        "query_failed",
+        "budget_exhausted"
+      ],
+      "title": "DataGapReason",
+      "type": "string"
+    },
+    "Disagreement": {
+      "additionalProperties": false,
+      "properties": {
+        "claim_text": {
+          "maxLength": 300,
+          "title": "Claim Text",
+          "type": "string"
+        },
+        "reason": {
+          "maxLength": 300,
+          "title": "Reason",
+          "type": "string"
+        }
+      },
+      "required": [
+        "claim_text",
+        "reason"
+      ],
+      "title": "Disagreement",
+      "type": "object"
+    },
+    "RunStatus": {
+      "enum": [
+        "completed",
+        "budget_exhausted",
+        "failed"
+      ],
+      "title": "RunStatus",
+      "type": "string"
+    },
+    "Usage": {
+      "additionalProperties": false,
+      "properties": {
+        "seconds": {
+          "title": "Seconds",
+          "type": "number"
+        },
+        "tokens": {
+          "title": "Tokens",
+          "type": "integer"
+        },
+        "tool_calls": {
+          "title": "Tool Calls",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "tokens",
+        "tool_calls",
+        "seconds"
+      ],
+      "title": "Usage",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "agrees": {
+      "title": "Agrees",
+      "type": "boolean"
+    },
+    "checked_evidence_ids": {
+      "items": {
+        "pattern": "^ev_\\S+$",
+        "type": "string"
+      },
+      "title": "Checked Evidence Ids",
+      "type": "array"
+    },
+    "claims": {
+      "items": {
+        "$ref": "#/$defs/Claim"
+      },
+      "title": "Claims",
+      "type": "array"
+    },
+    "confidence": {
+      "$ref": "#/$defs/Confidence"
+    },
+    "data_gaps": {
+      "items": {
+        "$ref": "#/$defs/DataGap"
+      },
+      "title": "Data Gaps",
+      "type": "array"
+    },
+    "disagreements": {
+      "items": {
+        "$ref": "#/$defs/Disagreement"
+      },
+      "title": "Disagreements",
+      "type": "array"
+    },
+    "injection_suspected": {
+      "title": "Injection Suspected",
+      "type": "boolean"
+    },
+    "status": {
+      "$ref": "#/$defs/RunStatus"
+    },
+    "task_id": {
+      "title": "Task Id",
+      "type": "string"
+    },
+    "usage": {
+      "$ref": "#/$defs/Usage"
+    },
+    "verdict": {
+      "$ref": "#/$defs/CaseVerdict"
+    }
+  },
+  "required": [
+    "task_id",
+    "status",
+    "claims",
+    "data_gaps",
+    "injection_suspected",
+    "usage",
+    "agrees",
+    "verdict",
+    "confidence",
+    "disagreements",
+    "checked_evidence_ids"
+  ],
+  "title": "VerificationResult",
+  "type": "object"
+}

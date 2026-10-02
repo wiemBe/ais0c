@@ -1,0 +1,44 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "host": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Host"
+    },
+    "ip": {
+      "title": "Ip",
+      "type": "string"
+    },
+    "time": {
+      "format": "date-time",
+      "title": "Time",
+      "type": "string"
+    },
+    "user": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "User"
+    }
+  },
+  "required": [
+    "ip",
+    "time"
+  ],
+  "title": "EntityResolution",
+  "type": "object"
+}

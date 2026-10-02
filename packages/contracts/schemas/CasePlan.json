@@ -1,0 +1,228 @@
+{
+  "$defs": {
+    "Budget": {
+      "additionalProperties": false,
+      "properties": {
+        "seconds": {
+          "title": "Seconds",
+          "type": "integer"
+        },
+        "tokens": {
+          "title": "Tokens",
+          "type": "integer"
+        },
+        "tool_calls": {
+          "title": "Tool Calls",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "tokens",
+        "tool_calls",
+        "seconds"
+      ],
+      "title": "Budget",
+      "type": "object"
+    },
+    "Claim": {
+      "additionalProperties": false,
+      "properties": {
+        "evidence_ids": {
+          "items": {
+            "pattern": "^ev_\\S+$",
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Evidence Ids",
+          "type": "array"
+        },
+        "text": {
+          "maxLength": 300,
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "text",
+        "evidence_ids"
+      ],
+      "title": "Claim",
+      "type": "object"
+    },
+    "DataGap": {
+      "additionalProperties": false,
+      "properties": {
+        "period_end": {
+          "format": "date-time",
+          "title": "Period End",
+          "type": "string"
+        },
+        "period_start": {
+          "format": "date-time",
+          "title": "Period Start",
+          "type": "string"
+        },
+        "reason": {
+          "$ref": "#/$defs/DataGapReason"
+        },
+        "source": {
+          "title": "Source",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source",
+        "period_start",
+        "period_end",
+        "reason"
+      ],
+      "title": "DataGap",
+      "type": "object"
+    },
+    "DataGapReason": {
+      "enum": [
+        "no_data",
+        "not_parsed",
+        "not_visible",
+        "query_failed",
+        "budget_exhausted"
+      ],
+      "title": "DataGapReason",
+      "type": "string"
+    },
+    "PlanStep": {
+      "additionalProperties": false,
+      "properties": {
+        "agent_id": {
+          "title": "Agent Id",
+          "type": "string"
+        },
+        "budget": {
+          "$ref": "#/$defs/Budget"
+        },
+        "objective": {
+          "maxLength": 300,
+          "title": "Objective",
+          "type": "string"
+        },
+        "time_window": {
+          "$ref": "#/$defs/TimeWindow"
+        }
+      },
+      "required": [
+        "agent_id",
+        "objective",
+        "time_window",
+        "budget"
+      ],
+      "title": "PlanStep",
+      "type": "object"
+    },
+    "RunStatus": {
+      "enum": [
+        "completed",
+        "budget_exhausted",
+        "failed"
+      ],
+      "title": "RunStatus",
+      "type": "string"
+    },
+    "TimeWindow": {
+      "additionalProperties": false,
+      "properties": {
+        "end": {
+          "format": "date-time",
+          "title": "End",
+          "type": "string"
+        },
+        "start": {
+          "format": "date-time",
+          "title": "Start",
+          "type": "string"
+        }
+      },
+      "required": [
+        "start",
+        "end"
+      ],
+      "title": "TimeWindow",
+      "type": "object"
+    },
+    "Usage": {
+      "additionalProperties": false,
+      "properties": {
+        "seconds": {
+          "title": "Seconds",
+          "type": "number"
+        },
+        "tokens": {
+          "title": "Tokens",
+          "type": "integer"
+        },
+        "tool_calls": {
+          "title": "Tool Calls",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "tokens",
+        "tool_calls",
+        "seconds"
+      ],
+      "title": "Usage",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Orchestrator output. The workflow adds Verification, rejects repeated agents and\ntrims the plan to the case budget.",
+  "properties": {
+    "claims": {
+      "items": {
+        "$ref": "#/$defs/Claim"
+      },
+      "title": "Claims",
+      "type": "array"
+    },
+    "data_gaps": {
+      "items": {
+        "$ref": "#/$defs/DataGap"
+      },
+      "title": "Data Gaps",
+      "type": "array"
+    },
+    "injection_suspected": {
+      "title": "Injection Suspected",
+      "type": "boolean"
+    },
+    "status": {
+      "$ref": "#/$defs/RunStatus"
+    },
+    "steps": {
+      "items": {
+        "$ref": "#/$defs/PlanStep"
+      },
+      "maxItems": 4,
+      "minItems": 1,
+      "title": "Steps",
+      "type": "array"
+    },
+    "task_id": {
+      "title": "Task Id",
+      "type": "string"
+    },
+    "usage": {
+      "$ref": "#/$defs/Usage"
+    }
+  },
+  "required": [
+    "task_id",
+    "status",
+    "claims",
+    "data_gaps",
+    "injection_suspected",
+    "usage",
+    "steps"
+  ],
+  "title": "CasePlan",
+  "type": "object"
+}

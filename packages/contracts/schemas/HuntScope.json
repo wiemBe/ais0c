@@ -1,0 +1,27 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "kind": {
+      "enum": [
+        "all",
+        "asset_group",
+        "user_group"
+      ],
+      "title": "Kind",
+      "type": "string"
+    },
+    "values": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Values",
+      "type": "array"
+    }
+  },
+  "required": [
+    "kind",
+    "values"
+  ],
+  "title": "HuntScope",
+  "type": "object"
+}

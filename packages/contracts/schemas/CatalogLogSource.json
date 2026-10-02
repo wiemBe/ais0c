@@ -1,0 +1,64 @@
+{
+  "$defs": {
+    "Level": {
+      "description": "Severity level. Values compare as strings, not by severity.",
+      "enum": [
+        "low",
+        "medium",
+        "high",
+        "critical"
+      ],
+      "title": "Level",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "context_note": {
+      "anyOf": [
+        {
+          "maxLength": 600,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Context Note"
+    },
+    "criticality": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Level"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "description": {
+      "anyOf": [
+        {
+          "maxLength": 300,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Description"
+    },
+    "log_source_id": {
+      "title": "Log Source Id",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "log_source_id"
+  ],
+  "title": "CatalogLogSource",
+  "type": "object"
+}

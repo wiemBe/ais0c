@@ -1,0 +1,58 @@
+{
+  "$defs": {
+    "CaseVerdict": {
+      "enum": [
+        "tp",
+        "fp",
+        "suspicious"
+      ],
+      "title": "CaseVerdict",
+      "type": "string"
+    },
+    "FeedbackReason": {
+      "enum": [
+        "correct",
+        "was_tp_not_fp",
+        "was_fp_not_tp",
+        "missing_context",
+        "wrong_urgent_events",
+        "other"
+      ],
+      "title": "FeedbackReason",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "case_id": {
+      "title": "Case Id",
+      "type": "string"
+    },
+    "comment": {
+      "anyOf": [
+        {
+          "maxLength": 500,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Comment"
+    },
+    "reason": {
+      "$ref": "#/$defs/FeedbackReason"
+    },
+    "verdict": {
+      "$ref": "#/$defs/CaseVerdict"
+    }
+  },
+  "required": [
+    "case_id",
+    "verdict",
+    "reason"
+  ],
+  "title": "OperatorFeedback",
+  "type": "object"
+}

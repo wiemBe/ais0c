@@ -1,0 +1,36 @@
+{
+  "$defs": {
+    "Level": {
+      "description": "Severity level. Values compare as strings, not by severity.",
+      "enum": [
+        "low",
+        "medium",
+        "high",
+        "critical"
+      ],
+      "title": "Level",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "label": {
+      "title": "Label",
+      "type": "string"
+    },
+    "level": {
+      "$ref": "#/$defs/Level"
+    },
+    "value": {
+      "title": "Value",
+      "type": "string"
+    }
+  },
+  "required": [
+    "value",
+    "label",
+    "level"
+  ],
+  "title": "CriticalAssetHit",
+  "type": "object"
+}

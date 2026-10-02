@@ -1,0 +1,126 @@
+{
+  "$defs": {
+    "CostClass": {
+      "enum": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "title": "CostClass",
+      "type": "string"
+    },
+    "JsonValue": {},
+    "TimeWindow": {
+      "additionalProperties": false,
+      "properties": {
+        "end": {
+          "format": "date-time",
+          "title": "End",
+          "type": "string"
+        },
+        "start": {
+          "format": "date-time",
+          "title": "Start",
+          "type": "string"
+        }
+      },
+      "required": [
+        "start",
+        "end"
+      ],
+      "title": "TimeWindow",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "agent_id": {
+      "title": "Agent Id",
+      "type": "string"
+    },
+    "arguments": {
+      "additionalProperties": {
+        "$ref": "#/$defs/JsonValue"
+      },
+      "title": "Arguments",
+      "type": "object"
+    },
+    "case_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Case Id"
+    },
+    "cost_class": {
+      "$ref": "#/$defs/CostClass"
+    },
+    "expected_evidence": {
+      "maxLength": 300,
+      "title": "Expected Evidence",
+      "type": "string"
+    },
+    "hunt_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Hunt Id"
+    },
+    "hypothesis_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Hypothesis Id"
+    },
+    "reason": {
+      "maxLength": 300,
+      "title": "Reason",
+      "type": "string"
+    },
+    "time_window": {
+      "$ref": "#/$defs/TimeWindow"
+    },
+    "tool_id": {
+      "title": "Tool Id",
+      "type": "string"
+    },
+    "tool_schema_version": {
+      "title": "Tool Schema Version",
+      "type": "string"
+    },
+    "toolset_profile": {
+      "title": "Toolset Profile",
+      "type": "string"
+    }
+  },
+  "required": [
+    "agent_id",
+    "toolset_profile",
+    "tool_id",
+    "tool_schema_version",
+    "arguments",
+    "reason",
+    "expected_evidence",
+    "time_window",
+    "cost_class"
+  ],
+  "title": "ToolIntent",
+  "type": "object"
+}

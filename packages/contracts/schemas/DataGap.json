@@ -1,0 +1,43 @@
+{
+  "$defs": {
+    "DataGapReason": {
+      "enum": [
+        "no_data",
+        "not_parsed",
+        "not_visible",
+        "query_failed",
+        "budget_exhausted"
+      ],
+      "title": "DataGapReason",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "period_end": {
+      "format": "date-time",
+      "title": "Period End",
+      "type": "string"
+    },
+    "period_start": {
+      "format": "date-time",
+      "title": "Period Start",
+      "type": "string"
+    },
+    "reason": {
+      "$ref": "#/$defs/DataGapReason"
+    },
+    "source": {
+      "title": "Source",
+      "type": "string"
+    }
+  },
+  "required": [
+    "source",
+    "period_start",
+    "period_end",
+    "reason"
+  ],
+  "title": "DataGap",
+  "type": "object"
+}

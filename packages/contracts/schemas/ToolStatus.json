@@ -1,0 +1,9 @@
+{
+  "enum": [
+    "ok",
+    "denied",
+    "error"
+  ],
+  "title": "ToolStatus",
+  "type": "string"
+}

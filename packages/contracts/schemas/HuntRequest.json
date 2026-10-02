@@ -1,0 +1,93 @@
+{
+  "$defs": {
+    "HuntScope": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": [
+            "all",
+            "asset_group",
+            "user_group"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "values": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Values",
+          "type": "array"
+        }
+      },
+      "required": [
+        "kind",
+        "values"
+      ],
+      "title": "HuntScope",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "hypothesis_ids": {
+      "anyOf": [
+        {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Hypothesis Ids"
+    },
+    "pack_id": {
+      "title": "Pack Id",
+      "type": "string"
+    },
+    "pack_version": {
+      "title": "Pack Version",
+      "type": "string"
+    },
+    "requested_by": {
+      "title": "Requested By",
+      "type": "string"
+    },
+    "scope": {
+      "$ref": "#/$defs/HuntScope"
+    },
+    "trigger": {
+      "enum": [
+        "manual",
+        "schedule"
+      ],
+      "title": "Trigger",
+      "type": "string"
+    },
+    "window_end": {
+      "format": "date-time",
+      "title": "Window End",
+      "type": "string"
+    },
+    "window_start": {
+      "format": "date-time",
+      "title": "Window Start",
+      "type": "string"
+    }
+  },
+  "required": [
+    "pack_id",
+    "pack_version",
+    "window_start",
+    "window_end",
+    "scope",
+    "trigger",
+    "requested_by"
+  ],
+  "title": "HuntRequest",
+  "type": "object"
+}

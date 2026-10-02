@@ -1,0 +1,25 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "evidence_ids": {
+      "items": {
+        "pattern": "^ev_\\S+$",
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Evidence Ids",
+      "type": "array"
+    },
+    "text": {
+      "maxLength": 300,
+      "title": "Text",
+      "type": "string"
+    }
+  },
+  "required": [
+    "text",
+    "evidence_ids"
+  ],
+  "title": "Claim",
+  "type": "object"
+}

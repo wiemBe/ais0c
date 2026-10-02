@@ -1,0 +1,13 @@
+{
+  "enum": [
+    "investigate_further",
+    "contain_host_manual",
+    "reset_credentials_manual",
+    "block_ioc_manual",
+    "tune_rule",
+    "close_as_fp",
+    "notify_user"
+  ],
+  "title": "ActionType",
+  "type": "string"
+}

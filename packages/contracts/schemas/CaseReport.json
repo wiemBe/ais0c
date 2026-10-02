@@ -1,0 +1,377 @@
+{
+  "$defs": {
+    "ActionType": {
+      "enum": [
+        "investigate_further",
+        "contain_host_manual",
+        "reset_credentials_manual",
+        "block_ioc_manual",
+        "tune_rule",
+        "close_as_fp",
+        "notify_user"
+      ],
+      "title": "ActionType",
+      "type": "string"
+    },
+    "CaseVerdict": {
+      "enum": [
+        "tp",
+        "fp",
+        "suspicious"
+      ],
+      "title": "CaseVerdict",
+      "type": "string"
+    },
+    "Claim": {
+      "additionalProperties": false,
+      "properties": {
+        "evidence_ids": {
+          "items": {
+            "pattern": "^ev_\\S+$",
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Evidence Ids",
+          "type": "array"
+        },
+        "text": {
+          "maxLength": 300,
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "text",
+        "evidence_ids"
+      ],
+      "title": "Claim",
+      "type": "object"
+    },
+    "Confidence": {
+      "enum": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "title": "Confidence",
+      "type": "string"
+    },
+    "DataGap": {
+      "additionalProperties": false,
+      "properties": {
+        "period_end": {
+          "format": "date-time",
+          "title": "Period End",
+          "type": "string"
+        },
+        "period_start": {
+          "format": "date-time",
+          "title": "Period Start",
+          "type": "string"
+        },
+        "reason": {
+          "$ref": "#/$defs/DataGapReason"
+        },
+        "source": {
+          "title": "Source",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source",
+        "period_start",
+        "period_end",
+        "reason"
+      ],
+      "title": "DataGap",
+      "type": "object"
+    },
+    "DataGapReason": {
+      "enum": [
+        "no_data",
+        "not_parsed",
+        "not_visible",
+        "query_failed",
+        "budget_exhausted"
+      ],
+      "title": "DataGapReason",
+      "type": "string"
+    },
+    "Level": {
+      "description": "Severity level. Values compare as strings, not by severity.",
+      "enum": [
+        "low",
+        "medium",
+        "high",
+        "critical"
+      ],
+      "title": "Level",
+      "type": "string"
+    },
+    "Recommendation": {
+      "additionalProperties": false,
+      "properties": {
+        "action_type": {
+          "$ref": "#/$defs/ActionType"
+        },
+        "evidence_ids": {
+          "items": {
+            "pattern": "^ev_\\S+$",
+            "type": "string"
+          },
+          "title": "Evidence Ids",
+          "type": "array"
+        },
+        "rationale": {
+          "maxLength": 300,
+          "title": "Rationale",
+          "type": "string"
+        },
+        "target": {
+          "maxLength": 200,
+          "title": "Target",
+          "type": "string"
+        }
+      },
+      "required": [
+        "action_type",
+        "target",
+        "rationale",
+        "evidence_ids"
+      ],
+      "title": "Recommendation",
+      "type": "object"
+    },
+    "RunStatus": {
+      "enum": [
+        "completed",
+        "budget_exhausted",
+        "failed"
+      ],
+      "title": "RunStatus",
+      "type": "string"
+    },
+    "UrgentEvent": {
+      "additionalProperties": false,
+      "description": "An event the operator should look at first (architecture §9).",
+      "properties": {
+        "aql": {
+          "anyOf": [
+            {
+              "maxLength": 2000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Aql"
+        },
+        "checklist": {
+          "items": {
+            "maxLength": 300,
+            "type": "string"
+          },
+          "maxItems": 5,
+          "title": "Checklist",
+          "type": "array"
+        },
+        "destination": {
+          "anyOf": [
+            {
+              "maxLength": 100,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Destination"
+        },
+        "event_name": {
+          "maxLength": 200,
+          "title": "Event Name",
+          "type": "string"
+        },
+        "evidence_id": {
+          "pattern": "^ev_\\S+$",
+          "title": "Evidence Id",
+          "type": "string"
+        },
+        "log_source": {
+          "maxLength": 120,
+          "title": "Log Source",
+          "type": "string"
+        },
+        "qid": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Qid"
+        },
+        "rank": {
+          "minimum": 1,
+          "title": "Rank",
+          "type": "integer"
+        },
+        "reason": {
+          "maxLength": 300,
+          "title": "Reason",
+          "type": "string"
+        },
+        "source": {
+          "anyOf": [
+            {
+              "maxLength": 100,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source"
+        },
+        "time": {
+          "format": "date-time",
+          "title": "Time",
+          "type": "string"
+        },
+        "username": {
+          "anyOf": [
+            {
+              "maxLength": 100,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Username"
+        }
+      },
+      "required": [
+        "rank",
+        "time",
+        "log_source",
+        "event_name",
+        "reason",
+        "checklist",
+        "evidence_id"
+      ],
+      "title": "UrgentEvent",
+      "type": "object"
+    },
+    "Usage": {
+      "additionalProperties": false,
+      "properties": {
+        "seconds": {
+          "title": "Seconds",
+          "type": "number"
+        },
+        "tokens": {
+          "title": "Tokens",
+          "type": "integer"
+        },
+        "tool_calls": {
+          "title": "Tool Calls",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "tokens",
+        "tool_calls",
+        "seconds"
+      ],
+      "title": "Usage",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Case output of the Reporting agent. Turkish fields end in `_tr`.\n\n`data_gaps` comes from `AgentResult`.",
+  "properties": {
+    "claims": {
+      "items": {
+        "$ref": "#/$defs/Claim"
+      },
+      "title": "Claims",
+      "type": "array"
+    },
+    "confidence": {
+      "$ref": "#/$defs/Confidence"
+    },
+    "data_gaps": {
+      "items": {
+        "$ref": "#/$defs/DataGap"
+      },
+      "title": "Data Gaps",
+      "type": "array"
+    },
+    "injection_suspected": {
+      "title": "Injection Suspected",
+      "type": "boolean"
+    },
+    "notify_level": {
+      "$ref": "#/$defs/Level"
+    },
+    "recommendations": {
+      "items": {
+        "$ref": "#/$defs/Recommendation"
+      },
+      "maxItems": 8,
+      "title": "Recommendations",
+      "type": "array"
+    },
+    "status": {
+      "$ref": "#/$defs/RunStatus"
+    },
+    "summary_tr": {
+      "maxLength": 600,
+      "title": "Summary Tr",
+      "type": "string"
+    },
+    "task_id": {
+      "title": "Task Id",
+      "type": "string"
+    },
+    "urgent_events": {
+      "items": {
+        "$ref": "#/$defs/UrgentEvent"
+      },
+      "maxItems": 15,
+      "title": "Urgent Events",
+      "type": "array"
+    },
+    "usage": {
+      "$ref": "#/$defs/Usage"
+    },
+    "verdict": {
+      "$ref": "#/$defs/CaseVerdict"
+    }
+  },
+  "required": [
+    "task_id",
+    "status",
+    "claims",
+    "data_gaps",
+    "injection_suspected",
+    "usage",
+    "summary_tr",
+    "verdict",
+    "confidence",
+    "notify_level",
+    "urgent_events",
+    "recommendations"
+  ],
+  "title": "CaseReport",
+  "type": "object"
+}

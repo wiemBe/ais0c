@@ -1,0 +1,75 @@
+{
+  "$defs": {
+    "Budget": {
+      "additionalProperties": false,
+      "properties": {
+        "seconds": {
+          "title": "Seconds",
+          "type": "integer"
+        },
+        "tokens": {
+          "title": "Tokens",
+          "type": "integer"
+        },
+        "tool_calls": {
+          "title": "Tool Calls",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "tokens",
+        "tool_calls",
+        "seconds"
+      ],
+      "title": "Budget",
+      "type": "object"
+    },
+    "TimeWindow": {
+      "additionalProperties": false,
+      "properties": {
+        "end": {
+          "format": "date-time",
+          "title": "End",
+          "type": "string"
+        },
+        "start": {
+          "format": "date-time",
+          "title": "Start",
+          "type": "string"
+        }
+      },
+      "required": [
+        "start",
+        "end"
+      ],
+      "title": "TimeWindow",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "agent_id": {
+      "title": "Agent Id",
+      "type": "string"
+    },
+    "budget": {
+      "$ref": "#/$defs/Budget"
+    },
+    "objective": {
+      "maxLength": 300,
+      "title": "Objective",
+      "type": "string"
+    },
+    "time_window": {
+      "$ref": "#/$defs/TimeWindow"
+    }
+  },
+  "required": [
+    "agent_id",
+    "objective",
+    "time_window",
+    "budget"
+  ],
+  "title": "PlanStep",
+  "type": "object"
+}

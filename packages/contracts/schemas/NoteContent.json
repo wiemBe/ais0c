@@ -1,0 +1,290 @@
+{
+  "$defs": {
+    "ActionType": {
+      "enum": [
+        "investigate_further",
+        "contain_host_manual",
+        "reset_credentials_manual",
+        "block_ioc_manual",
+        "tune_rule",
+        "close_as_fp",
+        "notify_user"
+      ],
+      "title": "ActionType",
+      "type": "string"
+    },
+    "CaseVerdict": {
+      "enum": [
+        "tp",
+        "fp",
+        "suspicious"
+      ],
+      "title": "CaseVerdict",
+      "type": "string"
+    },
+    "Confidence": {
+      "enum": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "title": "Confidence",
+      "type": "string"
+    },
+    "DataGap": {
+      "additionalProperties": false,
+      "properties": {
+        "period_end": {
+          "format": "date-time",
+          "title": "Period End",
+          "type": "string"
+        },
+        "period_start": {
+          "format": "date-time",
+          "title": "Period Start",
+          "type": "string"
+        },
+        "reason": {
+          "$ref": "#/$defs/DataGapReason"
+        },
+        "source": {
+          "title": "Source",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source",
+        "period_start",
+        "period_end",
+        "reason"
+      ],
+      "title": "DataGap",
+      "type": "object"
+    },
+    "DataGapReason": {
+      "enum": [
+        "no_data",
+        "not_parsed",
+        "not_visible",
+        "query_failed",
+        "budget_exhausted"
+      ],
+      "title": "DataGapReason",
+      "type": "string"
+    },
+    "Level": {
+      "description": "Severity level. Values compare as strings, not by severity.",
+      "enum": [
+        "low",
+        "medium",
+        "high",
+        "critical"
+      ],
+      "title": "Level",
+      "type": "string"
+    },
+    "UrgentEvent": {
+      "additionalProperties": false,
+      "description": "An event the operator should look at first (architecture §9).",
+      "properties": {
+        "aql": {
+          "anyOf": [
+            {
+              "maxLength": 2000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Aql"
+        },
+        "checklist": {
+          "items": {
+            "maxLength": 300,
+            "type": "string"
+          },
+          "maxItems": 5,
+          "title": "Checklist",
+          "type": "array"
+        },
+        "destination": {
+          "anyOf": [
+            {
+              "maxLength": 100,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Destination"
+        },
+        "event_name": {
+          "maxLength": 200,
+          "title": "Event Name",
+          "type": "string"
+        },
+        "evidence_id": {
+          "pattern": "^ev_\\S+$",
+          "title": "Evidence Id",
+          "type": "string"
+        },
+        "log_source": {
+          "maxLength": 120,
+          "title": "Log Source",
+          "type": "string"
+        },
+        "qid": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Qid"
+        },
+        "rank": {
+          "minimum": 1,
+          "title": "Rank",
+          "type": "integer"
+        },
+        "reason": {
+          "maxLength": 300,
+          "title": "Reason",
+          "type": "string"
+        },
+        "source": {
+          "anyOf": [
+            {
+              "maxLength": 100,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source"
+        },
+        "time": {
+          "format": "date-time",
+          "title": "Time",
+          "type": "string"
+        },
+        "username": {
+          "anyOf": [
+            {
+              "maxLength": 100,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Username"
+        }
+      },
+      "required": [
+        "rank",
+        "time",
+        "log_source",
+        "event_name",
+        "reason",
+        "checklist",
+        "evidence_id"
+      ],
+      "title": "UrgentEvent",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Structured content of a QRadar note (architecture §9); the executor fills a fixed\ntemplate with it.",
+  "properties": {
+    "case_url": {
+      "title": "Case Url",
+      "type": "string"
+    },
+    "confidence": {
+      "$ref": "#/$defs/Confidence"
+    },
+    "data_gaps": {
+      "items": {
+        "$ref": "#/$defs/DataGap"
+      },
+      "title": "Data Gaps",
+      "type": "array"
+    },
+    "evaluation_no": {
+      "title": "Evaluation No",
+      "type": "integer"
+    },
+    "group_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Group Id"
+    },
+    "notify_level": {
+      "$ref": "#/$defs/Level"
+    },
+    "offense_id": {
+      "title": "Offense Id",
+      "type": "integer"
+    },
+    "recommended_actions": {
+      "items": {
+        "$ref": "#/$defs/ActionType"
+      },
+      "title": "Recommended Actions",
+      "type": "array"
+    },
+    "run_marker": {
+      "title": "Run Marker",
+      "type": "string"
+    },
+    "summary_tr": {
+      "maxLength": 400,
+      "title": "Summary Tr",
+      "type": "string"
+    },
+    "urgent_events": {
+      "items": {
+        "$ref": "#/$defs/UrgentEvent"
+      },
+      "maxItems": 5,
+      "title": "Urgent Events",
+      "type": "array"
+    },
+    "verdict": {
+      "$ref": "#/$defs/CaseVerdict"
+    }
+  },
+  "required": [
+    "offense_id",
+    "evaluation_no",
+    "run_marker",
+    "verdict",
+    "confidence",
+    "notify_level",
+    "summary_tr",
+    "urgent_events",
+    "recommended_actions",
+    "data_gaps",
+    "case_url"
+  ],
+  "title": "NoteContent",
+  "type": "object"
+}

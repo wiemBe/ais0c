@@ -1,0 +1,206 @@
+{
+  "$defs": {
+    "CaseVerdict": {
+      "enum": [
+        "tp",
+        "fp",
+        "suspicious"
+      ],
+      "title": "CaseVerdict",
+      "type": "string"
+    },
+    "Claim": {
+      "additionalProperties": false,
+      "properties": {
+        "evidence_ids": {
+          "items": {
+            "pattern": "^ev_\\S+$",
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Evidence Ids",
+          "type": "array"
+        },
+        "text": {
+          "maxLength": 300,
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "text",
+        "evidence_ids"
+      ],
+      "title": "Claim",
+      "type": "object"
+    },
+    "Confidence": {
+      "enum": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "title": "Confidence",
+      "type": "string"
+    },
+    "DataGap": {
+      "additionalProperties": false,
+      "properties": {
+        "period_end": {
+          "format": "date-time",
+          "title": "Period End",
+          "type": "string"
+        },
+        "period_start": {
+          "format": "date-time",
+          "title": "Period Start",
+          "type": "string"
+        },
+        "reason": {
+          "$ref": "#/$defs/DataGapReason"
+        },
+        "source": {
+          "title": "Source",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source",
+        "period_start",
+        "period_end",
+        "reason"
+      ],
+      "title": "DataGap",
+      "type": "object"
+    },
+    "DataGapReason": {
+      "enum": [
+        "no_data",
+        "not_parsed",
+        "not_visible",
+        "query_failed",
+        "budget_exhausted"
+      ],
+      "title": "DataGapReason",
+      "type": "string"
+    },
+    "Level": {
+      "description": "Severity level. Values compare as strings, not by severity.",
+      "enum": [
+        "low",
+        "medium",
+        "high",
+        "critical"
+      ],
+      "title": "Level",
+      "type": "string"
+    },
+    "RunStatus": {
+      "enum": [
+        "completed",
+        "budget_exhausted",
+        "failed"
+      ],
+      "title": "RunStatus",
+      "type": "string"
+    },
+    "Usage": {
+      "additionalProperties": false,
+      "properties": {
+        "seconds": {
+          "title": "Seconds",
+          "type": "number"
+        },
+        "tokens": {
+          "title": "Tokens",
+          "type": "integer"
+        },
+        "tool_calls": {
+          "title": "Tool Calls",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "tokens",
+        "tool_calls",
+        "seconds"
+      ],
+      "title": "Usage",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "ai_level": {
+      "$ref": "#/$defs/Level"
+    },
+    "claims": {
+      "items": {
+        "$ref": "#/$defs/Claim"
+      },
+      "title": "Claims",
+      "type": "array"
+    },
+    "confidence": {
+      "$ref": "#/$defs/Confidence"
+    },
+    "data_gaps": {
+      "items": {
+        "$ref": "#/$defs/DataGap"
+      },
+      "title": "Data Gaps",
+      "type": "array"
+    },
+    "injection_suspected": {
+      "title": "Injection Suspected",
+      "type": "boolean"
+    },
+    "investigation_focus": {
+      "items": {
+        "maxLength": 300,
+        "type": "string"
+      },
+      "maxItems": 5,
+      "title": "Investigation Focus",
+      "type": "array"
+    },
+    "needs_investigation": {
+      "title": "Needs Investigation",
+      "type": "boolean"
+    },
+    "rationale": {
+      "maxLength": 600,
+      "title": "Rationale",
+      "type": "string"
+    },
+    "status": {
+      "$ref": "#/$defs/RunStatus"
+    },
+    "task_id": {
+      "title": "Task Id",
+      "type": "string"
+    },
+    "usage": {
+      "$ref": "#/$defs/Usage"
+    },
+    "verdict": {
+      "$ref": "#/$defs/CaseVerdict"
+    }
+  },
+  "required": [
+    "task_id",
+    "status",
+    "claims",
+    "data_gaps",
+    "injection_suspected",
+    "usage",
+    "verdict",
+    "confidence",
+    "ai_level",
+    "rationale",
+    "needs_investigation",
+    "investigation_focus"
+  ],
+  "title": "TriageResult",
+  "type": "object"
+}

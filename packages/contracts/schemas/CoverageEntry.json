@@ -1,0 +1,32 @@
+{
+  "additionalProperties": false,
+  "description": "One month x log source type cell. Comes from the database; never written by an LLM.",
+  "properties": {
+    "log_source_type": {
+      "title": "Log Source Type",
+      "type": "string"
+    },
+    "month": {
+      "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+      "title": "Month",
+      "type": "string"
+    },
+    "status": {
+      "enum": [
+        "covered",
+        "no_data",
+        "not_parsed",
+        "not_visible"
+      ],
+      "title": "Status",
+      "type": "string"
+    }
+  },
+  "required": [
+    "month",
+    "log_source_type",
+    "status"
+  ],
+  "title": "CoverageEntry",
+  "type": "object"
+}

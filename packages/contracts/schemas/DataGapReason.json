@@ -1,0 +1,11 @@
+{
+  "enum": [
+    "no_data",
+    "not_parsed",
+    "not_visible",
+    "query_failed",
+    "budget_exhausted"
+  ],
+  "title": "DataGapReason",
+  "type": "string"
+}

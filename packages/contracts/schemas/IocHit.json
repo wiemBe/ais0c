@@ -1,0 +1,39 @@
+{
+  "$defs": {
+    "Confidence": {
+      "enum": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "title": "Confidence",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "confidence": {
+      "$ref": "#/$defs/Confidence"
+    },
+    "source": {
+      "title": "Source",
+      "type": "string"
+    },
+    "type": {
+      "title": "Type",
+      "type": "string"
+    },
+    "value": {
+      "title": "Value",
+      "type": "string"
+    }
+  },
+  "required": [
+    "value",
+    "type",
+    "source",
+    "confidence"
+  ],
+  "title": "IocHit",
+  "type": "object"
+}

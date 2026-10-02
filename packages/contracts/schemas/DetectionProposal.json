@@ -1,0 +1,19 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "sigma_yaml": {
+      "title": "Sigma Yaml",
+      "type": "string"
+    },
+    "title": {
+      "title": "Title",
+      "type": "string"
+    }
+  },
+  "required": [
+    "title",
+    "sigma_yaml"
+  ],
+  "title": "DetectionProposal",
+  "type": "object"
+}

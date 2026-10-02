@@ -1,0 +1,8 @@
+{
+  "enum": [
+    "qradar",
+    "falcon"
+  ],
+  "title": "EvidenceSource",
+  "type": "string"
+}

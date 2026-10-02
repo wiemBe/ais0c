@@ -1,0 +1,73 @@
+{
+  "$defs": {
+    "EvidenceSource": {
+      "enum": [
+        "qradar",
+        "falcon"
+      ],
+      "title": "EvidenceSource",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Pointer to evidence recorded by the gateway; agents cannot create one.",
+  "properties": {
+    "evidence_id": {
+      "pattern": "^ev_\\S+$",
+      "title": "Evidence Id",
+      "type": "string"
+    },
+    "excerpt": {
+      "maxLength": 500,
+      "title": "Excerpt",
+      "type": "string"
+    },
+    "identifiers": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "title": "Identifiers",
+      "type": "object"
+    },
+    "query_hash": {
+      "title": "Query Hash",
+      "type": "string"
+    },
+    "query_text": {
+      "maxLength": 4000,
+      "title": "Query Text",
+      "type": "string"
+    },
+    "retrieved_at": {
+      "format": "date-time",
+      "title": "Retrieved At",
+      "type": "string"
+    },
+    "source": {
+      "$ref": "#/$defs/EvidenceSource"
+    },
+    "time_end": {
+      "format": "date-time",
+      "title": "Time End",
+      "type": "string"
+    },
+    "time_start": {
+      "format": "date-time",
+      "title": "Time Start",
+      "type": "string"
+    }
+  },
+  "required": [
+    "evidence_id",
+    "source",
+    "query_hash",
+    "query_text",
+    "time_start",
+    "time_end",
+    "identifiers",
+    "excerpt",
+    "retrieved_at"
+  ],
+  "title": "EvidenceRef",
+  "type": "object"
+}

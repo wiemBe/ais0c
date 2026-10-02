@@ -1,0 +1,81 @@
+{
+  "$defs": {
+    "Backtest": {
+      "additionalProperties": false,
+      "properties": {
+        "days": {
+          "title": "Days",
+          "type": "integer"
+        },
+        "suppressed_offenses": {
+          "title": "Suppressed Offenses",
+          "type": "integer"
+        },
+        "suppressed_tp_offenses": {
+          "title": "Suppressed Tp Offenses",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "days",
+        "suppressed_offenses",
+        "suppressed_tp_offenses"
+      ],
+      "title": "Backtest",
+      "type": "object"
+    },
+    "TuningChange": {
+      "enum": [
+        "reference_set_exception",
+        "building_block",
+        "threshold",
+        "time_window",
+        "other"
+      ],
+      "title": "TuningChange",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "backtest": {
+      "$ref": "#/$defs/Backtest"
+    },
+    "change_type": {
+      "$ref": "#/$defs/TuningChange"
+    },
+    "cluster_id": {
+      "title": "Cluster Id",
+      "type": "string"
+    },
+    "description_tr": {
+      "maxLength": 600,
+      "title": "Description Tr",
+      "type": "string"
+    },
+    "rationale": {
+      "maxLength": 300,
+      "title": "Rationale",
+      "type": "string"
+    },
+    "risk_flag": {
+      "title": "Risk Flag",
+      "type": "boolean"
+    },
+    "rule_id": {
+      "title": "Rule Id",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "cluster_id",
+    "rule_id",
+    "change_type",
+    "description_tr",
+    "rationale",
+    "backtest",
+    "risk_flag"
+  ],
+  "title": "TuningProposal",
+  "type": "object"
+}

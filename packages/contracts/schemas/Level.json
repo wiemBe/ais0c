@@ -1,0 +1,11 @@
+{
+  "description": "Severity level. Values compare as strings, not by severity.",
+  "enum": [
+    "low",
+    "medium",
+    "high",
+    "critical"
+  ],
+  "title": "Level",
+  "type": "string"
+}

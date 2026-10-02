@@ -1,0 +1,123 @@
+{
+  "$defs": {
+    "Budget": {
+      "additionalProperties": false,
+      "properties": {
+        "seconds": {
+          "title": "Seconds",
+          "type": "integer"
+        },
+        "tokens": {
+          "title": "Tokens",
+          "type": "integer"
+        },
+        "tool_calls": {
+          "title": "Tool Calls",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "tokens",
+        "tool_calls",
+        "seconds"
+      ],
+      "title": "Budget",
+      "type": "object"
+    },
+    "TimeWindow": {
+      "additionalProperties": false,
+      "properties": {
+        "end": {
+          "format": "date-time",
+          "title": "End",
+          "type": "string"
+        },
+        "start": {
+          "format": "date-time",
+          "title": "Start",
+          "type": "string"
+        }
+      },
+      "required": [
+        "start",
+        "end"
+      ],
+      "title": "TimeWindow",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "agent_id": {
+      "title": "Agent Id",
+      "type": "string"
+    },
+    "agent_version": {
+      "title": "Agent Version",
+      "type": "string"
+    },
+    "budget": {
+      "$ref": "#/$defs/Budget"
+    },
+    "case_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Case Id"
+    },
+    "context_refs": {
+      "items": {
+        "pattern": "^ev_\\S+$",
+        "type": "string"
+      },
+      "title": "Context Refs",
+      "type": "array"
+    },
+    "hunt_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Hunt Id"
+    },
+    "objective": {
+      "maxLength": 300,
+      "title": "Objective",
+      "type": "string"
+    },
+    "parent_run_id": {
+      "title": "Parent Run Id",
+      "type": "string"
+    },
+    "task_id": {
+      "title": "Task Id",
+      "type": "string"
+    },
+    "time_window": {
+      "$ref": "#/$defs/TimeWindow"
+    }
+  },
+  "required": [
+    "task_id",
+    "parent_run_id",
+    "agent_id",
+    "agent_version",
+    "objective",
+    "context_refs",
+    "time_window",
+    "budget"
+  ],
+  "title": "AgentTask",
+  "type": "object"
+}

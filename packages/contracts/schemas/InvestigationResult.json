@@ -1,0 +1,387 @@
+{
+  "$defs": {
+    "CaseVerdict": {
+      "enum": [
+        "tp",
+        "fp",
+        "suspicious"
+      ],
+      "title": "CaseVerdict",
+      "type": "string"
+    },
+    "Claim": {
+      "additionalProperties": false,
+      "properties": {
+        "evidence_ids": {
+          "items": {
+            "pattern": "^ev_\\S+$",
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Evidence Ids",
+          "type": "array"
+        },
+        "text": {
+          "maxLength": 300,
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "text",
+        "evidence_ids"
+      ],
+      "title": "Claim",
+      "type": "object"
+    },
+    "Confidence": {
+      "enum": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "title": "Confidence",
+      "type": "string"
+    },
+    "DataGap": {
+      "additionalProperties": false,
+      "properties": {
+        "period_end": {
+          "format": "date-time",
+          "title": "Period End",
+          "type": "string"
+        },
+        "period_start": {
+          "format": "date-time",
+          "title": "Period Start",
+          "type": "string"
+        },
+        "reason": {
+          "$ref": "#/$defs/DataGapReason"
+        },
+        "source": {
+          "title": "Source",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source",
+        "period_start",
+        "period_end",
+        "reason"
+      ],
+      "title": "DataGap",
+      "type": "object"
+    },
+    "DataGapReason": {
+      "enum": [
+        "no_data",
+        "not_parsed",
+        "not_visible",
+        "query_failed",
+        "budget_exhausted"
+      ],
+      "title": "DataGapReason",
+      "type": "string"
+    },
+    "InvestigationHypothesis": {
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "enum": [
+            "supported",
+            "refuted",
+            "open"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "text": {
+          "maxLength": 300,
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "text",
+        "status"
+      ],
+      "title": "InvestigationHypothesis",
+      "type": "object"
+    },
+    "Level": {
+      "description": "Severity level. Values compare as strings, not by severity.",
+      "enum": [
+        "low",
+        "medium",
+        "high",
+        "critical"
+      ],
+      "title": "Level",
+      "type": "string"
+    },
+    "RunStatus": {
+      "enum": [
+        "completed",
+        "budget_exhausted",
+        "failed"
+      ],
+      "title": "RunStatus",
+      "type": "string"
+    },
+    "TimelineEntry": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "maxLength": 200,
+          "title": "Description",
+          "type": "string"
+        },
+        "evidence_ids": {
+          "items": {
+            "pattern": "^ev_\\S+$",
+            "type": "string"
+          },
+          "title": "Evidence Ids",
+          "type": "array"
+        },
+        "time": {
+          "format": "date-time",
+          "title": "Time",
+          "type": "string"
+        }
+      },
+      "required": [
+        "time",
+        "description",
+        "evidence_ids"
+      ],
+      "title": "TimelineEntry",
+      "type": "object"
+    },
+    "UrgentEvent": {
+      "additionalProperties": false,
+      "description": "An event the operator should look at first (architecture §9).",
+      "properties": {
+        "aql": {
+          "anyOf": [
+            {
+              "maxLength": 2000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Aql"
+        },
+        "checklist": {
+          "items": {
+            "maxLength": 300,
+            "type": "string"
+          },
+          "maxItems": 5,
+          "title": "Checklist",
+          "type": "array"
+        },
+        "destination": {
+          "anyOf": [
+            {
+              "maxLength": 100,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Destination"
+        },
+        "event_name": {
+          "maxLength": 200,
+          "title": "Event Name",
+          "type": "string"
+        },
+        "evidence_id": {
+          "pattern": "^ev_\\S+$",
+          "title": "Evidence Id",
+          "type": "string"
+        },
+        "log_source": {
+          "maxLength": 120,
+          "title": "Log Source",
+          "type": "string"
+        },
+        "qid": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Qid"
+        },
+        "rank": {
+          "minimum": 1,
+          "title": "Rank",
+          "type": "integer"
+        },
+        "reason": {
+          "maxLength": 300,
+          "title": "Reason",
+          "type": "string"
+        },
+        "source": {
+          "anyOf": [
+            {
+              "maxLength": 100,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source"
+        },
+        "time": {
+          "format": "date-time",
+          "title": "Time",
+          "type": "string"
+        },
+        "username": {
+          "anyOf": [
+            {
+              "maxLength": 100,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Username"
+        }
+      },
+      "required": [
+        "rank",
+        "time",
+        "log_source",
+        "event_name",
+        "reason",
+        "checklist",
+        "evidence_id"
+      ],
+      "title": "UrgentEvent",
+      "type": "object"
+    },
+    "Usage": {
+      "additionalProperties": false,
+      "properties": {
+        "seconds": {
+          "title": "Seconds",
+          "type": "number"
+        },
+        "tokens": {
+          "title": "Tokens",
+          "type": "integer"
+        },
+        "tool_calls": {
+          "title": "Tool Calls",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "tokens",
+        "tool_calls",
+        "seconds"
+      ],
+      "title": "Usage",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "ai_level": {
+      "$ref": "#/$defs/Level"
+    },
+    "claims": {
+      "items": {
+        "$ref": "#/$defs/Claim"
+      },
+      "title": "Claims",
+      "type": "array"
+    },
+    "confidence": {
+      "$ref": "#/$defs/Confidence"
+    },
+    "data_gaps": {
+      "items": {
+        "$ref": "#/$defs/DataGap"
+      },
+      "title": "Data Gaps",
+      "type": "array"
+    },
+    "hypotheses": {
+      "items": {
+        "$ref": "#/$defs/InvestigationHypothesis"
+      },
+      "maxItems": 5,
+      "title": "Hypotheses",
+      "type": "array"
+    },
+    "injection_suspected": {
+      "title": "Injection Suspected",
+      "type": "boolean"
+    },
+    "status": {
+      "$ref": "#/$defs/RunStatus"
+    },
+    "task_id": {
+      "title": "Task Id",
+      "type": "string"
+    },
+    "timeline": {
+      "items": {
+        "$ref": "#/$defs/TimelineEntry"
+      },
+      "maxItems": 30,
+      "title": "Timeline",
+      "type": "array"
+    },
+    "urgent_event_candidates": {
+      "items": {
+        "$ref": "#/$defs/UrgentEvent"
+      },
+      "maxItems": 15,
+      "title": "Urgent Event Candidates",
+      "type": "array"
+    },
+    "usage": {
+      "$ref": "#/$defs/Usage"
+    },
+    "verdict": {
+      "$ref": "#/$defs/CaseVerdict"
+    }
+  },
+  "required": [
+    "task_id",
+    "status",
+    "claims",
+    "data_gaps",
+    "injection_suspected",
+    "usage",
+    "verdict",
+    "confidence",
+    "ai_level",
+    "timeline",
+    "hypotheses",
+    "urgent_event_candidates"
+  ],
+  "title": "InvestigationResult",
+  "type": "object"
+}

@@ -1,0 +1,11 @@
+{
+  "enum": [
+    "reference_set_exception",
+    "building_block",
+    "threshold",
+    "time_window",
+    "other"
+  ],
+  "title": "TuningChange",
+  "type": "string"
+}

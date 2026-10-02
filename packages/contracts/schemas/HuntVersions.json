@@ -1,0 +1,30 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "models": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "title": "Models",
+      "type": "object"
+    },
+    "pack": {
+      "title": "Pack",
+      "type": "string"
+    },
+    "prompts": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "title": "Prompts",
+      "type": "object"
+    }
+  },
+  "required": [
+    "pack",
+    "prompts",
+    "models"
+  ],
+  "title": "HuntVersions",
+  "type": "object"
+}

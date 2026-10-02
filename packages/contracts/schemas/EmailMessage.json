@@ -1,0 +1,64 @@
+{
+  "$defs": {
+    "EmailKind": {
+      "enum": [
+        "case_alert",
+        "group_alert",
+        "hunt_report"
+      ],
+      "title": "EmailKind",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "attachments": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Attachments",
+      "type": "array"
+    },
+    "fields": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "title": "Fields",
+      "type": "object"
+    },
+    "idempotency_key": {
+      "title": "Idempotency Key",
+      "type": "string"
+    },
+    "kind": {
+      "$ref": "#/$defs/EmailKind"
+    },
+    "recipients": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Recipients",
+      "type": "array"
+    },
+    "subject": {
+      "maxLength": 150,
+      "title": "Subject",
+      "type": "string"
+    },
+    "template_id": {
+      "title": "Template Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "kind",
+    "recipients",
+    "subject",
+    "template_id",
+    "fields",
+    "attachments",
+    "idempotency_key"
+  ],
+  "title": "EmailMessage",
+  "type": "object"
+}

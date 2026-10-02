@@ -1,0 +1,30 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "description": {
+      "maxLength": 200,
+      "title": "Description",
+      "type": "string"
+    },
+    "evidence_ids": {
+      "items": {
+        "pattern": "^ev_\\S+$",
+        "type": "string"
+      },
+      "title": "Evidence Ids",
+      "type": "array"
+    },
+    "time": {
+      "format": "date-time",
+      "title": "Time",
+      "type": "string"
+    }
+  },
+  "required": [
+    "time",
+    "description",
+    "evidence_ids"
+  ],
+  "title": "TimelineEntry",
+  "type": "object"
+}

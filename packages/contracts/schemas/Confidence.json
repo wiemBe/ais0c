@@ -1,0 +1,9 @@
+{
+  "enum": [
+    "low",
+    "medium",
+    "high"
+  ],
+  "title": "Confidence",
+  "type": "string"
+}

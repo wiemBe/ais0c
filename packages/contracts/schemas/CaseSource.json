@@ -1,0 +1,9 @@
+{
+  "enum": [
+    "offense",
+    "hunt",
+    "group"
+  ],
+  "title": "CaseSource",
+  "type": "string"
+}

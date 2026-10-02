@@ -1,0 +1,140 @@
+{
+  "$defs": {
+    "CatalogLogSource": {
+      "additionalProperties": false,
+      "properties": {
+        "context_note": {
+          "anyOf": [
+            {
+              "maxLength": 600,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Context Note"
+        },
+        "criticality": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Level"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "description": {
+          "anyOf": [
+            {
+              "maxLength": 300,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        },
+        "log_source_id": {
+          "title": "Log Source Id",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "log_source_id"
+      ],
+      "title": "CatalogLogSource",
+      "type": "object"
+    },
+    "CatalogMode": {
+      "enum": [
+        "analyze",
+        "skip"
+      ],
+      "title": "CatalogMode",
+      "type": "string"
+    },
+    "CatalogRule": {
+      "additionalProperties": false,
+      "properties": {
+        "context_note": {
+          "anyOf": [
+            {
+              "maxLength": 600,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Context Note"
+        },
+        "min_level": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Level"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "mode": {
+          "$ref": "#/$defs/CatalogMode"
+        },
+        "rule_id": {
+          "title": "Rule Id",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "rule_id",
+        "mode"
+      ],
+      "title": "CatalogRule",
+      "type": "object"
+    },
+    "Level": {
+      "description": "Severity level. Values compare as strings, not by severity.",
+      "enum": [
+        "low",
+        "medium",
+        "high",
+        "critical"
+      ],
+      "title": "Level",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Trusted context from the Analysis Catalog (D-25); goes to the `org_context` section.",
+  "properties": {
+    "log_sources": {
+      "items": {
+        "$ref": "#/$defs/CatalogLogSource"
+      },
+      "title": "Log Sources",
+      "type": "array"
+    },
+    "rules": {
+      "items": {
+        "$ref": "#/$defs/CatalogRule"
+      },
+      "title": "Rules",
+      "type": "array"
+    }
+  },
+  "required": [
+    "rules",
+    "log_sources"
+  ],
+  "title": "CatalogContext",
+  "type": "object"
+}
