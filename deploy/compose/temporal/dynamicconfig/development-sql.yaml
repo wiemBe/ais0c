@@ -1,0 +1,11 @@
+# Temporal dynamic config for the dev stack, from Temporal's official compose setup
+# (temporalio/samples-server, compose/dynamicconfig/development-sql.yaml).
+
+# The SQL visibility store keeps workflow IDs in VARCHAR(255) columns.
+limit.maxIDLength:
+  - value: 255
+    constraints: {}
+# Dev only: lets tests use a search attribute right after creating it.
+system.forceSearchAttributesCacheRefreshOnRead:
+  - value: true
+    constraints: {}

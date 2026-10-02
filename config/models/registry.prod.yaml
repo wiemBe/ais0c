@@ -1,0 +1,56 @@
+# Model capability registry for prod (docs/architecture.md §8.4). One entry per model alias;
+# the dev counterpart is registry.dev.yaml.
+#
+# - target: the model behind the alias in config/litellm/litellm.prod.yaml.
+# - prod_equivalent: the same as target in prod.
+# - capabilities: an agent whose manifest requires a capability missing here does not start
+#   (fail closed, §8.4).
+# - context_window: must equal vLLM's --max-model-len for the model. The values below are the
+#   models' native context lengths.
+# - tool_parser, reasoning_parser: vLLM's --tool-call-parser and --reasoning-parser for the
+#   model (§8.4). Values from the vLLM recipe and model card of each model. When the running
+#   server uses other settings, change them here and rerun the model gate
+#   (docs/agent-harness.md §5, B2).
+# - turkish_quality: result of the harness Turkish suite (D-07); null until it is measured.
+#
+# Checks: tests/deploy/test_model_registry.py.
+
+soc-fast:
+  target: hosted_vllm/deepseek-ai/DeepSeek-V4-Flash
+  prod_equivalent: hosted_vllm/deepseek-ai/DeepSeek-V4-Flash
+  capabilities: [tool_calling, structured_output]
+  parallel_tool_calls: false
+  context_window: 1048576
+  tool_parser: deepseek_v4
+  reasoning_parser: deepseek_v4
+  turkish_quality: null
+
+soc-reasoning:
+  target: hosted_vllm/deepseek-ai/DeepSeek-V4-Flash
+  prod_equivalent: hosted_vllm/deepseek-ai/DeepSeek-V4-Flash
+  capabilities: [tool_calling, structured_output]
+  parallel_tool_calls: false
+  context_window: 1048576
+  tool_parser: deepseek_v4
+  reasoning_parser: deepseek_v4
+  turkish_quality: null
+
+soc-verifier:
+  target: hosted_vllm/Qwen/Qwen3.5-122B-A10B
+  prod_equivalent: hosted_vllm/Qwen/Qwen3.5-122B-A10B
+  capabilities: [tool_calling, structured_output]
+  parallel_tool_calls: false
+  context_window: 262144
+  tool_parser: qwen3_coder
+  reasoning_parser: qwen3
+  turkish_quality: null
+
+soc-report:
+  target: hosted_vllm/Qwen/Qwen3.5-122B-A10B
+  prod_equivalent: hosted_vllm/Qwen/Qwen3.5-122B-A10B
+  capabilities: [tool_calling, structured_output]
+  parallel_tool_calls: false
+  context_window: 262144
+  tool_parser: qwen3_coder
+  reasoning_parser: qwen3
+  turkish_quality: null

@@ -1,0 +1,54 @@
+# LiteLLM proxy configuration for prod (docs/architecture.md §4, §19, §25).
+#
+# Only the existing on-prem vLLM servers are defined here; this file has no cloud provider and
+# no cloud key (D-11). The aliases go to the same models as in litellm.dev.yaml. The mapping is
+# a starting point that harness results may change (D-21); the fixed rule is that
+# soc-reasoning and soc-verifier go to different models.
+#
+# - Each endpoint comes from the environment of the prod deployment, including the /v1 path,
+#   for example http://<vllm-host>:8000/v1. The *_API_KEY variables are needed only when
+#   vLLM runs with --api-key.
+# - The model name after "hosted_vllm/" must match vLLM's --served-model-name.
+# - vLLM settings of each model (tool parser, context length): config/models/registry.prod.yaml.
+#
+# Checks: tests/deploy/test_litellm_config.py and tests/deploy/test_model_registry.py.
+
+model_list:
+  # Triage. Same model as soc-reasoning; soc-verifier checks both, so it uses the other model.
+  - model_name: soc-fast
+    litellm_params:
+      model: hosted_vllm/deepseek-ai/DeepSeek-V4-Flash
+      api_base: os.environ/VLLM_DEEPSEEK_V4_FLASH_API_BASE
+      api_key: os.environ/VLLM_DEEPSEEK_V4_FLASH_API_KEY
+
+  # Orchestrator, investigation, hunters, tuning.
+  - model_name: soc-reasoning
+    litellm_params:
+      model: hosted_vllm/deepseek-ai/DeepSeek-V4-Flash
+      api_base: os.environ/VLLM_DEEPSEEK_V4_FLASH_API_BASE
+      api_key: os.environ/VLLM_DEEPSEEK_V4_FLASH_API_KEY
+
+  # Independent verification: a different model family from soc-reasoning (§19).
+  - model_name: soc-verifier
+    litellm_params:
+      model: hosted_vllm/Qwen/Qwen3.5-122B-A10B
+      api_base: os.environ/VLLM_QWEN_122B_API_BASE
+      api_key: os.environ/VLLM_QWEN_122B_API_KEY
+
+  # Turkish report. Chosen by the harness Turkish suite (D-07); not measured yet.
+  - model_name: soc-report
+    litellm_params:
+      model: hosted_vllm/Qwen/Qwen3.5-122B-A10B
+      api_base: os.environ/VLLM_QWEN_122B_API_BASE
+      api_key: os.environ/VLLM_QWEN_122B_API_KEY
+
+general_settings:
+  # Clients (agents) send this key as a bearer token.
+  master_key: os.environ/LITELLM_MASTER_KEY
+
+environment_variables:
+  # Fail closed (D-11). LiteLLM sends a hosted_vllm request whose api_base is empty, for
+  # example because its environment variable is missing, to HOSTED_VLLM_API_BASE and, when that
+  # is empty too, to the public OpenAI API. A ".invalid" host never resolves (RFC 6761), so
+  # such a request fails instead. LiteLLM sets this value even if the variable already exists.
+  HOSTED_VLLM_API_BASE: http://vllm-api-base-not-set.invalid
