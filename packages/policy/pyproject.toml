@@ -3,7 +3,11 @@ name = "ais0c-policy"
 version = "0.1.0"
 description = "ToolIntent validation, AQL/CQL Guard, field filtering and untrusted-data wrapping."
 requires-python = ">=3.12"
-dependencies = ["ais0c-contracts"]
+dependencies = [
+    "ais0c-contracts",
+    # AQL Guard profile and result models; same version range as ais0c-contracts.
+    "pydantic>=2.12,<3",
+]
 
 [build-system]
 requires = ["uv_build>=0.12.22,<0.13.0"]

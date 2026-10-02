@@ -1,0 +1,27 @@
+# Sigma field name -> QRadar property mapping of the bank (docs/impl/hunt-pack.md, "Sigma alan
+# eşlemesi"). Loaded by ais0c_querylang.load_pipeline.
+#
+# This is a pySigma processing pipeline. It may contain only `field_name_mapping`
+# transformations without conditions; the loader rejects anything else. The mapping is
+# layered on top of the field mapping of IBM's pySigma-backend-QRadar-AQL: an entry here
+# overrides the backend's entry for the same Sigma field, and a Sigma field that is neither
+# here nor in the backend's mapping fails compilation with UnmappedFieldError. Nothing falls
+# back to a payload search.
+#
+# SAMPLE NAMES: the custom property names below are placeholders. Replace them with the
+# bank's real names after they are verified on the lab QRadar.
+
+name: ais0c QRadar field mapping
+priority: 10
+transformations:
+  - id: ais0c_field_mapping
+    type: field_name_mapping
+    mapping:
+      # Microsoft Windows Security Event Log
+      EventID: "Event ID"
+      SubjectUserName: username # QRadar's normalized user name is the subject account
+      TargetUserName: "Target Username"
+      Properties: "Object Properties"
+      ObjectType: "Object Type"
+      AccessMask: "Access Mask"
+      LogonType: "Logon Type"

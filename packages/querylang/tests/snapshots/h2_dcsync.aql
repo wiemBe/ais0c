@@ -1,0 +1,1 @@
+SELECT * FROM events WHERE devicetype=12 AND ("Event ID"=4662 AND (LOWER("Object Properties") LIKE '%1131f6aa-9c07-11d1-f79f-00c04fc2dcd2%' OR LOWER("Object Properties") LIKE '%1131f6ad-9c07-11d1-f79f-00c04fc2dcd2%' OR LOWER("Object Properties") LIKE '%89e95b76-444d-4c62-991a-0facbeda640c%')) AND (NOT(LOWER(username) LIKE '%$'))

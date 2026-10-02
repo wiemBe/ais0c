@@ -1,0 +1,18 @@
+# Hypothesis H2 of the example hunt pack in docs/impl/hunt-pack.md ("Örnek"), unchanged.
+title: Directory replication rights used by a non-machine account
+id: 7b8f3c0e-0000-4000-8000-000000000002
+status: experimental
+logsource:
+  product: windows
+  service: security
+detection:
+  selection:
+    EventID: 4662
+    Properties|contains:
+      - '1131f6aa-9c07-11d1-f79f-00c04fc2dcd2'   # DS-Replication-Get-Changes
+      - '1131f6ad-9c07-11d1-f79f-00c04fc2dcd2'   # DS-Replication-Get-Changes-All
+      - '89e95b76-444d-4c62-991a-0facbeda640c'   # DS-Replication-Get-Changes-In-Filtered-Set
+  filter_machine_accounts:
+    SubjectUserName|endswith: '$'
+  condition: selection and not filter_machine_accounts
+level: high
