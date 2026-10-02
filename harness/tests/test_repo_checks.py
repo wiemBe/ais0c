@@ -19,6 +19,8 @@ import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 LLM_CLIENT = "packages/agents/src/ais0c_agents/llm.py"
+# Declares the dependency that brings the client llm.py imports.
+LLM_CLIENT_DEPENDENCIES = "packages/agents/pyproject.toml"
 
 
 def load_pyproject() -> dict[str, Any]:
@@ -204,17 +206,23 @@ def test_provider_check_rejects_provider_names_in_paths(scratch_repo: Path) -> N
     assert f"prompts/{name}/v1.md" in result.stdout
 
 
-def test_provider_check_exempts_only_the_litellm_client(scratch_repo: Path) -> None:
+def test_provider_check_exempts_only_the_litellm_client_and_its_dependency(
+    scratch_repo: Path,
+) -> None:
     name = provider_names()[0]
     write(scratch_repo / LLM_CLIENT, f"from {name} import AsyncClient\n")
+    write(scratch_repo / LLM_CLIENT_DEPENDENCIES, f'dependencies = ["pydantic-ai-slim[{name}]"]\n')
     assert run_provider_check(scratch_repo).returncode == 0
 
     write(scratch_repo / "packages/agents/src/ais0c_agents/client.py", f"import {name}\n")
+    write(scratch_repo / "packages/activities/pyproject.toml", f'dependencies = ["{name}"]\n')
     result = run_provider_check(scratch_repo)
 
     assert result.returncode == 1
     assert "ais0c_agents/client.py" in result.stdout
+    assert "packages/activities/pyproject.toml" in result.stdout
     assert "llm.py" not in result.stdout
+    assert LLM_CLIENT_DEPENDENCIES not in result.stdout
 
 
 def test_provider_check_does_not_scan_model_config_or_docs(scratch_repo: Path) -> None:
