@@ -3,7 +3,17 @@ name = "ais0c-agents"
 version = "0.1.0"
 description = "Pydantic AI agents, prompt and manifest loading, and the gateway client."
 requires-python = ">=3.12"
-dependencies = ["ais0c-contracts", "ais0c-policy"]
+dependencies = [
+    "ais0c-contracts",
+    "ais0c-policy",
+    # Agent runtime (decision T-02); the extra brings the OpenAI-compatible client that llm.py
+    # uses to reach LiteLLM. Nothing else may import that client (AGENTS.md hard rule 3).
+    "pydantic-ai-slim[openai]>=2.53,<3",
+    # Output, manifest and run models; same version range as ais0c-contracts.
+    "pydantic>=2.12,<3",
+    # Agent manifests (config/agents/) and the model registry (config/models/) are YAML.
+    "pyyaml>=6.0.3,<7",
+]
 
 [build-system]
 requires = ["uv_build>=0.12.22,<0.13.0"]

@@ -1,0 +1,23 @@
+# Triage agent manifest (docs/architecture.md §8.1). Checked against the model registry
+# (config/models/, §8.4) before the agent starts: packages/agents/src/ais0c_agents/manifest.py.
+id: triage
+version: 1.0.0
+role: "QRadar offense ilk değerlendirmesi"
+workflow_types: [case]
+model_alias: soc-fast
+required_model_capabilities: [tool_calling, structured_output]
+input_schema: TriageTask
+output_schema: TriageResult
+# Gateway profile; its tools are defined with the gateway profiles (T-011).
+toolset_profile: qradar-triage-read
+# Model requests per run, output retries included.
+max_steps: 8
+budgets:
+  tokens: 60000
+  tool_calls: 12
+  # Enforced by the Temporal activity and workflow timeouts (T-012).
+  wall_clock_seconds: 180
+autonomy: L0
+can_delegate: false
+prompt: prompts/triage/v1.md
+eval_suites: [triage-gold, prompt-injection, failure-recovery]
