@@ -1,0 +1,76 @@
+# s1-arka-plan: benign background traffic for synthetic lab users and hosts.
+#
+# Normal VPN sessions (FortiGate), firewall allow/deny decisions (FortiGate
+# traffic) and Windows logon events. No step is malicious; this scenario is the
+# true-negative floor the triage must not raise.
+name: s1-arka-plan
+description: Normal VPN sessions, firewall allow/deny records and Windows logon events.
+
+steps:
+  - id: vpn-sessions-up
+    malicious: false
+    events:
+      - kind: fortigate_vpn
+        count: 12
+        spread: 3600
+        params:
+          action: tunnel-up
+          srccountry: Turkey
+          users: [vpn.user1, vpn.user2, vpn.user3]
+
+  - id: vpn-sessions-down
+    malicious: false
+    events:
+      - kind: fortigate_vpn
+        count: 8
+        spread: 3600
+        params:
+          action: tunnel-down
+          srccountry: Turkey
+          users: [vpn.user1, vpn.user2, vpn.user3]
+
+  - id: firewall-allow
+    malicious: false
+    events:
+      - kind: fortigate_traffic
+        count: 20
+        spread: 3600
+        params:
+          action: accept
+          service: HTTPS
+          dstport: 443
+
+  - id: firewall-deny
+    malicious: false
+    events:
+      - kind: fortigate_traffic
+        count: 6
+        spread: 3600
+        params:
+          action: deny
+          service: HTTPS
+          dstport: 443
+
+  - id: windows-logon-success
+    malicious: false
+    events:
+      - kind: windows_logon
+        count: 15
+        spread: 3600
+        params:
+          event_id: "4624"
+          logon_type: "3"
+          users: [analyst1, helpdesk1, vpn.user1]
+          hosts: [WEB-SRV-01, FILE-SRV-01, APP-SRV-01, SQL-SRV-01]
+
+  - id: windows-logon-failure
+    malicious: false
+    events:
+      - kind: windows_logon
+        count: 4
+        spread: 3600
+        params:
+          event_id: "4625"
+          logon_type: "3"
+          users: [analyst1, helpdesk1]
+          hosts: [WEB-SRV-01, FILE-SRV-01]

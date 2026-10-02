@@ -3,7 +3,9 @@ name = "ais0c-harness"
 version = "0.1.0"
 description = "Eval suites, scenarios, fixtures and the synthetic log generator."
 requires-python = ">=3.12"
-dependencies = ["pytest>=9.1.1,<10"]
+# pytest: the package ships a pytest plugin (ais0c_harness.pytest_plugin, T-001).
+# pyyaml: the log generator reads scenario definitions from harness/scenarios/*.yaml (T-008).
+dependencies = ["pytest>=9.1.1,<10", "pyyaml>=6.0.3,<7"]
 
 [build-system]
 requires = ["uv_build>=0.12.22,<0.13.0"]

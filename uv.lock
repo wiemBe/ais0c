@@ -110,10 +110,14 @@ version = "0.1.0"
 source = { editable = "harness" }
 dependencies = [
     { name = "pytest" },
+    { name = "pyyaml" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "pytest", specifier = ">=9.1.1,<10" }]
+requires-dist = [
+    { name = "pytest", specifier = ">=9.1.1,<10" },
+    { name = "pyyaml", specifier = ">=6.0.3,<7" },
+]
 
 [[package]]
 name = "ais0c-knowledge"
