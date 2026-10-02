@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.pyc
+*.egg-info/
+build/
+dist/
+
+# Virtual environment (uv sync creates it)
+.venv/
+
+# Tool caches
+.pytest_cache/
+.ruff_cache/
+.import_linter_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Secrets: environment files are never committed; *.env.example files with empty values are
+.env
+.env.*
+!.env.example
+
+# Frontend (apps/ui)
+node_modules/
+
+# Editors and OS
+.idea/
+.DS_Store

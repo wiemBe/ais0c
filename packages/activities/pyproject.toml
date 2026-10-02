@@ -1,0 +1,10 @@
+[project]
+name = "ais0c-activities"
+version = "0.1.0"
+description = "Temporal activities that run agents and deterministic jobs."
+requires-python = ">=3.12"
+dependencies = ["ais0c-contracts", "ais0c-storage", "ais0c-knowledge", "ais0c-querylang", "ais0c-policy", "ais0c-agents", "ais0c-executor"]
+
+[build-system]
+requires = ["uv_build>=0.12.22,<0.13.0"]
+build-backend = "uv_build"

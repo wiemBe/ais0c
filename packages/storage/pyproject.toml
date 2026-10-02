@@ -1,0 +1,10 @@
+[project]
+name = "ais0c-storage"
+version = "0.1.0"
+description = "PostgreSQL tables, repository functions and Alembic migrations."
+requires-python = ">=3.12"
+dependencies = ["ais0c-contracts"]
+
+[build-system]
+requires = ["uv_build>=0.12.22,<0.13.0"]
+build-backend = "uv_build"

@@ -1,0 +1,10 @@
+[project]
+name = "ais0c-worker"
+version = "0.1.0"
+description = "Temporal workers for the case, hunt and batch task queues."
+requires-python = ">=3.12"
+dependencies = ["ais0c-workflows", "ais0c-activities"]
+
+[build-system]
+requires = ["uv_build>=0.12.22,<0.13.0"]
+build-backend = "uv_build"

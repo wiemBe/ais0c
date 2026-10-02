@@ -1,0 +1,10 @@
+[project]
+name = "ais0c-api"
+version = "0.1.0"
+description = "FastAPI service behind the analyst UI."
+requires-python = ">=3.12"
+dependencies = ["ais0c-contracts", "ais0c-storage"]
+
+[build-system]
+requires = ["uv_build>=0.12.22,<0.13.0"]
+build-backend = "uv_build"

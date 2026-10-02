@@ -1,0 +1,37 @@
+# gitleaks configuration, picked up from the repository root. CI scans the whole git history
+# on every pull request (.github/workflows/ci.yml).
+#
+# The default rules stay on. The rules below add credentials this platform handles that the
+# defaults do not cover: QRadar tokens, the dev model gateway key and Falcon API secrets.
+# Fixtures are synthetic (AGENTS.md hard rule 6). If a synthetic value still matches a rule,
+# put a `gitleaks:allow` comment on that line instead of widening this file.
+
+title = "ais0c"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "qradar-sec-token"
+description = "QRadar authorized service token (SEC header or a QRadar token setting)"
+regex = '''(?i)(?:\bsec\b|qradar[\w.-]{0,20}?(?:token|key|secret))["']?\s*[:=]\s*["']?([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\b'''
+secretGroup = 1
+keywords = ["sec", "qradar"]
+
+    [[rules.allowlists]]
+    description = "All-zero placeholder token"
+    regexes = ['''^0{8}-0{4}-0{4}-0{4}-0{12}$''']
+
+[[rules]]
+id = "openrouter-api-key"
+description = "OpenRouter API key (dev model gateway)"
+regex = '''\b(sk-or-v1-[0-9a-f]{64})\b'''
+secretGroup = 1
+keywords = ["sk-or-v1-"]
+
+[[rules]]
+id = "crowdstrike-falcon-client-secret"
+description = "CrowdStrike Falcon API client secret"
+regex = '''(?i)falcon[\w.-]{0,20}?secret["']?\s*[:=]\s*["']?([a-z0-9]{40})\b'''
+secretGroup = 1
+keywords = ["falcon"]

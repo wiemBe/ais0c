@@ -1,0 +1,131 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  python:
+    name: Python checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version: "0.12.22"
+
+      - name: Install dependencies
+        id: sync
+        run: uv sync --locked
+
+      # The checks below also run when an earlier check failed, so one run reports every failure.
+      - name: ruff check
+        id: ruff-check
+        if: ${{ !cancelled() && steps.sync.outcome == 'success' }}
+        run: uv run ruff check --output-format=github
+
+      - name: ruff format
+        id: ruff-format
+        if: ${{ !cancelled() && steps.sync.outcome == 'success' }}
+        run: uv run ruff format --check
+
+      - name: pyright
+        id: pyright
+        if: ${{ !cancelled() && steps.sync.outcome == 'success' }}
+        run: uv run pyright
+
+      - name: pytest
+        id: pytest
+        if: ${{ !cancelled() && steps.sync.outcome == 'success' }}
+        run: uv run pytest
+
+      - name: import-linter
+        id: import-linter
+        if: ${{ !cancelled() && steps.sync.outcome == 'success' }}
+        run: uv run lint-imports
+
+  provider-names:
+    name: Provider name check
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Model provider names may appear only under config/litellm/ and config/models/, which are
+      # not scanned. The single exception is the LiteLLM client module. Rule:
+      # docs/impl/repo-structure.md ("Ek yasaklar") and AGENTS.md hard rule 3.
+      - name: Provider name check
+        id: provider-names
+        env:
+          PROVIDER_NAMES: openai|openrouter|deepseek|anthropic|qwen|glm|zhipu
+        run: |
+          pathspec=(packages services apps prompts harness ':(exclude)packages/agents/src/ais0c_agents/llm.py')
+          found=0
+
+          # File contents. git grep exits with 0 on a match, 1 on no match and >1 on error.
+          status=0
+          git grep --untracked -I -n -i -E "$PROVIDER_NAMES" -- "${pathspec[@]}" || status=$?
+          case "$status" in
+            0) found=1 ;;
+            1) ;;
+            *) echo "::error::git grep failed with exit code $status"; exit "$status" ;;
+          esac
+
+          # File and directory names.
+          files=$(git ls-files --cached --others --exclude-standard -- "${pathspec[@]}")
+          names=$(printf '%s\n' "$files" | grep -i -E "$PROVIDER_NAMES" || true)
+          if [ -n "$names" ]; then
+            printf '%s\n' "$names"
+            found=1
+          fi
+
+          if [ "$found" -eq 1 ]; then
+            echo "::error::Model provider names found. Use the model aliases (soc-fast, soc-reasoning, soc-verifier, soc-report, soc-embed); provider names belong only in config/litellm/ and config/models/."
+            exit 1
+          fi
+          echo "No model provider names found."
+
+  gitleaks:
+    name: Secret scan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # scan the whole history, not only the last commit
+          persist-credentials: false
+
+      - name: Install gitleaks
+        env:
+          GITLEAKS_VERSION: "8.30.1"
+          GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+        run: |
+          archive="$RUNNER_TEMP/gitleaks.tar.gz"
+          curl -sSfL -o "$archive" \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          echo "${GITLEAKS_SHA256}  ${archive}" | sha256sum --check --strict
+          tar -xzf "$archive" -C "$RUNNER_TEMP" gitleaks
+
+      # Reads .gitleaks.toml from the repository root. --redact keeps secrets out of the log.
+      - name: gitleaks
+        id: gitleaks
+        run: |
+          "$RUNNER_TEMP/gitleaks" git --redact --verbose --no-banner .

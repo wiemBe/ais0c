@@ -1,0 +1,10 @@
+[project]
+name = "ais0c-policy"
+version = "0.1.0"
+description = "ToolIntent validation, AQL/CQL Guard, field filtering and untrusted-data wrapping."
+requires-python = ">=3.12"
+dependencies = ["ais0c-contracts"]
+
+[build-system]
+requires = ["uv_build>=0.12.22,<0.13.0"]
+build-backend = "uv_build"

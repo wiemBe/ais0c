@@ -1,0 +1,339 @@
+# Workspace root of the ais0c Python monorepo.
+#
+# The root is virtual (no [project] table): `uv sync` installs every workspace member in
+# editable mode plus the `dev` dependency group. Package layout and the allowed imports
+# between packages: docs/impl/repo-structure.md.
+
+[tool.uv]
+required-version = ">=0.12.22"
+
+[tool.uv.workspace]
+members = [
+    "packages/*",
+    "services/api",
+    "services/worker",
+    "harness",
+]
+
+# Members inherit these sources, so an internal dependency is declared by name only.
+[tool.uv.sources]
+ais0c-activities = { workspace = true }
+ais0c-agents = { workspace = true }
+ais0c-contracts = { workspace = true }
+ais0c-executor = { workspace = true }
+ais0c-knowledge = { workspace = true }
+ais0c-policy = { workspace = true }
+ais0c-querylang = { workspace = true }
+ais0c-storage = { workspace = true }
+ais0c-workflows = { workspace = true }
+
+[dependency-groups]
+dev = [
+    "import-linter>=2.15,<3",
+    "pyright[nodejs]>=1.1.414,<1.2",
+    "pytest>=9.1.1,<10",
+    "pyyaml>=6.0.3,<7",
+    "ruff>=0.16.10,<0.17",
+]
+
+# --- ruff ---------------------------------------------------------------------------------
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+# Ruff would otherwise format Python blocks inside Markdown. Docs are human-owned and prompt
+# hashes depend on the exact bytes of prompts/*.md, so Markdown is left alone.
+extend-exclude = ["*.md"]
+
+[tool.ruff.lint]
+select = [
+    "E",     # pycodestyle errors
+    "W",     # pycodestyle warnings
+    "F",     # pyflakes
+    "I",     # isort
+    "B",     # flake8-bugbear: likely bugs
+    "UP",    # pyupgrade: syntax for the target Python version
+    "S",     # flake8-bandit: security smells
+    "RUF",   # ruff-specific rules
+    "ANN",   # flake8-annotations: public functions are fully typed (AGENTS.md)
+    "ASYNC", # blocking calls inside async code (FastAPI, Pydantic AI, Temporal activities)
+    "BLE",   # blind `except Exception`: security checks fail closed
+    "DTZ",   # naive datetimes: timestamps are timezone-aware UTC
+    "PT",    # flake8-pytest-style
+]
+ignore = [
+    "E501", # line length is left to the formatter
+]
+# User-facing text is Turkish; RUF001-RUF003 would report the dotless "ı" as a look-alike of "i".
+allowed-confusables = ["ı"]
+
+[tool.ruff.lint.per-file-ignores]
+"**/tests/**" = ["S101"] # pytest checks with plain assert
+
+[tool.ruff.lint.isort]
+known-first-party = ["ais0c_*"]
+
+# --- pyright ------------------------------------------------------------------------------
+
+[tool.pyright]
+pythonVersion = "3.12"
+venvPath = "."
+venv = ".venv"
+typeCheckingMode = "standard"
+strict = ["packages/contracts", "packages/policy"]
+
+# --- pytest -------------------------------------------------------------------------------
+
+[tool.pytest]
+minversion = "9.1"
+testpaths = ["packages", "services", "harness", "tests"]
+addopts = [
+    "-ra",
+    "--import-mode=importlib",
+    # Registers the `lab` marker. Lab tests are skipped unless QRADAR_LAB_URL and
+    # QRADAR_LAB_TOKEN are set.
+    "-p",
+    "ais0c_harness.pytest_plugin",
+]
+strict = true
+filterwarnings = ["error"]
+
+# --- import-linter ------------------------------------------------------------------------
+#
+# One `forbidden` contract per row of the dependency table in docs/impl/repo-structure.md.
+# Each lists every other ais0c package except the ones that row allows. The table is about
+# direct imports, so indirect ones are allowed (worker -> activities -> storage is fine);
+# every hop is checked by the importing package's own contract.
+#
+# harness is not in the table: it may import any package, but no package may import it.
+# services/mcp-gateway (ais0c_mcp_gateway) is added to root_packages and to every contract
+# by T-011.
+
+[tool.importlinter]
+root_packages = [
+    "ais0c_contracts",
+    "ais0c_policy",
+    "ais0c_querylang",
+    "ais0c_storage",
+    "ais0c_knowledge",
+    "ais0c_agents",
+    "ais0c_activities",
+    "ais0c_workflows",
+    "ais0c_executor",
+    "ais0c_api",
+    "ais0c_worker",
+    "ais0c_harness",
+]
+include_external_packages = true
+
+[[tool.importlinter.contracts]]
+name = "contracts imports no other ais0c package"
+type = "forbidden"
+source_modules = ["ais0c_contracts"]
+forbidden_modules = [
+    "ais0c_policy",
+    "ais0c_querylang",
+    "ais0c_storage",
+    "ais0c_knowledge",
+    "ais0c_agents",
+    "ais0c_activities",
+    "ais0c_workflows",
+    "ais0c_executor",
+    "ais0c_api",
+    "ais0c_worker",
+    "ais0c_harness",
+]
+allow_indirect_imports = true
+broken_contract_guidance = "Allowed imports: dependency table in docs/impl/repo-structure.md. Changing it is a human decision; do not loosen this contract."
+
+[[tool.importlinter.contracts]]
+name = "policy imports only contracts"
+type = "forbidden"
+source_modules = ["ais0c_policy"]
+forbidden_modules = [
+    "ais0c_querylang",
+    "ais0c_storage",
+    "ais0c_knowledge",
+    "ais0c_agents",
+    "ais0c_activities",
+    "ais0c_workflows",
+    "ais0c_executor",
+    "ais0c_api",
+    "ais0c_worker",
+    "ais0c_harness",
+]
+allow_indirect_imports = true
+broken_contract_guidance = "Allowed imports: dependency table in docs/impl/repo-structure.md. Changing it is a human decision; do not loosen this contract."
+
+[[tool.importlinter.contracts]]
+name = "querylang imports only contracts"
+type = "forbidden"
+source_modules = ["ais0c_querylang"]
+forbidden_modules = [
+    "ais0c_policy",
+    "ais0c_storage",
+    "ais0c_knowledge",
+    "ais0c_agents",
+    "ais0c_activities",
+    "ais0c_workflows",
+    "ais0c_executor",
+    "ais0c_api",
+    "ais0c_worker",
+    "ais0c_harness",
+]
+allow_indirect_imports = true
+broken_contract_guidance = "Allowed imports: dependency table in docs/impl/repo-structure.md. Changing it is a human decision; do not loosen this contract."
+
+[[tool.importlinter.contracts]]
+name = "storage imports only contracts"
+type = "forbidden"
+source_modules = ["ais0c_storage"]
+forbidden_modules = [
+    "ais0c_policy",
+    "ais0c_querylang",
+    "ais0c_knowledge",
+    "ais0c_agents",
+    "ais0c_activities",
+    "ais0c_workflows",
+    "ais0c_executor",
+    "ais0c_api",
+    "ais0c_worker",
+    "ais0c_harness",
+]
+allow_indirect_imports = true
+broken_contract_guidance = "Allowed imports: dependency table in docs/impl/repo-structure.md. Changing it is a human decision; do not loosen this contract."
+
+[[tool.importlinter.contracts]]
+name = "knowledge imports only contracts, storage, querylang"
+type = "forbidden"
+source_modules = ["ais0c_knowledge"]
+forbidden_modules = [
+    "ais0c_policy",
+    "ais0c_agents",
+    "ais0c_activities",
+    "ais0c_workflows",
+    "ais0c_executor",
+    "ais0c_api",
+    "ais0c_worker",
+    "ais0c_harness",
+]
+allow_indirect_imports = true
+broken_contract_guidance = "Allowed imports: dependency table in docs/impl/repo-structure.md. Changing it is a human decision; do not loosen this contract."
+
+[[tool.importlinter.contracts]]
+name = "agents imports only contracts, policy"
+type = "forbidden"
+source_modules = ["ais0c_agents"]
+forbidden_modules = [
+    "ais0c_querylang",
+    "ais0c_storage",
+    "ais0c_knowledge",
+    "ais0c_activities",
+    "ais0c_workflows",
+    "ais0c_executor",
+    "ais0c_api",
+    "ais0c_worker",
+    "ais0c_harness",
+]
+allow_indirect_imports = true
+broken_contract_guidance = "Allowed imports: dependency table in docs/impl/repo-structure.md. Changing it is a human decision; do not loosen this contract."
+
+[[tool.importlinter.contracts]]
+name = "executor imports only contracts, storage, policy"
+type = "forbidden"
+source_modules = ["ais0c_executor"]
+forbidden_modules = [
+    "ais0c_querylang",
+    "ais0c_knowledge",
+    "ais0c_agents",
+    "ais0c_activities",
+    "ais0c_workflows",
+    "ais0c_api",
+    "ais0c_worker",
+    "ais0c_harness",
+]
+allow_indirect_imports = true
+broken_contract_guidance = "Allowed imports: dependency table in docs/impl/repo-structure.md. Changing it is a human decision; do not loosen this contract."
+
+[[tool.importlinter.contracts]]
+name = "activities imports only contracts, storage, knowledge, querylang, policy, agents, executor"
+type = "forbidden"
+source_modules = ["ais0c_activities"]
+forbidden_modules = [
+    "ais0c_workflows",
+    "ais0c_api",
+    "ais0c_worker",
+    "ais0c_harness",
+]
+allow_indirect_imports = true
+broken_contract_guidance = "Allowed imports: dependency table in docs/impl/repo-structure.md. Changing it is a human decision; do not loosen this contract."
+
+[[tool.importlinter.contracts]]
+name = "workflows imports only contracts (activities are called by name)"
+type = "forbidden"
+source_modules = ["ais0c_workflows"]
+forbidden_modules = [
+    "ais0c_policy",
+    "ais0c_querylang",
+    "ais0c_storage",
+    "ais0c_knowledge",
+    "ais0c_agents",
+    "ais0c_activities",
+    "ais0c_executor",
+    "ais0c_api",
+    "ais0c_worker",
+    "ais0c_harness",
+]
+allow_indirect_imports = true
+broken_contract_guidance = "Allowed imports: dependency table in docs/impl/repo-structure.md. Changing it is a human decision; do not loosen this contract."
+
+[[tool.importlinter.contracts]]
+name = "services/api imports only contracts, storage"
+type = "forbidden"
+source_modules = ["ais0c_api"]
+forbidden_modules = [
+    "ais0c_policy",
+    "ais0c_querylang",
+    "ais0c_knowledge",
+    "ais0c_agents",
+    "ais0c_activities",
+    "ais0c_workflows",
+    "ais0c_executor",
+    "ais0c_worker",
+    "ais0c_harness",
+]
+allow_indirect_imports = true
+broken_contract_guidance = "Allowed imports: dependency table in docs/impl/repo-structure.md. Changing it is a human decision; do not loosen this contract."
+
+[[tool.importlinter.contracts]]
+name = "services/worker imports only workflows, activities"
+type = "forbidden"
+source_modules = ["ais0c_worker"]
+forbidden_modules = [
+    "ais0c_contracts",
+    "ais0c_policy",
+    "ais0c_querylang",
+    "ais0c_storage",
+    "ais0c_knowledge",
+    "ais0c_agents",
+    "ais0c_executor",
+    "ais0c_api",
+    "ais0c_harness",
+]
+allow_indirect_imports = true
+broken_contract_guidance = "Allowed imports: dependency table in docs/impl/repo-structure.md. Changing it is a human decision; do not loosen this contract."
+
+# "Ek yasaklar" in docs/impl/repo-structure.md and T-009: agents reach tools only through the
+# gateway client. Indirect imports through other ais0c packages are checked too.
+[[tool.importlinter.contracts]]
+name = "agents imports no MCP SDK and no QRadar or Falcon client"
+type = "forbidden"
+source_modules = ["ais0c_agents"]
+forbidden_modules = [
+    "mcp",
+    "fastmcp",
+    "qradar_mcp",
+    "falcon_mcp",
+    "falconpy",
+]
+broken_contract_guidance = "Agents reach QRadar and Falcon only through the gateway client (AGENTS.md hard rule 1)."
