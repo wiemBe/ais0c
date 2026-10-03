@@ -1,0 +1,54 @@
+# s2-dcsync: DCSync credential access on a domain controller (hunt pack H2).
+#
+# The malicious step is a non-machine account using directory-replication
+# rights (event 4662 with the DS-Replication GUIDs, ATT&CK T1003.006). The two
+# benign steps are the replication events the H2 Sigma rule must NOT flag: the
+# Azure AD Connect sync account (MSOL_) and the domain controllers' own machine
+# accounts. Scoring H2 means catching the attack step and leaving these alone.
+name: s2-dcsync
+description: Non-machine account pulling directory replication on a DC, with benign sync noise.
+
+steps:
+  - id: windows-logon-background
+    malicious: false
+    events:
+      - kind: windows_logon
+        count: 10
+        spread: 3600
+        params:
+          event_id: "4624"
+          logon_type: "3"
+          users: [analyst1, helpdesk1]
+          hosts: [DC-LAB-01, DC-LAB-02]
+
+  - id: benign-msol-replication
+    malicious: false
+    events:
+      - kind: windows_dcsync
+        count: 6
+        interval: 600
+        params:
+          account_kind: msol
+          hosts: [DC-LAB-01]
+
+  - id: benign-machine-replication
+    malicious: false
+    events:
+      - kind: windows_dcsync
+        count: 4
+        spread: 3600
+        params:
+          account_kind: machine
+          hosts: [DC-LAB-01, DC-LAB-02]
+
+  - id: dcsync-attack
+    malicious: true
+    technique: T1003.006
+    events:
+      - kind: windows_dcsync
+        count: 3
+        start: 2400
+        interval: 5
+        params:
+          account_kind: non_machine
+          hosts: [DC-LAB-01]

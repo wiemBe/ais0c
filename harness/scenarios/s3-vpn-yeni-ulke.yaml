@@ -1,0 +1,60 @@
+# s3-vpn-yeni-ulke: VPN access from a never-before-seen country, then internal
+# access by the same account (hunt pack H1).
+#
+# The baseline establishes vpn.user2 logging in only from Turkey. The malicious
+# steps are a single VPN tunnel-up from a new country (T1133) followed within a
+# scaled window by that account reaching internal hosts (T1078). Scoring H1
+# means correlating the foreign login with the internal access that follows.
+name: s3-vpn-yeni-ulke
+description: A user's first VPN login from a new country, followed by internal resource access.
+
+steps:
+  - id: vpn-known-country
+    malicious: false
+    events:
+      - kind: fortigate_vpn
+        count: 8
+        spread: 3600
+        params:
+          action: tunnel-up
+          srccountry: Turkey
+          users: [vpn.user2]
+
+  - id: internal-access-baseline
+    malicious: false
+    events:
+      - kind: windows_logon
+        count: 10
+        spread: 3600
+        params:
+          event_id: "4624"
+          logon_type: "3"
+          users: [vpn.user2, analyst1]
+          hosts: [FILE-SRV-01, APP-SRV-01]
+
+  - id: vpn-new-country
+    malicious: true
+    technique: T1133
+    events:
+      - kind: fortigate_vpn
+        count: 1
+        start: 3600
+        params:
+          action: tunnel-up
+          srccountry: Russian Federation
+          users: [vpn.user2]
+          remip_pool: [203.0.113.77]
+
+  - id: internal-access-after
+    malicious: true
+    technique: T1078
+    events:
+      - kind: windows_logon
+        count: 4
+        start: 3660
+        interval: 120
+        params:
+          event_id: "4624"
+          logon_type: "3"
+          users: [vpn.user2]
+          hosts: [FILE-SRV-01, SQL-SRV-01, DC-LAB-01]
