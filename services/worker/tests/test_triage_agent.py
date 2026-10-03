@@ -1,4 +1,4 @@
-"""The Triage agent inside the case worker (T-012 criteria 2, 4 and 5).
+"""The Triage agent inside the case worker (T-012 criteria 2, 4 and 5; T-016 criterion 3).
 
 The agent is the real one with TemporalDurability; its model is scripted and its gateway fake
 (worker_support). Each test runs the intake, lets the case's Triage run decide, and reads what
@@ -16,6 +16,7 @@ from temporalio.testing import WorkflowEnvironment
 from worker_support import (
     ESCAPE,
     INJECTION,
+    MODEL_REGISTRY,
     OFFENSE_EVIDENCE,
     Platform,
     RecordingGateway,
@@ -30,7 +31,7 @@ from worker_support import (
     unwrapped_tool_returns,
 )
 
-from ais0c_activities import CaseSettings, FakeOffenseSource, SessionFactory
+from ais0c_activities import CaseSettings, FakeOffenseSource, SessionFactory, load_model_releases
 from ais0c_contracts import CaseVerdict, Confidence, Level, RunStatus, TriageResult
 from ais0c_storage.enums import CaseStatus
 from ais0c_storage.models import AgentRunRow, CaseRow
@@ -102,6 +103,9 @@ async def test_the_triage_agent_runs_as_temporal_activities(
     )
     assert (run.tool_calls, run.ended_at is not None) == (1, True)
     assert run.tokens > 0
+    # T-016: the run carries the release of the model behind soc-fast, from the registry.
+    release = load_model_releases(MODEL_REGISTRY)["soc-fast"]
+    assert (run.model_release, run.model_target) == (release, release.target)
     # The task belongs to the case and to the case workflow's run.
     assert (run.task.case_id, run.task.parent_run_id) == ("case-70", case.run_id)
     assert run.task.budget.seconds == 420

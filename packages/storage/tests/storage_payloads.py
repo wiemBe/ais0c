@@ -14,8 +14,10 @@ from ais0c_contracts import (
     EvidenceRef,
     HuntReport,
     HuntRequest,
+    ModelRelease,
     NoteContent,
     Recommendation,
+    SkillRef,
     ToolIntent,
     TriageResult,
     TuningProposal,
@@ -152,6 +154,29 @@ def tool_intent(case_id: str | None = CASE_ID) -> ToolIntent:
             "cost_class": "low",
         }
     )
+
+
+def model_release(
+    alias: str = "soc-fast", engine_version: str | None = "0.11.2", target: str = "lab-model"
+) -> ModelRelease:
+    return ModelRelease.model_validate(
+        {
+            "alias": alias,
+            "target": target,
+            "artifact": "example-org/Model-A",
+            "artifact_hash": "3f1c2a9e8b7d6c5b4a39281706f5e4d3c2b1a090",
+            "quantization": "fp8",
+            "tokenizer": f"example-org/Model-A sha256:{'ab' * 32}",
+            "engine_version": engine_version,
+            "tool_parser": "example_parser",
+            "max_context": 131072,
+            "inference_params": {"forced_tool_choice": True, "temperature": 0.2, "seed": 7},
+        }
+    )
+
+
+def skill_ref() -> SkillRef:
+    return SkillRef(skill_id="dcsync", version="1.0.0", content_hash=f"sha256:{'0f' * 32}")
 
 
 def note_content(run_marker: str = "7f3a9c", evaluation_no: int = 1) -> NoteContent:

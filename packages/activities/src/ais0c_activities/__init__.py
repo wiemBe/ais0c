@@ -37,11 +37,20 @@ from ais0c_activities.grouping import (
     rule_set_hash,
 )
 from ais0c_activities.intake import CaseLauncher, IntakeActivities
+from ais0c_activities.model_release import (
+    ModelReleaseChange,
+    ModelReleaseError,
+    compare_model_releases,
+    load_model_releases,
+    model_release_changes,
+    parse_model_releases,
+)
 from ais0c_activities.offense_source import FakeOffenseSource, OffenseSource
 from ais0c_activities.priority import pre_priority
 from ais0c_activities.runtime import CaseRuntime, RuntimeConfigError, load_case_runtime
 from ais0c_activities.settings import CaseSettings
 from ais0c_activities.triage import TriageRunActivities, TriageRuntime
+from ais0c_contracts import ModelRelease
 
 
 def case_queue_activities(
@@ -88,6 +97,10 @@ __all__ = [
     "GroupingOutcome",
     "IntakeActivities",
     "IocMatcher",
+    # services/worker imports only workflows and activities (docs/impl/repo-structure.md).
+    "ModelRelease",
+    "ModelReleaseChange",
+    "ModelReleaseError",
     "NoIocMatcher",
     "OffenseSource",
     "OffenseSourceError",
@@ -101,10 +114,14 @@ __all__ = [
     "case_queue_activities",
     "catalog_floor",
     "catalog_mode",
+    "compare_model_releases",
     "decide_grouping",
     "floor_level",
     "load_case_runtime",
+    "load_model_releases",
     "match_critical_assets",
+    "model_release_changes",
+    "parse_model_releases",
     "pre_priority",
     "rule_set_hash",
     "sla_deadline",

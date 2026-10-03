@@ -8,7 +8,8 @@ so the gateway records the call under the run (T-19).
 
 `TriageRunActivities` record the run in `agent_runs`: `begin_triage_run` before the agent
 starts, because the gateway takes calls only for a recorded run in progress, and
-`finish_triage_run` when it has ended.
+`finish_triage_run` when it has ended. The record carries the release of the model behind the
+agent's alias (T-24), from the model registry.
 
 Activity settings of the agent's own activities:
 
@@ -54,6 +55,7 @@ from ais0c_contracts import (
     AgentTask,
     Budget,
     EnrichmentContext,
+    ModelRelease,
     OffenseSnapshot,
     RunStatus,
     TimeWindow,
@@ -94,8 +96,8 @@ MIN_WINDOW: Final = timedelta(minutes=1)
 @dataclass(frozen=True)
 class TriageRuntime:
     agent: TriageAgent
-    model_target: str
-    """What the model alias points to, from the model registry; recorded with each run."""
+    model_release: ModelRelease
+    """The model behind the agent's alias, from the model registry; recorded with each run."""
     temporal_activities: tuple[Callable[..., object], ...]
     """The agent's model and tool activities, as TemporalDurability registered them."""
 
@@ -108,9 +110,17 @@ class TriageRuntime:
         profile: ToolsetProfile,
         gateway: GatewayClient,
         model: Model,
-        model_target: str,
+        model_release: ModelRelease,
     ) -> Self:
-        """Build the durable agent; outside any workflow, before the worker starts."""
+        """Build the durable agent; outside any workflow, before the worker starts.
+
+        `model_release` is the release of the manifest's model alias.
+        """
+        if model_release.alias != manifest.model_alias:
+            raise ValueError(
+                f"the model release is for {model_release.alias}, the agent uses "
+                f"{manifest.model_alias}"
+            )
         agent = build_triage_agent(
             manifest=manifest,
             prompt=prompt,
@@ -128,7 +138,7 @@ class TriageRuntime:
             raise RuntimeError("the Triage agent has no TemporalDurability capability")
         return cls(
             agent=agent,
-            model_target=model_target,
+            model_release=model_release,
             temporal_activities=tuple(durability.temporal_activities),
         )
 
@@ -207,7 +217,8 @@ class TriageRunActivities:
         parent_run_id: str,
         offense: OffenseSnapshot,
     ) -> tuple[AgentTask, str]:
-        """Record the run as started; returns its AgentTask and a fresh `untrusted_*` nonce.
+        """Record the run as started, with its model release; returns its AgentTask and a fresh
+        `untrusted_*` nonce.
 
         A retry finds the run it recorded and returns the same task.
         """
@@ -237,9 +248,10 @@ class TriageRunActivities:
                 task=task,
                 prompt_version=self._runtime.agent.prompt.version,
                 model_alias=manifest.model_alias,
-                model_target=self._runtime.model_target,
+                model_target=self._runtime.model_release.target,
                 toolset_profile=self._runtime.agent.profile.name,
                 started_at=now,
+                model_release=self._runtime.model_release,
             )
         return task, new_nonce()
 

@@ -34,7 +34,13 @@ from temporalio import activity
 from temporalio.client import WorkflowHandle, WorkflowHistory
 from temporalio.testing import WorkflowEnvironment
 
-from ais0c_activities import CaseSettings, FakeOffenseSource, SessionFactory, TriageRuntime
+from ais0c_activities import (
+    CaseSettings,
+    FakeOffenseSource,
+    SessionFactory,
+    TriageRuntime,
+    load_model_releases,
+)
 from ais0c_agents import (
     FakeGatewayClient,
     ToolsetProfile,
@@ -253,7 +259,7 @@ def triage_runtime(
         profile=TRIAGE_PROFILE,
         gateway=gateway,
         model=model.model,
-        model_target="scripted",
+        model_release=load_model_releases(MODEL_REGISTRY)[manifest.model_alias],
     )
 
 

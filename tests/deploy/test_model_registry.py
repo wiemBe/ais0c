@@ -18,6 +18,8 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 ENVIRONMENTS = ["dev", "prod"]
 # Field names of architecture §8.4. tool_parser is part of the registry (§8.4 rules);
 # reasoning_parser records the other vLLM setting that changes tool calls and structured output.
+# artifact to inference_params are the model release fields of T-016 (ModelRelease, T-24);
+# packages/activities/tests/test_model_release.py checks them further.
 FIELDS: dict[str, tuple[type, ...]] = {
     "target": (str,),
     "prod_equivalent": (str,),
@@ -28,6 +30,12 @@ FIELDS: dict[str, tuple[type, ...]] = {
     "tool_parser": (str, type(None)),
     "reasoning_parser": (str, type(None)),
     "turkish_quality": (int, float, type(None)),
+    "artifact": (str,),
+    "artifact_hash": (str, type(None)),
+    "quantization": (str, type(None)),
+    "tokenizer": (str, type(None)),
+    "engine_version": (str, type(None)),
+    "inference_params": (dict,),
 }
 # Values agent manifests use in required_model_capabilities (architecture §8.1).
 CAPABILITIES = {"tool_calling", "structured_output"}

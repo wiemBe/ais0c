@@ -10,6 +10,11 @@ dependencies = [
     "temporalio[pydantic]>=1.34,<2",
     # PydanticAIPlugin: the data converter and sandbox settings agent runs need (decision T-02).
     "pydantic-ai-slim[temporal]>=2.53,<3",
+    # `model_release verify` (T-016): the vLLM requests, the LiteLLM configuration and vLLM's
+    # answers. Same ranges as the other members.
+    "httpx2>=2.13.1,<3",
+    "pyyaml>=6.0.3,<7",
+    "pydantic>=2.12,<3",
 ]
 
 [dependency-groups]

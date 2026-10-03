@@ -1,4 +1,5 @@
-"""`alembic upgrade head` and `alembic downgrade base` on an empty database (criterion 1).
+"""`alembic upgrade head` and `alembic downgrade base` on an empty database (T-004 criterion
+1), and revision 0002 on a database that holds runs (T-016 criterion 2).
 
 The tests run the real `alembic` command in packages/storage, so alembic.ini, env.py and the
 AIS0C_DATABASE_URL lookup are covered too.
@@ -59,7 +60,7 @@ def test_upgrade_head_then_downgrade_base(server: Server, empty_database: str) -
     upgraded = alembic("upgrade", "head", url=url)
     assert upgraded.returncode == 0, upgraded.stderr
     current = alembic("current", url=url)
-    assert "0001 (head)" in current.stdout
+    assert "0002 (head)" in current.stdout
     objects = public_objects(url)
     assert set(Base.metadata.tables) <= objects["relations"]
     assert objects["functions"] == {"audit_log_append_only"}
@@ -113,6 +114,44 @@ def test_offline_mode_prints_the_sql(server: Server, empty_database: str) -> Non
     assert printed.returncode == 0, printed.stderr
     assert "CREATE TABLE offenses_seen" in printed.stdout
     assert "CREATE TRIGGER audit_log_append_only" in printed.stdout
+    assert "ALTER TABLE agent_runs ADD COLUMN model_release JSONB" in printed.stdout
+
+
+def test_revision_0002_adds_skill_and_model_release_to_recorded_runs(
+    server: Server, empty_database: str
+) -> None:
+    """A run recorded before 0002 keeps its row and gets NULL in both new columns; the
+    downgrade drops the columns and keeps the row."""
+    url = server.app_url(empty_database)
+    first = alembic("upgrade", "0001", url=url)
+    assert first.returncode == 0, first.stderr
+    engine = create_sync_engine(url)
+    try:
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "INSERT INTO agent_runs (run_id, agent_id, agent_version, prompt_version,"
+                    " model_alias, model_target, toolset_profile, task, tokens, tool_calls,"
+                    " started_at) VALUES ('run-1', 'triage', '1', 'v1', 'soc-fast', 'lab-model',"
+                    " 'qradar-triage-read', '{}', 0, 0, now())"
+                )
+            )
+
+        upgraded = alembic("upgrade", "head", url=url)
+        assert upgraded.returncode == 0, upgraded.stderr
+        with engine.connect() as connection:
+            row = connection.execute(text("SELECT skill, model_release FROM agent_runs")).one()
+        assert tuple(row) == (None, None)
+
+        downgraded = alembic("downgrade", "0001", url=url)
+        assert downgraded.returncode == 0, downgraded.stderr
+        with engine.connect() as connection:
+            columns = {column["name"] for column in inspect(connection).get_columns("agent_runs")}
+            runs = connection.scalar(text("SELECT count(*) FROM agent_runs"))
+        assert {"skill", "model_release"}.isdisjoint(columns)
+        assert runs == 1
+    finally:
+        engine.dispose()
 
 
 def test_without_a_database_url_nothing_connects() -> None:

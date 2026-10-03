@@ -4,9 +4,10 @@ from datetime import datetime
 
 import pydantic_core
 from sqlalchemy import select, update
+from sqlalchemy.dialects.postgresql import distinct_on
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ais0c_contracts import AgentTask, RunStatus, ToolIntent, ToolStatus
+from ais0c_contracts import AgentTask, ModelRelease, RunStatus, ToolIntent, ToolStatus
 from ais0c_storage.columns import revalidate
 from ais0c_storage.enums import PolicyDecision
 from ais0c_storage.models import AGENT_RUN_RESULT, AgentRunResult, AgentRunRow, ToolCallRow
@@ -29,13 +30,20 @@ async def start_agent_run(
     model_target: str,
     toolset_profile: str,
     started_at: datetime,
+    model_release: ModelRelease | None = None,
 ) -> AgentRunRow:
     """Record a run when it starts, so its tool calls can reference it.
 
-    The agent, its version and the case or hunt are taken from `task`. `status`, `result` and
-    `ended_at` stay NULL until `finish_agent_run`. Raises `DuplicateError` if the run exists.
+    The agent, its version and the case or hunt are taken from `task`. `model_release` is the
+    real identity of the model behind `model_alias` (T-24): an agent run passes the release of
+    its alias, a run that uses no model passes none. `status`, `result` and `ended_at` stay
+    NULL until `finish_agent_run`. Raises `DuplicateError` if the run exists.
     """
     task = revalidate(AgentTask, task)
+    if model_release is not None:
+        model_release = revalidate(ModelRelease, model_release)
+        if (model_release.alias, model_release.target) != (model_alias, model_target):
+            raise ValueError("model_release is not the release of model_alias and model_target")
     values = dict(
         run_id=run_id,
         case_id=task.case_id,
@@ -51,6 +59,7 @@ async def start_agent_run(
         result=None,
         tokens=0,
         tool_calls=0,
+        model_release=model_release,
         started_at=started_at,
         ended_at=None,
     )
@@ -107,6 +116,22 @@ async def list_agent_runs(
         statement = statement.where(AgentRunRow.hunt_id == hunt_id)
     statement = statement.order_by(AgentRunRow.started_at, AgentRunRow.run_id)
     return await fetch_all(session, statement)
+
+
+async def latest_model_releases(session: AsyncSession) -> dict[str, ModelRelease]:
+    """The model release of the last started run of each model alias, by alias.
+
+    Runs without a release (those that use no model) are left out, and so is an alias none of
+    whose runs has one.
+    """
+    statement = (
+        select(AgentRunRow.model_alias, AgentRunRow.model_release)
+        .where(AgentRunRow.model_release.is_not(None))
+        .ext(distinct_on(AgentRunRow.model_alias))
+        .order_by(AgentRunRow.model_alias, AgentRunRow.started_at.desc(), AgentRunRow.run_id.desc())
+    )
+    rows = await session.execute(statement)
+    return {alias: release for alias, release in rows if release is not None}
 
 
 async def record_tool_call(

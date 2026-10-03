@@ -145,6 +145,8 @@ DOC: dict[str, Table] = {
         "result jsonb?",
         "tokens int",
         "tool_calls int",
+        "skill jsonb?",
+        "model_release jsonb?",
         "started_at timestamptz",
         # Not in data-model.md: nullable while the run is in progress.
         "ended_at timestamptz?",

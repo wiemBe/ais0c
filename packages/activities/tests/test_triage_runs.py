@@ -1,5 +1,6 @@
 """The Triage runtime and the run records: the agent's TemporalDurability activities, the run's
-AgentTask, `begin_triage_run` and `finish_triage_run` (T-012 criteria 2 and 3)."""
+AgentTask, `begin_triage_run` and `finish_triage_run` (T-012 criteria 2 and 3), and the model
+release each run records (T-016 criterion 3)."""
 
 import re
 from datetime import UTC, datetime, timedelta
@@ -12,7 +13,12 @@ from temporalio.exceptions import ApplicationError
 from temporalio.testing import ActivityEnvironment
 
 import ais0c_activities.gateway
-from ais0c_activities import SessionFactory, TriageRunActivities, TriageRuntime
+from ais0c_activities import (
+    SessionFactory,
+    TriageRunActivities,
+    TriageRuntime,
+    load_model_releases,
+)
 from ais0c_agents import (
     FakeGatewayClient,
     ToolsetProfile,
@@ -21,14 +27,17 @@ from ais0c_agents import (
     load_manifest,
     load_model_registry,
 )
-from ais0c_contracts import CostClass, RunStatus, TimeWindow, Usage
+from ais0c_contracts import CostClass, ModelRelease, RunStatus, TimeWindow, Usage
 from ais0c_storage.repositories import get_agent_run
 
 pytestmark = pytest.mark.anyio
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
+MODEL_REGISTRY = REPO_ROOT / "config/models/registry.dev.yaml"
 NOW = datetime(2026, 10, 3, 12, 0, tzinfo=UTC)
 RUN_ID = "case-7-triage-1"
+# The release of the Triage manifest's alias.
+RELEASE = load_model_releases(MODEL_REGISTRY)["soc-fast"]
 
 PROFILE = ToolsetProfile(
     name="qradar-triage-read",
@@ -45,10 +54,11 @@ PROFILE = ToolsetProfile(
 )
 
 
-def runtime(gateway: FakeGatewayClient | None = None) -> TriageRuntime:
+def runtime(
+    gateway: FakeGatewayClient | None = None, model_release: ModelRelease = RELEASE
+) -> TriageRuntime:
     manifest = load_manifest(
-        REPO_ROOT / "config/agents/triage.yaml",
-        load_model_registry(REPO_ROOT / "config/models/registry.dev.yaml"),
+        REPO_ROOT / "config/agents/triage.yaml", load_model_registry(MODEL_REGISTRY)
     )
     return TriageRuntime.build(
         manifest=manifest,
@@ -56,7 +66,7 @@ def runtime(gateway: FakeGatewayClient | None = None) -> TriageRuntime:
         profile=PROFILE,
         gateway=gateway or FakeGatewayClient(),
         model=TestModel(),
-        model_target="test-target",
+        model_release=model_release,
     )
 
 
@@ -76,6 +86,13 @@ def test_the_agent_brings_its_model_and_tool_activities() -> None:
         "agent__triage__model_request",
         "agent__triage__toolset__gateway-qradar-triage-read__call_tool",
     } <= names
+
+
+def test_the_runtime_takes_only_the_release_of_the_agents_alias() -> None:
+    other = load_model_releases(MODEL_REGISTRY)["soc-verifier"]
+
+    with pytest.raises(ValueError, match="the model release is for soc-verifier"):
+        runtime(model_release=other)
 
 
 def test_the_task_carries_the_manifests_budget_and_the_offenses_window() -> None:
@@ -142,9 +159,11 @@ async def test_begin_records_the_run_before_the_agent_calls_the_gateway(
     )
     assert (row.model_alias, row.model_target, row.toolset_profile) == (
         "soc-fast",
-        "test-target",
+        RELEASE.target,
         "qradar-triage-read",
     )
+    # T-016: the release of the model behind the alias, as the registry gives it.
+    assert row.model_release == RELEASE
     # In progress: the gateway accepts calls for it.
     assert (row.status, row.ended_at, row.started_at) == (None, None, NOW)
     assert row.task == task

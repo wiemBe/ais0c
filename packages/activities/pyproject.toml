@@ -19,7 +19,7 @@ dependencies = [
     "pydantic-ai-slim[temporal]>=2.53,<3",
     # Run records and gateway results; same range as ais0c-contracts.
     "pydantic>=2.12,<3",
-    # The model registry's `target`, recorded with each agent run.
+    # The model registry's model releases, recorded with each agent run (T-016).
     "pyyaml>=6.0.3,<7",
 ]
 

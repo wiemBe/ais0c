@@ -1,8 +1,8 @@
 """Building the case worker's runtime from the environment (T-012 criterion 6).
 
 The model comes from the Triage manifest's alias and goes to LiteLLM: the code names no model
-provider, and what the alias points to is read from the model registry. A stand-in gateway
-serves the profile's tools over HTTP, as `GET /v1/tools` does.
+provider, and what the alias points to, its model release (T-016), is read from the model
+registry. A stand-in gateway serves the profile's tools over HTTP, as `GET /v1/tools` does.
 """
 
 import json
@@ -16,8 +16,14 @@ import yaml
 from pydantic_ai.models import Model
 from sqlalchemy import URL
 
-from ais0c_activities import GatewayOffenseSource, RuntimeConfigError, load_case_runtime
-from ais0c_activities.runtime import model_target, read_token
+from ais0c_activities import (
+    GatewayOffenseSource,
+    ModelReleaseError,
+    RuntimeConfigError,
+    load_case_runtime,
+    load_model_releases,
+)
+from ais0c_activities.runtime import read_token
 from ais0c_agents import GatewayUnavailableError, ToolsetProfile, ToolSpec
 from ais0c_contracts import CostClass
 
@@ -110,7 +116,11 @@ async def test_the_runtime_uses_the_manifests_alias_through_litellm(
         assert model.base_url == "http://127.0.0.1:4000/v1/"
         # What the alias points to is the registry's business, recorded with each run.
         registry = yaml.safe_load((REPO_ROOT / REGISTRY).read_text(encoding="utf-8"))
-        assert runtime.triage.model_target == registry["soc-fast"]["target"]
+        releases = load_model_releases(REPO_ROOT / REGISTRY)
+        assert runtime.triage.model_release == releases["soc-fast"]
+        assert runtime.triage.model_release.target == registry["soc-fast"]["target"]
+        # Every alias's release, for the worker's start-up check.
+        assert runtime.model_releases == releases
         # The tools are the gateway's, read with the profile's token.
         assert agent.profile == PROFILE
         assert gateway.requests == [("/v1/tools", f"Bearer {TOKEN}")]
@@ -161,13 +171,19 @@ async def test_an_unreachable_gateway_stops_the_runtime(
         await load_case_runtime(environ)
 
 
-def test_the_model_target_comes_from_the_registry(tmp_path: Path) -> None:
-    registry = tmp_path / "registry.yaml"
-    registry.write_text(json.dumps({"soc-fast": {"target": "example/model-a"}}), encoding="utf-8")
+async def test_a_registry_without_the_release_fields_stops_the_runtime(
+    environ: dict[str, str], gateway: StubGateway, tmp_path: Path
+) -> None:
+    """An agent run must not start without its model release (T-016)."""
+    registry = yaml.safe_load((REPO_ROOT / REGISTRY).read_text(encoding="utf-8"))
+    del registry["soc-fast"]["artifact"]
+    path = tmp_path / "registry.yaml"
+    path.write_text(json.dumps(registry), encoding="utf-8")
+    environ["AIS0C_MODEL_REGISTRY"] = str(path)
 
-    assert model_target(registry, "soc-fast") == "example/model-a"
-    with pytest.raises(RuntimeConfigError, match="no target for soc-report"):
-        model_target(registry, "soc-report")
+    with pytest.raises(ModelReleaseError, match=r"soc-fast\.artifact"):
+        await load_case_runtime(environ)
+    assert gateway.requests == []
 
 
 def test_a_token_is_read_without_surrounding_space(tmp_path: Path) -> None:

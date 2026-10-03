@@ -45,9 +45,11 @@ from ais0c_contracts import (
     HuntRequest,
     InvestigationResult,
     Level,
+    ModelRelease,
     QAReason,
     Recommendation,
     RunStatus,
+    SkillRef,
     ToolIntent,
     ToolStatus,
     TriageResult,
@@ -216,6 +218,9 @@ class AgentRunRow(Base):
     result: Mapped[AgentRunResult | None] = mapped_column(ContractJSONB(AGENT_RUN_RESULT))
     tokens: Mapped[int]
     tool_calls: Mapped[int]
+    skill: Mapped[SkillRef | None] = mapped_column(ContractJSONB(SkillRef))
+    # NULL for a run that uses no model: the pseudo agent runs of platform code (D-33).
+    model_release: Mapped[ModelRelease | None] = mapped_column(ContractJSONB(ModelRelease))
     started_at: Mapped[datetime]
     ended_at: Mapped[datetime | None]
 

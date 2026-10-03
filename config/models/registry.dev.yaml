@@ -18,7 +18,20 @@
 #   serving the request decides.
 # - turkish_quality: result of the harness Turkish suite (D-07); null until it is measured.
 #
-# Checks: tests/deploy/test_model_registry.py.
+# Model release (T-24, architecture §19; ModelRelease in docs/impl/contracts.md). Every agent
+# run records the release of its alias in agent_runs.model_release. A release that differs
+# from the last one recorded for the alias is a new model release: the model gate runs again
+# (docs/agent-harness.md §5, B2). The release is built from the entry:
+# - alias is the key; target and tool_parser are the fields above; max_context is
+#   context_window.
+# - artifact: the model ID OpenRouter serves. OpenRouter does not show which weights, engine
+#   or settings its provider runs, so the fields after it are null in dev.
+# - inference_params: sampling parameters (temperature, top_p, ...) set for the alias. Neither
+#   the platform nor LiteLLM sets any; the provider's defaults apply. The release's
+#   inference_params also hold the request settings above (parallel_tool_calls when not null,
+#   forced_tool_choice) and reasoning_parser when not null.
+#
+# Checks: tests/deploy/test_model_registry.py and packages/activities/tests/test_model_release.py.
 
 soc-fast:
   target: openrouter/deepseek/deepseek-v4-flash
@@ -27,9 +40,15 @@ soc-fast:
   parallel_tool_calls: null
   forced_tool_choice: true
   context_window: 1048576
-  tool_parser: null
-  reasoning_parser: null
+  tool_parser: null  # chosen by the OpenRouter provider; not visible
+  reasoning_parser: null  # chosen by the OpenRouter provider; not visible
   turkish_quality: null
+  artifact: deepseek/deepseek-v4-flash
+  artifact_hash: null  # OpenRouter does not show which weights the provider runs
+  quantization: null  # varies with the provider OpenRouter picks for each request
+  tokenizer: null  # the provider's tokenizer files are not visible through OpenRouter
+  engine_version: null  # the provider's inference engine is not visible through OpenRouter
+  inference_params: {}
 
 soc-reasoning:
   target: openrouter/stealth/space-bunny-alpha
@@ -38,9 +57,15 @@ soc-reasoning:
   parallel_tool_calls: null
   forced_tool_choice: false
   context_window: 1000000
-  tool_parser: null
-  reasoning_parser: null
+  tool_parser: null  # chosen by the OpenRouter provider; not visible
+  reasoning_parser: null  # chosen by the OpenRouter provider; not visible
   turkish_quality: null
+  artifact: stealth/space-bunny-alpha
+  artifact_hash: null  # OpenRouter does not show which weights the provider runs
+  quantization: null  # set by the provider; not visible for a stealth model
+  tokenizer: null  # the provider's tokenizer files are not visible through OpenRouter
+  engine_version: null  # the provider's inference engine is not visible through OpenRouter
+  inference_params: {}
 
 soc-verifier:
   target: openrouter/qwen/qwen3.5-122b-a10b
@@ -49,9 +74,15 @@ soc-verifier:
   parallel_tool_calls: false
   forced_tool_choice: true
   context_window: 262144
-  tool_parser: null
-  reasoning_parser: null
+  tool_parser: null  # chosen by the OpenRouter provider; not visible
+  reasoning_parser: null  # chosen by the OpenRouter provider; not visible
   turkish_quality: null
+  artifact: qwen/qwen3.5-122b-a10b
+  artifact_hash: null  # OpenRouter does not show which weights the provider runs
+  quantization: null  # varies with the provider OpenRouter picks for each request
+  tokenizer: null  # the provider's tokenizer files are not visible through OpenRouter
+  engine_version: null  # the provider's inference engine is not visible through OpenRouter
+  inference_params: {}
 
 soc-report:
   target: openrouter/stealth/space-bunny-alpha
@@ -60,6 +91,12 @@ soc-report:
   parallel_tool_calls: null
   forced_tool_choice: false
   context_window: 1000000
-  tool_parser: null
-  reasoning_parser: null
+  tool_parser: null  # chosen by the OpenRouter provider; not visible
+  reasoning_parser: null  # chosen by the OpenRouter provider; not visible
   turkish_quality: null
+  artifact: stealth/space-bunny-alpha
+  artifact_hash: null  # OpenRouter does not show which weights the provider runs
+  quantization: null  # set by the provider; not visible for a stealth model
+  tokenizer: null  # the provider's tokenizer files are not visible through OpenRouter
+  engine_version: null  # the provider's inference engine is not visible through OpenRouter
+  inference_params: {}

@@ -64,6 +64,7 @@ from ais0c_storage.repositories.offenses import (
 from ais0c_storage.repositories.runs import (
     finish_agent_run,
     get_agent_run,
+    latest_model_releases,
     list_agent_runs,
     list_tool_calls,
     record_tool_call,
@@ -100,6 +101,7 @@ __all__ = [
     "get_offense_group",
     "get_offense_seen",
     "increment_offense_group",
+    "latest_model_releases",
     "list_agent_runs",
     "list_audit",
     "list_cases",
