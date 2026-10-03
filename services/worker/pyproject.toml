@@ -3,7 +3,18 @@ name = "ais0c-worker"
 version = "0.1.0"
 description = "Temporal workers for the case, hunt and batch task queues."
 requires-python = ">=3.12"
-dependencies = ["ais0c-workflows", "ais0c-activities"]
+dependencies = [
+    "ais0c-workflows",
+    "ais0c-activities",
+    # Worker, client and Schedules.
+    "temporalio[pydantic]>=1.34,<2",
+]
+
+[dependency-groups]
+dev = [
+    "anyio>=4.15,<5",
+    "testcontainers>=4.15,<5",
+]
 
 [build-system]
 requires = ["uv_build>=0.12.22,<0.13.0"]
