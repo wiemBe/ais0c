@@ -128,6 +128,14 @@ class TuningProposalStatus(StrEnum):
     REJECTED = "rejected"
 
 
+class PlatformFlag(StrEnum):
+    """`platform_flags.name`: the switches the platform knows (T-23)."""
+
+    # The kill switch. While it is off, the executor writes nothing outside the platform: no
+    # QRadar note, no e-mail. Shadow mode is this flag being off.
+    WRITES_ENABLED = "writes_enabled"
+
+
 class ActorKind(StrEnum):
     """`audit_log.actor_kind`."""
 

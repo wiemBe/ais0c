@@ -42,6 +42,12 @@ from ais0c_storage.repositories.evidence import (
     record_evidence,
     to_evidence_ref,
 )
+from ais0c_storage.repositories.flags import (
+    PLATFORM_FLAG_AUDIT_ACTION,
+    PLATFORM_FLAG_OBJECT_TYPE,
+    get_platform_flag,
+    set_platform_flag,
+)
 from ais0c_storage.repositories.notes import get_note, list_notes, record_note, update_note_status
 from ais0c_storage.repositories.notifications import (
     get_notification,
@@ -74,6 +80,8 @@ from ais0c_storage.repositories.runs import (
 __all__ = [
     "CRITICAL_ASSET_LEVELS",
     "EXCERPT_RETENTION",
+    "PLATFORM_FLAG_AUDIT_ACTION",
+    "PLATFORM_FLAG_OBJECT_TYPE",
     "SyncedLogSource",
     "SyncedRule",
     "accept_catalog_rule_draft",
@@ -100,6 +108,7 @@ __all__ = [
     "get_notification",
     "get_offense_group",
     "get_offense_seen",
+    "get_platform_flag",
     "increment_offense_group",
     "latest_model_releases",
     "list_agent_runs",
@@ -120,6 +129,7 @@ __all__ = [
     "set_case_run_id",
     "set_case_status",
     "set_catalog_rule_draft",
+    "set_platform_flag",
     "start_agent_run",
     "sync_catalog_log_sources",
     "sync_catalog_rules",

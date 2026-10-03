@@ -1,8 +1,8 @@
 """Tables of docs/impl/data-model.md as SQLAlchemy ORM classes.
 
 Every table of the document is here except `knowledge_chunks` (embedding model and vector size
-are open). The schema itself is created by the Alembic migrations; a test checks that the two
-match.
+are open) and `change_approvals` (D-36, a later task). The schema itself is created by the
+Alembic migrations; a test checks that the two match.
 
 Column types check values on write (`ais0c_storage.columns`): JSON columns against the contract
 model named in the document, enum-like text columns against their value set, times for a time
@@ -69,6 +69,7 @@ from ais0c_storage.enums import (
     NoteStatus,
     NotificationStatus,
     OffenseStatus,
+    PlatformFlag,
     PolicyDecision,
     QAStatus,
     RecipientList,
@@ -552,6 +553,22 @@ class TuningProposalRow(Base):
     decided_by: Mapped[str | None]
     decided_at: Mapped[datetime | None]
     comment: Mapped[str | None]
+
+
+# --- Platform bayrakları ve onaylar ---------------------------------------------------------
+# change_approvals (D-36) comes with its own task.
+
+
+class PlatformFlagRow(Base):
+    """A switch such as the kill switch (T-23). A flag without a row is off."""
+
+    __tablename__ = "platform_flags"
+
+    name: Mapped[PlatformFlag] = mapped_column(EnumText(PlatformFlag), primary_key=True)
+    enabled: Mapped[bool]
+    reason: Mapped[str | None]
+    changed_by: Mapped[str]
+    changed_at: Mapped[datetime]
 
 
 # --- Kullanıcılar ve audit ------------------------------------------------------------------

@@ -3,7 +3,22 @@ name = "ais0c-executor"
 version = "0.1.0"
 description = "QRadar notes, e-mails and hunt PDFs built from fixed templates."
 requires-python = ">=3.12"
-dependencies = ["ais0c-contracts", "ais0c-storage", "ais0c-policy"]
+dependencies = [
+    "ais0c-contracts",
+    "ais0c-storage",
+    "ais0c-policy",
+    # Template engine with a sandbox and strict undefined values. Already in the lock through
+    # pysigma; the HTML of the hunt PDFs (WeasyPrint) will need a template engine too.
+    "jinja2>=3.1.6,<4",
+    # The session factory the kill switch reads the flag through; same range as ais0c-storage.
+    "sqlalchemy[asyncio]>=2.1.2,<2.2",
+]
+
+[dependency-groups]
+dev = [
+    "anyio>=4.15,<5",
+    "testcontainers>=4.15,<5",
+]
 
 [build-system]
 requires = ["uv_build>=0.12.22,<0.13.0"]

@@ -396,6 +396,15 @@ DOC: dict[str, Table] = {
         pk=("id",),
         fk=(("cluster_id", "fp_clusters.cluster_id"),),
     ),
+    # --- Platform bayrakları ve onaylar. change_approvals comes with a later task (D-36).
+    "platform_flags": table(
+        "name text",
+        "enabled bool",
+        "reason text?",
+        "changed_by text",
+        "changed_at timestamptz",
+        pk=("name",),
+    ),
     # --- Kullanıcılar ve audit
     "users": table("subject text", "display_name text", "roles text[]", pk=("subject",)),
     "audit_log": table(

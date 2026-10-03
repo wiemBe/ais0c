@@ -136,6 +136,14 @@ dependencies = [
     { name = "ais0c-contracts" },
     { name = "ais0c-policy" },
     { name = "ais0c-storage" },
+    { name = "jinja2" },
+    { name = "sqlalchemy", extra = ["asyncio"] },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "anyio" },
+    { name = "testcontainers" },
 ]
 
 [package.metadata]
@@ -143,6 +151,14 @@ requires-dist = [
     { name = "ais0c-contracts", editable = "packages/contracts" },
     { name = "ais0c-policy", editable = "packages/policy" },
     { name = "ais0c-storage", editable = "packages/storage" },
+    { name = "jinja2", specifier = ">=3.1.6,<4" },
+    { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.1.2,<2.2" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "anyio", specifier = ">=4.15,<5" },
+    { name = "testcontainers", specifier = ">=4.15,<5" },
 ]
 
 [[package]]
