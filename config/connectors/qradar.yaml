@@ -1,0 +1,60 @@
+# QRadar connector manifest (architecture §8.2).
+#
+# The MCP server is the platform fork of IBM/qradar-mcp, kept in its own repository
+# (docs/impl/repo-structure.md). Tool names are the fork's real names; they differ from
+# the example names in architecture §8.2, e.g. ariel_search_create is create_ariel_search.
+#
+# server_profiles are the fork's --profile values. Each runs as its own instance with its
+# own QRadar token (§11.2). The gateway profiles of §8.2 (qradar-triage-read,
+# qradar-investigate-read, ...), tool descriptions and quota pools are added by T-011 and
+# may only use tools listed here.
+id: qradar
+server: qradar-mcp-fork
+# Fork commit with the T-006 changes. Replace with the fork's merge commit or image tag
+# once the fork PR is merged.
+server_version: ced331c77f12d211d924a7c2eb9a7a19e2deb771
+upstream:
+  repository: https://github.com/IBM/qradar-mcp
+  commit: f51c0070f0b480c401fd527b0bf5b8e1bf360169
+transport: streamable-http
+endpoint: /mcp
+health_check: /healthz
+capability_discovery: /api/help/versions
+# Known versions; the server picks the highest one QRadar serves. Lab verification is
+# reported in the T-006 PR.
+supported_api_versions: ["27.0", "29.0"]
+server_profiles:
+  qradar-read:
+    instance: qradar-mcp-read
+    tools:
+      - {id: get_offense, risk: read}
+      - {id: list_offenses, risk: read}
+      - {id: list_offense_types, risk: read}
+      - {id: list_offense_closing_reasons, risk: read}
+      - {id: list_source_addresses, risk: read}
+      - {id: list_local_destination_addresses, risk: read}
+      - {id: list_rules, risk: read}
+      - {id: get_rule, risk: read}
+      - {id: list_assets, risk: read}
+      - {id: list_log_sources, risk: read}
+      - {id: get_log_source, risk: read}
+      - {id: list_log_source_types, risk: read}
+      - {id: list_reference_sets, risk: read}
+      - {id: get_reference_set, risk: read}
+      - {id: list_reference_maps, risk: read}
+      - {id: get_reference_map, risk: read}
+      - {id: list_reference_tables, risk: read}
+      - {id: get_reference_table, risk: read}
+      - {id: create_ariel_search, risk: read}
+      - {id: get_ariel_search_status, risk: read}
+      - {id: get_ariel_search_results, risk: read}
+      # The fork deletes only searches it created itself.
+      - {id: delete_ariel_search, risk: read}
+  qradar-note:
+    # Only the Action Executor uses this instance; no agent profile may include it.
+    instance: qradar-mcp-note
+    tools:
+      - {id: add_offense_note, risk: write}
+      - {id: get_offense_notes, risk: read}
+# Tool input and output schemas: snapshots/ in the fork repository.
+contract_tests: tests/lab/ in the fork repository
