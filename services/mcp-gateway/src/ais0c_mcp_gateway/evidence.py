@@ -103,7 +103,6 @@ def excerpt(rows: Sequence[Mapping[str, JsonValue]]) -> str:
 async def record_call(
     session: AsyncSession,
     *,
-    run_id: str,
     intent: ToolIntent,
     decision: PolicyDecision,
     status: ToolStatus,
@@ -111,12 +110,13 @@ async def record_call(
     deny_reason: str | None,
     evidence: EvidenceRef | None,
 ) -> None:
-    """Write the call and, for a successful one, its evidence; the caller owns the transaction."""
+    """Write the call under its run (`intent.run_id`) and, for a successful one, its evidence;
+    the caller owns the transaction."""
     if evidence is not None:
         await record_evidence(session, evidence)
     await record_tool_call(
         session,
-        run_id=run_id,
+        run_id=intent.run_id,
         intent=intent,
         policy_decision=decision,
         status=status,

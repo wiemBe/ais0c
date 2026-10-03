@@ -138,6 +138,8 @@ def case_report() -> CaseReport:
 def tool_intent(case_id: str | None = CASE_ID) -> ToolIntent:
     return ToolIntent.model_validate(
         {
+            # The run the tests record tool calls under.
+            "run_id": "run-1",
             "case_id": case_id,
             "agent_id": "triage",
             "toolset_profile": "qradar-triage-read",

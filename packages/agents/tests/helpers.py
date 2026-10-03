@@ -66,6 +66,8 @@ TRIAGE_MANIFEST = REPO_ROOT / "config/agents/triage.yaml"
 TRIAGE_PROMPT = "prompts/triage/v1.md"
 
 NONCE = "7f3a9c01d2e4"
+# The agent run of the synthetic task (`<case_id>-triage-<n>`, as TriageWorkflow names it).
+RUN_ID = "case-4711-triage-1"
 START = datetime(2026, 10, 2, 13, 0, tzinfo=UTC)
 END = datetime(2026, 10, 2, 14, 0, tzinfo=UTC)
 
@@ -399,5 +401,9 @@ def build(
     )
 
 
-def run_triage(agent: TriageAgent, task: TriageTask | None = None) -> AgentRun[TriageResult]:
-    return asyncio.run(agent.run(task or triage_task(), nonce=NONCE, clock=FakeClock()))
+def run_triage(
+    agent: TriageAgent, task: TriageTask | None = None, *, run_id: str = RUN_ID
+) -> AgentRun[TriageResult]:
+    return asyncio.run(
+        agent.run(task or triage_task(), run_id=run_id, nonce=NONCE, clock=FakeClock())
+    )

@@ -13,6 +13,7 @@ from .helpers import (
     INVESTIGATE_PROFILE,
     NONCE,
     PROFILES,
+    RUN_ID,
     TRIAGE_PROFILE,
     FakeClock,
     ScriptedModel,
@@ -161,7 +162,19 @@ def test_run_refuses_an_invalid_nonce(nonce: str) -> None:
     agent = build(ScriptedModel(answer(triage_output())), gateway())
 
     with pytest.raises(ValidationError, match="nonce"):
-        asyncio.run(agent.run(triage_task(), nonce=nonce, clock=FakeClock()))
+        asyncio.run(agent.run(triage_task(), run_id=RUN_ID, nonce=nonce, clock=FakeClock()))
+
+
+@pytest.mark.parametrize("run_id", ["", "r" * 201])
+def test_run_refuses_an_invalid_run_id(run_id: str) -> None:
+    script = ScriptedModel(call("get_offense", offense_id=4711), answer(triage_output()))
+    fake = gateway()
+    agent = build(script, fake)
+
+    with pytest.raises(ValidationError, match="run_id"):
+        asyncio.run(agent.run(triage_task(), run_id=run_id, nonce=NONCE, clock=FakeClock()))
+    assert script.requests == []
+    assert fake.intents == []
 
 
 def test_task_for_another_agent_is_refused() -> None:
@@ -178,7 +191,7 @@ def test_task_for_another_agent_is_refused() -> None:
     )
 
     with pytest.raises(ValueError, match="investigation"):
-        asyncio.run(agent.run(task, nonce=NONCE, clock=FakeClock()))
+        asyncio.run(agent.run(task, run_id=RUN_ID, nonce=NONCE, clock=FakeClock()))
 
 
 # --- profile and tool definitions ---------------------------------------------------------------

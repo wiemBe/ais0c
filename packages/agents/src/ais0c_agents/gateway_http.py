@@ -6,20 +6,10 @@ ToolResult can be had it raises: `GatewayUnavailableError` when the gateway cann
 `GatewayError` for any other failure. The agent run then ends as `failed` (runner.py) and no
 tool call is made (fail closed, architecture §13.3).
 
-Every call belongs to an agent run: the gateway records it in `tool_calls` under the run's ID.
-The ToolIntent has no field for it, so the client sends it in the `X-Ais0c-Run-Id` header and
-takes it from `bind_run`:
-
-    with bind_run(run_id):
-        await agent.run(...)
-
-A call outside `bind_run` raises GatewayError before anything is sent. The binding is a context
-variable, so it follows the run into the tasks it starts.
+Every call belongs to an agent run: the ToolIntent names it in `run_id`, and the gateway records
+the call in `tool_calls` under that run (contracts v0.2, decision T-19).
 """
 
-import contextvars
-from collections.abc import Iterator
-from contextlib import contextmanager
 from typing import Final
 
 import httpx2
@@ -29,33 +19,11 @@ from ais0c_agents.gateway import GatewayClient, GatewayError, GatewayUnavailable
 from ais0c_agents.toolset import ToolsetProfile
 from ais0c_contracts import ToolIntent, ToolResult
 
-RUN_ID_HEADER: Final = "X-Ais0c-Run-Id"
 TOOL_CALLS_PATH: Final = "/v1/tool-calls"
 TOOLS_PATH: Final = "/v1/tools"
 # Above the gateway's own limits: a quota wait (at most 60 s) plus one MCP call (60 s).
 DEFAULT_TIMEOUT_SECONDS: Final = 180.0
 _MAX_PROBLEM_LENGTH: Final = 200
-
-_run_id: contextvars.ContextVar[str | None] = contextvars.ContextVar(
-    "ais0c_gateway_run_id", default=None
-)
-
-
-@contextmanager
-def bind_run(run_id: str) -> Iterator[None]:
-    """Make gateway calls inside the block belong to the agent run `run_id`."""
-    if not run_id:
-        raise ValueError("run_id must not be empty")
-    token = _run_id.set(run_id)
-    try:
-        yield
-    finally:
-        _run_id.reset(token)
-
-
-def bound_run() -> str | None:
-    """The run that gateway calls belong to here, if any."""
-    return _run_id.get()
 
 
 class HttpGatewayClient(GatewayClient):
@@ -82,14 +50,11 @@ class HttpGatewayClient(GatewayClient):
         return f"HttpGatewayClient(base_url={self._base_url!r})"
 
     async def call(self, intent: ToolIntent) -> ToolResult:
-        run_id = bound_run()
-        if run_id is None:
-            raise GatewayError("no agent run is bound to this call; use bind_run(run_id)")
         response = await self._request(
             "POST",
             TOOL_CALLS_PATH,
             content=intent.model_dump_json().encode("utf-8"),
-            headers={RUN_ID_HEADER: run_id, "Content-Type": "application/json"},
+            headers={"Content-Type": "application/json"},
         )
         try:
             return ToolResult.model_validate_json(response.content)

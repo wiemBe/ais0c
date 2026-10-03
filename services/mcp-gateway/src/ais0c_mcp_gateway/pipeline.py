@@ -2,8 +2,8 @@
 
 A call passes these steps in order; the first one that fails decides the answer:
 
-1. the run: the request names an agent run that is in progress and belongs to the caller's
-   profile, agent and case or hunt;
+1. the run: the intent's `run_id` names an agent run that is in progress and belongs to the
+   caller's profile, agent and case or hunt;
 2. the profile: the intent names the caller's profile, and the tool is in that profile;
 3. the ToolIntent: the semantic checks of packages/policy, the tool's schema version, and its
    arguments against the registry's JSON Schema;
@@ -23,6 +23,7 @@ database cannot be reached. In both cases the MCP server is never called (fail c
 
 import json
 import logging
+import re
 import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -69,10 +70,13 @@ logger = logging.getLogger("ais0c.gateway")
 
 _STORAGE_ERRORS: Final = (OperationalError, InterfaceError, PoolTimeoutError, OSError)
 _DETAIL_LENGTH: Final = 120
+# The form of the run IDs the platform issues: workflow IDs (`case-12345-triage-1`) and UUIDs.
+# An ID of another form names no run and is not looked up.
+_RUN_ID: Final = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,199}")
 
 
 class UnknownRunError(LookupError):
-    """The request names no recorded agent run; the call cannot be recorded or made."""
+    """The intent's `run_id` names no recorded agent run; the call cannot be recorded or made."""
 
 
 class StorageUnavailableError(RuntimeError):
@@ -131,15 +135,18 @@ class Gateway:
         if missing:
             raise ValueError(f"no MCP client for instances: {', '.join(sorted(missing))}")
 
-    async def call(self, profile_name: str, run_id: str, intent: ToolIntent) -> ToolResult:
-        """Check, run and record one call of the profile `profile_name`."""
+    async def call(self, profile_name: str, intent: ToolIntent) -> ToolResult:
+        """Check, run and record one call of the profile `profile_name` in the agent run that
+        `intent.run_id` names."""
         started = self.monotonic()
         profile = self.registry.profiles[profile_name]
+        if not _RUN_ID.fullmatch(intent.run_id):
+            raise UnknownRunError(intent.run_id)
         try:
             async with self.sessions.begin() as session:
-                run = await get_agent_run(session, run_id)
+                run = await get_agent_run(session, intent.run_id)
                 if run is None:
-                    raise UnknownRunError(run_id)
+                    raise UnknownRunError(intent.run_id)
                 checked = await self._authorize(session, profile, run, intent)
         except _STORAGE_ERRORS as error:
             raise StorageUnavailableError("the database cannot be reached") from error
@@ -148,7 +155,7 @@ class Gateway:
             reply = _denied(checked)
         else:
             reply = await self._run(profile, intent, checked)
-        return await self._record(profile, run_id, intent, reply, started)
+        return await self._record(profile, intent, reply, started)
 
     # --- 1-5: checks -----------------------------------------------------------------------
 
@@ -365,7 +372,7 @@ class Gateway:
     # --- 9: records ------------------------------------------------------------------------
 
     async def _record(
-        self, profile: Profile, run_id: str, intent: ToolIntent, reply: _Reply, started: float
+        self, profile: Profile, intent: ToolIntent, reply: _Reply, started: float
     ) -> ToolResult:
         latency_ms = max(0, round((self.monotonic() - started) * 1000))
         result = reply.result
@@ -373,7 +380,6 @@ class Gateway:
             async with self.sessions.begin() as session:
                 await record_call(
                     session,
-                    run_id=run_id,
                     intent=intent,
                     decision=reply.decision,
                     status=result.status,
@@ -389,7 +395,7 @@ class Gateway:
             profile.name,
             _short(intent.agent_id),
             _short(intent.tool_id),
-            _short(run_id),
+            _short(intent.run_id),
             _short(intent.case_id or ""),
             _short(intent.hunt_id or ""),
             reply.decision.value,

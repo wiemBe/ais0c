@@ -35,11 +35,13 @@ from ais0c_contracts import (
     InvestigationHypothesis,
     InvestigationResult,
     IocHit,
+    ModelRelease,
     NoteContent,
     OffenseSnapshot,
     OperatorFeedback,
     PlanStep,
     Recommendation,
+    SkillRef,
     TimelineEntry,
     TimeWindow,
     ToolCoverage,
@@ -57,6 +59,7 @@ Payload = dict[str, object]
 START = "2026-10-02T10:00:00Z"
 END = "2026-10-02T11:00:00Z"
 EVIDENCE_ID = "ev_01JB3K7Q9X"
+CONTENT_HASH = "sha256:" + "0123456789abcdef" * 4
 
 
 def time_window() -> Payload:
@@ -229,6 +232,8 @@ def triage_result() -> Payload:
 def plan_step() -> Payload:
     return {
         "agent_id": "investigation",
+        "skill_id": "lateral-movement-smb",
+        "skill_version": "1.0.0",
         "objective": "Build a timeline around the SMB connection.",
         "time_window": time_window(),
         "budget": budget(),
@@ -317,6 +322,7 @@ def email_message() -> Payload:
 
 def tool_intent() -> Payload:
     return {
+        "run_id": "case-12345-investigation-1",
         "case_id": "case-12345",
         "hunt_id": None,
         "agent_id": "investigation",
@@ -345,6 +351,25 @@ def tool_result() -> Payload:
         "truncated": False,
         "coverage": tool_coverage(),
     }
+
+
+def model_release() -> Payload:
+    return {
+        "alias": "soc-reasoning",
+        "target": "onprem-reasoning",
+        "artifact": "example-reasoning-122b-instruct",
+        "artifact_hash": CONTENT_HASH,
+        "quantization": "fp8",
+        "tokenizer": f"example-reasoning-tokenizer {CONTENT_HASH}",
+        "engine_version": "vllm 0.11.0",
+        "tool_parser": "hermes",
+        "max_context": 131072,
+        "inference_params": {"temperature": 0.2, "max_tokens": 4096, "stream": False, "seed": "x"},
+    }
+
+
+def skill_ref() -> Payload:
+    return {"skill_id": "lateral-movement-smb", "version": "1.0.0", "content_hash": CONTENT_HASH}
 
 
 def hunt_scope() -> Payload:
@@ -461,11 +486,13 @@ VALID: dict[type[ContractModel], Callable[[], Payload]] = {
     InvestigationHypothesis: investigation_hypothesis,
     InvestigationResult: investigation_result,
     IocHit: ioc_hit,
+    ModelRelease: model_release,
     NoteContent: note_content,
     OffenseSnapshot: offense_snapshot,
     OperatorFeedback: operator_feedback,
     PlanStep: plan_step,
     Recommendation: recommendation,
+    SkillRef: skill_ref,
     TimelineEntry: timeline_entry,
     TimeWindow: time_window,
     ToolCoverage: tool_coverage,

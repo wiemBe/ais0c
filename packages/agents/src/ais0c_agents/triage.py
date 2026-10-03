@@ -107,14 +107,25 @@ class TriageAgent:
         )
 
     async def run(
-        self, task: TriageTask, *, nonce: str, clock: Callable[[], float] = time.monotonic
+        self,
+        task: TriageTask,
+        *,
+        run_id: str,
+        nonce: str,
+        clock: Callable[[], float] = time.monotonic,
     ) -> AgentRun[TriageResult]:
-        """Triage one offense. `nonce` must be fresh for every run (policy.new_nonce())."""
+        """Triage one offense as the agent run `run_id` (`agent_runs.run_id`).
+
+        Every tool call carries `run_id`, so the gateway records it under the run. `nonce` must
+        be fresh for every run (policy.new_nonce()). Raises ValueError when the task is for
+        another agent or `run_id` is empty or too long.
+        """
         if task.task.agent_id != self.manifest.id:
             raise ValueError(f"task is for agent {task.task.agent_id!r}, not {self.manifest.id!r}")
         limits = usage_limits(self.manifest, task.task.budget)
         tool_budget = prompt_tool_budget(self.manifest, task.task.budget)
         deps = RunDeps(
+            run_id=run_id,
             case_id=task.task.case_id,
             hunt_id=task.task.hunt_id,
             time_window=task.task.time_window,

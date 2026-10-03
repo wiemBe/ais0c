@@ -20,7 +20,7 @@ from ais0c_activities.enrichment import (
     floor_level,
     match_critical_assets,
 )
-from ais0c_activities.gateway import AgentRunGateway, SystemRun, SystemRunError, system_run
+from ais0c_activities.gateway import SystemRun, SystemRunError, system_run
 from ais0c_activities.gateway_source import (
     INTAKE_CONTEXT,
     SOURCE_AGENT_ID,
@@ -77,7 +77,6 @@ __all__ = [
     "INTAKE_CONTEXT",
     "RATE_WINDOW",
     "SOURCE_AGENT_ID",
-    "AgentRunGateway",
     "CaseActivities",
     "CaseLauncher",
     "CaseRuntime",

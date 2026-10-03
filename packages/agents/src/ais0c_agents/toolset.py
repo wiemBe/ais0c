@@ -2,9 +2,10 @@
 
 An agent sees exactly the tools of its manifest's toolset profile. Each call becomes a
 ToolIntent for the gateway (architecture §13.2); the model supplies the tool's arguments, the
-reason for the call and the evidence it expects, and the run supplies the rest. The result
-reaches the model only inside the `untrusted_*` wrapper, as JSON lines: a header with the
-status and coverage, then one line per row. The wrapper tag carries the evidence ID.
+reason for the call and the evidence it expects, and the run supplies the rest. That includes
+the run's own ID, under which the gateway records the call (T-19). The result reaches the model
+only inside the `untrusted_*` wrapper, as JSON lines: a header with the status and coverage,
+then one line per row. The wrapper tag carries the evidence ID.
 
 The tools form a FunctionToolset with an `id`, so TemporalDurability can run each call as an
 activity (T-012). The gateway client is bound when the agent is built; per-run values travel
@@ -34,6 +35,7 @@ from ais0c_agents.prompts import NO_EVIDENCE_ID, wrap_json_lines
 from ais0c_contracts import (
     SHORT_TEXT_MAX_LENGTH,
     CostClass,
+    RunId,
     TimeWindow,
     ToolIntent,
     ToolResult,
@@ -104,6 +106,8 @@ class RunDeps(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
+    run_id: RunId
+    """The agent run (`agent_runs.run_id`); every ToolIntent of the run carries it."""
     case_id: str | None
     hunt_id: str | None
     time_window: TimeWindow
@@ -227,6 +231,7 @@ def _gateway_tool(
         except ValidationError as error:
             raise ModelRetry(f"Invalid call to {spec.id}: {_describe(error)}") from error
         intent = ToolIntent(
+            run_id=ctx.deps.run_id,
             case_id=ctx.deps.case_id,
             hunt_id=ctx.deps.hunt_id,
             agent_id=agent_id,

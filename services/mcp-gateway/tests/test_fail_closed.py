@@ -17,6 +17,7 @@ from typing import Any
 import pytest
 from gateway_support import (
     AGENT_RUN,
+    TRIAGE_RUN,
     FakeQRadar,
     Harness,
     agent_helpers,
@@ -29,7 +30,7 @@ from sqlalchemy import URL
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from ais0c_agents import GatewayUnavailableError, build_triage_agent
-from ais0c_agents.gateway_http import HttpGatewayClient, bind_run
+from ais0c_agents.gateway_http import HttpGatewayClient
 from ais0c_contracts import DataGapReason, RunStatus, ToolResult, ToolStatus
 from ais0c_mcp_gateway.registry import Registry
 from ais0c_storage import PolicyDecision, create_engine, create_session_factory
@@ -236,8 +237,7 @@ async def test_an_unreachable_gateway_ends_the_agent_run_cleanly() -> None:
         model=script.model,
     )
 
-    with bind_run("run-case-4711-triage-1"):
-        run = await agent.run(helpers.triage_task(), nonce=helpers.NONCE)
+    run = await agent.run(helpers.triage_task(), run_id=TRIAGE_RUN, nonce=helpers.NONCE)
 
     assert run.status is RunStatus.FAILED
     assert run.result is None

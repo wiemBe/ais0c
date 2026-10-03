@@ -1,4 +1,4 @@
-"""Length limits, list limits, timezones and evidence IDs."""
+"""Length limits, list limits, timezones, evidence IDs and content hashes."""
 
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -7,6 +7,7 @@ import pytest
 from pydantic import ValidationError
 
 from ais0c_contracts import (
+    RUN_ID_MAX_LENGTH,
     SHORT_TEXT_MAX_LENGTH,
     SUMMARY_MAX_LENGTH,
     AgentTask,
@@ -28,6 +29,7 @@ from ais0c_contracts import (
     OperatorFeedback,
     PlanStep,
     Recommendation,
+    SkillRef,
     TimelineEntry,
     TimeWindow,
     ToolIntent,
@@ -82,6 +84,7 @@ TEXT_LIMITS: list[tuple[type[ContractModel], str, int, Callable[[str], object]]]
     (CaseReport, "summary_tr", SUMMARY, _single),
     (NoteContent, "summary_tr", 400, _single),
     (EmailMessage, "subject", 150, _single),
+    (ToolIntent, "run_id", RUN_ID_MAX_LENGTH, _single),
     (ToolIntent, "reason", SHORT, _single),
     (ToolIntent, "expected_evidence", SHORT, _single),
     (ToolResult, "deny_reason", SHORT, _single),
@@ -221,6 +224,57 @@ def test_evidence_id_fields_require_gateway_prefix(
 ) -> None:
     with pytest.raises(ValidationError, match="string_pattern_mismatch"):
         model.model_validate(VALID[model]() | {field: wrap("01JB3K7Q9X")})
+
+
+def test_tool_intent_needs_a_run_id() -> None:
+    assert RUN_ID_MAX_LENGTH == 200
+    missing = payloads.tool_intent()
+    del missing["run_id"]
+    with pytest.raises(ValidationError) as excinfo:
+        ToolIntent.model_validate(missing)
+    assert [error["type"] for error in excinfo.value.errors()] == ["missing"]
+    for empty in ("", None):
+        with pytest.raises(ValidationError) as excinfo:
+            ToolIntent.model_validate(payloads.tool_intent() | {"run_id": empty})
+        assert len(excinfo.value.errors()) == 1
+
+
+def test_tool_intent_run_id_of_one_character_is_accepted() -> None:
+    assert ToolIntent.model_validate(payloads.tool_intent() | {"run_id": "r"}).run_id == "r"
+
+
+@pytest.mark.parametrize(
+    "content_hash",
+    [
+        "sha256:" + "0123456789abcdef" * 4,
+        "sha256:" + "f" * 64,
+    ],
+)
+def test_skill_content_hash_accepts_sha256_hex(content_hash: str) -> None:
+    SkillRef.model_validate(payloads.skill_ref() | {"content_hash": content_hash})
+
+
+@pytest.mark.parametrize(
+    "content_hash",
+    [
+        "",
+        "sha256:",
+        "0123456789abcdef" * 4,  # no prefix
+        "SHA256:" + "0123456789abcdef" * 4,
+        "sha512:" + "0123456789abcdef" * 4,
+        "sha256:" + "0123456789ABCDEF" * 4,  # upper case
+        "sha256:" + "f" * 63,
+        "sha256:" + "f" * 65,
+        "sha256:" + "f" * 63 + "g",
+        "sha256: " + "f" * 64,
+        "sha256:" + "f" * 64 + "\n",
+        " sha256:" + "f" * 64,
+    ],
+)
+def test_skill_content_hash_rejects_anything_else(content_hash: str) -> None:
+    with pytest.raises(ValidationError) as excinfo:
+        SkillRef.model_validate(payloads.skill_ref() | {"content_hash": content_hash})
+    assert [error["type"] for error in excinfo.value.errors()] == ["string_pattern_mismatch"]
 
 
 def _datetime_fields() -> list[tuple[type[ContractModel], str]]:

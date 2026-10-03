@@ -43,7 +43,6 @@ from ais0c_agents import (
     load_model_registry,
     load_prompt,
 )
-from ais0c_agents.gateway_http import bound_run
 from ais0c_contracts import (
     CostClass,
     Level,
@@ -133,7 +132,7 @@ def ok(evidence_id: str, *rows: dict[str, JsonValue]) -> ToolResult:
 
 
 class RecordingGateway(FakeGatewayClient):
-    """The fake gateway; also records the agent run each call was bound to."""
+    """The fake gateway; also records the agent run each call's intent names."""
 
     def __init__(self) -> None:
         super().__init__(
@@ -144,10 +143,10 @@ class RecordingGateway(FakeGatewayClient):
                 )
             }
         )
-        self.runs: list[str | None] = []
+        self.runs: list[str] = []
 
     async def call(self, intent: ToolIntent) -> ToolResult:
-        self.runs.append(bound_run())
+        self.runs.append(intent.run_id)
         return await super().call(intent)
 
 

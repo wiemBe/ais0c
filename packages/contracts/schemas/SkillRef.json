@@ -1,0 +1,26 @@
+{
+  "additionalProperties": false,
+  "description": "The skill version an agent run used (T-21); kept in `agent_runs.skill`.",
+  "properties": {
+    "content_hash": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "title": "Content Hash",
+      "type": "string"
+    },
+    "skill_id": {
+      "title": "Skill Id",
+      "type": "string"
+    },
+    "version": {
+      "title": "Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "skill_id",
+    "version",
+    "content_hash"
+  ],
+  "title": "SkillRef",
+  "type": "object"
+}

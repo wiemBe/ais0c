@@ -16,13 +16,9 @@ from ais0c_agents import (
     GatewayUnavailableError,
     TriageAgent,
     build_triage_agent,
+    gateway_http,
 )
-from ais0c_agents.gateway_http import (
-    RUN_ID_HEADER,
-    HttpGatewayClient,
-    bind_run,
-    bound_run,
-)
+from ais0c_agents.gateway_http import HttpGatewayClient
 from ais0c_contracts import CostClass, RunStatus, TimeWindow, ToolIntent, ToolResult, ToolStatus
 
 from .helpers import (
@@ -30,6 +26,7 @@ from .helpers import (
     OFFENSE_EVIDENCE,
     OFFENSE_ROW,
     PROFILES,
+    RUN_ID,
     START,
     ScriptedModel,
     answer,
@@ -48,6 +45,7 @@ BASE_URL = "http://gateway.test"
 
 def intent() -> ToolIntent:
     return ToolIntent(
+        run_id=RUN_ID,
         case_id="case-4711",
         agent_id="triage",
         toolset_profile="qradar-triage-read",
@@ -85,21 +83,15 @@ class Recorder:
         return HttpGatewayClient(BASE_URL, TOKEN, transport=httpx2.MockTransport(self.handle))
 
 
-def send(client: HttpGatewayClient, run_id: str | None = "run-4711-triage-1") -> ToolResult:
-    async def go() -> ToolResult:
-        if run_id is None:
-            return await client.call(intent())
-        with bind_run(run_id):
-            return await client.call(intent())
-
-    return asyncio.run(go())
+def send(client: HttpGatewayClient) -> ToolResult:
+    return asyncio.run(client.call(intent()))
 
 
 def test_it_is_a_gateway_client() -> None:
     assert isinstance(Recorder().client(), GatewayClient)
 
 
-def test_a_call_posts_the_intent_with_the_token_and_the_run() -> None:
+def test_a_call_posts_the_intent_with_the_token() -> None:
     recorder = Recorder()
 
     result = send(recorder.client())
@@ -107,9 +99,21 @@ def test_a_call_posts_the_intent_with_the_token_and_the_run() -> None:
     [request] = recorder.requests
     assert (request.method, str(request.url)) == ("POST", f"{BASE_URL}/v1/tool-calls")
     assert request.headers["authorization"] == f"Bearer {TOKEN}"
-    assert request.headers[RUN_ID_HEADER] == "run-4711-triage-1"
     assert ToolIntent.model_validate_json(request.content) == intent()
     assert result == ok(OFFENSE_EVIDENCE, OFFENSE_ROW)
+
+
+def test_the_run_travels_only_in_the_intent() -> None:
+    recorder = Recorder()
+
+    send(recorder.client())
+
+    [request] = recorder.requests
+    assert json.loads(request.content)["run_id"] == RUN_ID
+    assert [name for name in request.headers if "run" in name.lower()] == []
+    # T-011's way of sending the run (T-19) is gone.
+    for name in ("bind_run", "bound_run", "RUN_ID_HEADER"):
+        assert not hasattr(gateway_http, name), name
 
 
 def test_a_denial_is_a_result_not_an_error() -> None:
@@ -119,25 +123,6 @@ def test_a_denial_is_a_result_not_an_error() -> None:
     result = send(recorder.client())
 
     assert (result.status, result.deny_reason) == (ToolStatus.DENIED, reason)
-
-
-def test_a_call_outside_a_run_sends_nothing() -> None:
-    recorder = Recorder()
-
-    with pytest.raises(GatewayError, match="no agent run is bound"):
-        send(recorder.client(), run_id=None)
-    assert recorder.requests == []
-
-
-def test_bind_run_nests_and_resets() -> None:
-    assert bound_run() is None
-    with bind_run("run-a"):
-        with bind_run("run-b"):
-            assert bound_run() == "run-b"
-        assert bound_run() == "run-a"
-    assert bound_run() is None
-    with pytest.raises(ValueError, match="run_id"):
-        bind_run("").__enter__()
 
 
 @pytest.mark.parametrize(
@@ -217,13 +202,13 @@ def test_a_triage_run_completes_through_the_client() -> None:
     )
     agent = build_agent(script, recorder.client())
 
-    with bind_run("run-4711-triage-1"):
-        run = run_triage(agent)
+    run = run_triage(agent, run_id="case-4711-triage-2")
 
     assert run.status is RunStatus.COMPLETED
     assert run.result is not None
     assert run.result.claims[0].evidence_ids == [OFFENSE_EVIDENCE]
-    assert len(recorder.requests) == 1
+    [request] = recorder.requests
+    assert ToolIntent.model_validate_json(request.content).run_id == "case-4711-triage-2"
 
 
 def test_an_unreachable_gateway_ends_the_run_as_failed() -> None:
@@ -231,8 +216,7 @@ def test_an_unreachable_gateway_ends_the_run_as_failed() -> None:
     script = ScriptedModel(call("get_offense", offense_id=4711), answer(triage_output()))
     agent = build_agent(script, recorder.client())
 
-    with bind_run("run-4711-triage-1"):
-        run = run_triage(agent)
+    run = run_triage(agent)
 
     assert run.status is RunStatus.FAILED
     assert run.result is None

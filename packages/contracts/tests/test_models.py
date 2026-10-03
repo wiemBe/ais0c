@@ -37,11 +37,13 @@ from ais0c_contracts import (
     InvestigationHypothesis,
     InvestigationResult,
     IocHit,
+    ModelRelease,
     NoteContent,
     OffenseSnapshot,
     OperatorFeedback,
     PlanStep,
     Recommendation,
+    SkillRef,
     TimelineEntry,
     TimeWindow,
     ToolCoverage,
@@ -161,7 +163,14 @@ DOC_FIELDS: dict[type[ContractModel], dict[str, bool]] = {
         "investigation_focus": REQ,
     },
     CasePlan: AGENT_RESULT_FIELDS | {"steps": REQ},
-    PlanStep: {"agent_id": REQ, "objective": REQ, "time_window": REQ, "budget": REQ},
+    PlanStep: {
+        "agent_id": REQ,
+        "skill_id": OPT,
+        "skill_version": OPT,
+        "objective": REQ,
+        "time_window": REQ,
+        "budget": REQ,
+    },
     InvestigationResult: AGENT_RESULT_FIELDS
     | {
         "verdict": REQ,
@@ -216,6 +225,7 @@ DOC_FIELDS: dict[type[ContractModel], dict[str, bool]] = {
         "idempotency_key": REQ,
     },
     ToolIntent: {
+        "run_id": REQ,
         "case_id": OPT,
         "hunt_id": OPT,
         "agent_id": REQ,
@@ -238,6 +248,19 @@ DOC_FIELDS: dict[type[ContractModel], dict[str, bool]] = {
         "coverage": REQ,
     },
     ToolCoverage: {"complete": REQ, "gaps": REQ},
+    ModelRelease: {
+        "alias": REQ,
+        "target": REQ,
+        "artifact": REQ,
+        "artifact_hash": OPT,
+        "quantization": OPT,
+        "tokenizer": OPT,
+        "engine_version": OPT,
+        "tool_parser": OPT,
+        "max_context": OPT,
+        "inference_params": REQ,
+    },
+    SkillRef: {"skill_id": REQ, "version": REQ, "content_hash": REQ},
     HuntRequest: {
         "pack_id": REQ,
         "pack_version": REQ,
@@ -337,6 +360,29 @@ def test_level_and_verdict_enums_reject_unknown_values() -> None:
         TriageResult.model_validate(VALID[TriageResult]() | {"ai_level": "severe"})
     with pytest.raises(ValidationError, match="enum"):
         TriageResult.model_validate(VALID[TriageResult]() | {"verdict": "supported"})
+
+
+def test_inference_params_keep_their_json_types() -> None:
+    params = {"temperature": 0.2, "max_tokens": 4096, "stream": False, "seed": "x"}
+    payload = VALID[ModelRelease]() | {"inference_params": params}
+    for release in (
+        ModelRelease.model_validate(payload),
+        ModelRelease.model_validate_json(ModelRelease.model_validate(payload).model_dump_json()),
+    ):
+        assert release.inference_params == params
+        assert [type(value) for value in release.inference_params.values()] == [
+            float,
+            int,
+            bool,
+            str,
+        ]
+
+
+@pytest.mark.parametrize("value", [None, [0.2], {"value": 0.2}])
+def test_inference_params_hold_only_scalars(value: object) -> None:
+    payload = VALID[ModelRelease]() | {"inference_params": {"temperature": value}}
+    with pytest.raises(ValidationError):
+        ModelRelease.model_validate(payload)
 
 
 def test_package_source_does_not_use_any() -> None:

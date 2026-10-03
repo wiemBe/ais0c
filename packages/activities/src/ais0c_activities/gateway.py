@@ -1,16 +1,14 @@
 """The MCP Policy Gateway as activities use it (architecture §13).
 
-The gateway records every call in `tool_calls` under an agent run that is in progress, and the
-run must belong to the caller's profile, agent and case or hunt. The ToolIntent has no field for
-the run (T-011 PR, contract change request), so the HTTP client sends the run bound with
-`ais0c_agents.gateway_http.bind_run`, and a call without one fails closed.
+The gateway records every call in `tool_calls` under the agent run its ToolIntent names in
+`run_id` (contracts v0.2, T-19). The run must be recorded, in progress and belong to the
+caller's profile, agent and case or hunt; otherwise the call is refused.
 
-- `AgentRunGateway` is the client an agent gets under Temporal. Each of the agent's tool calls
-  is an activity scheduled by the workflow that runs the agent, and that workflow's ID is the
-  run's ID (TriageWorkflow: `<case_id>-triage-<n>`), so the client binds it for every call.
-- `system_run` is for platform code that reads QRadar without an agent, such as the offense
-  source. It records a short run of a pseudo agent, binds it to the calls made inside, and
-  closes it. The run has no prompt or model; those columns hold `none`.
+An agent gets the plain gateway client: its tool functions take the run ID from the run's deps
+(`ais0c_agents.RunDeps`). `system_run` is for platform code that reads QRadar without an agent,
+such as the offense source. It records a short run of a pseudo agent (D-33), puts the run's ID
+in the intents of the calls made inside and closes it. The run has no prompt or model; those
+columns hold `none`.
 """
 
 import logging
@@ -24,8 +22,7 @@ from pydantic import JsonValue
 from temporalio import activity
 
 from ais0c_activities.db import SessionFactory
-from ais0c_agents import GatewayClient, GatewayError, ToolsetProfile, ToolSpec
-from ais0c_agents.gateway_http import bind_run
+from ais0c_agents import GatewayClient, ToolsetProfile, ToolSpec
 from ais0c_contracts import (
     AgentTask,
     Budget,
@@ -49,29 +46,13 @@ def utc_now() -> datetime:
     return datetime.now(UTC)
 
 
-class AgentRunGateway(GatewayClient):
-    """Sends each call under the agent run whose workflow scheduled the calling activity."""
-
-    def __init__(self, gateway: GatewayClient) -> None:
-        self._gateway = gateway
-
-    async def call(self, intent: ToolIntent) -> ToolResult:
-        if not activity.in_activity():
-            raise GatewayError("an agent's gateway call must run in a tool activity of its run")
-        run_id = activity.info().workflow_id
-        if not run_id:
-            raise GatewayError("the tool activity belongs to no workflow, so to no agent run")
-        with bind_run(run_id):
-            return await self._gateway.call(intent)
-
-
 class SystemRunError(RuntimeError):
     """A tool call of a system run did not return `ok`."""
 
 
 @dataclass
 class SystemRun:
-    """Calls of one system run; every call carries the run's context and time window."""
+    """Calls of one system run; every call carries the run's ID, context and time window."""
 
     gateway: GatewayClient
     profile: ToolsetProfile
@@ -90,6 +71,7 @@ class SystemRun:
         """One gateway call; a result other than `ok` raises SystemRunError."""
         spec = self._spec(tool_id)
         intent = ToolIntent(
+            run_id=self.run_id,
             case_id=self.task.case_id,
             hunt_id=self.task.hunt_id,
             agent_id=self.task.agent_id,
@@ -103,8 +85,7 @@ class SystemRun:
             cost_class=spec.cost_class,
         )
         self.calls += 1
-        with bind_run(self.run_id):
-            result = await self.gateway.call(intent)
+        result = await self.gateway.call(intent)
         if result.status is not ToolStatus.OK:
             raise SystemRunError(f"{tool_id}: {result.status.value}: {result.deny_reason or ''}")
         if result.truncated:

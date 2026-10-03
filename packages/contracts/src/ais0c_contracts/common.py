@@ -9,12 +9,16 @@ from ais0c_contracts.enums import ActionType, DataGapReason, EvidenceSource
 
 SHORT_TEXT_MAX_LENGTH = 300
 SUMMARY_MAX_LENGTH = 600
+RUN_ID_MAX_LENGTH = 200
 
 ShortText = Annotated[str, StringConstraints(max_length=SHORT_TEXT_MAX_LENGTH)]
 Summary = Annotated[str, StringConstraints(max_length=SUMMARY_MAX_LENGTH)]
 
 # Issued by the gateway, never by an agent.
 EvidenceId = Annotated[str, StringConstraints(pattern=r"^ev_\S+$")]
+
+# An agent run (`agent_runs.run_id`); set by the platform, never by a model.
+RunId = Annotated[str, StringConstraints(min_length=1, max_length=RUN_ID_MAX_LENGTH)]
 
 
 def _to_utc(value: datetime) -> datetime:

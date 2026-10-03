@@ -35,9 +35,9 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from ais0c_agents import AgentRun, build_triage_agent
-from ais0c_agents.gateway_http import HttpGatewayClient, bind_run
+from ais0c_agents.gateway_http import HttpGatewayClient
 from ais0c_contracts import AgentTask, Budget, RunStatus, TimeWindow, ToolResult, TriageResult
-from ais0c_mcp_gateway.app import RUN_ID_HEADER, create_app
+from ais0c_mcp_gateway.app import create_app
 from ais0c_mcp_gateway.auth import ProfileAuthenticator
 from ais0c_mcp_gateway.logs import Redactor
 from ais0c_mcp_gateway.pipeline import Gateway
@@ -344,9 +344,13 @@ class Harness:
         arguments: Mapping[str, Any],
         **changes: object,
     ) -> dict[str, Any]:
-        """A valid ToolIntent for `profile` as JSON data, with the registry's schema version."""
+        """A valid ToolIntent for `profile` as JSON data, with the registry's schema version.
+
+        Its run is AGENT_RUN unless `run_id` is changed.
+        """
         tool = self.registry.profiles[profile].tools.get(tool_id)
         fields: dict[str, Any] = {
+            "run_id": AGENT_RUN,
             "case_id": CASE_ID,
             "hunt_id": None,
             "agent_id": "investigation",
@@ -387,15 +391,19 @@ class Harness:
         client: httpx2.AsyncClient,
         intent: Mapping[str, Any],
         *,
-        run_id: str,
+        run_id: str | None = None,
         token: str | None = None,
     ) -> httpx2.Response:
+        """Post `intent`; with `run_id`, as a call of that agent run."""
+        body = dict(intent)
+        if run_id is not None:
+            body["run_id"] = run_id
         profile = str(intent["toolset_profile"])
-        headers = {RUN_ID_HEADER: run_id}
+        headers: dict[str, str] = {}
         bearer = token if token is not None else self.tokens.get(profile)
         if bearer is not None:
             headers["Authorization"] = f"Bearer {bearer}"
-        return await client.post("/v1/tool-calls", json=dict(intent), headers=headers)
+        return await client.post("/v1/tool-calls", json=body, headers=headers)
 
 
 def tool_result(response: httpx2.Response) -> ToolResult:
@@ -502,6 +510,5 @@ async def triage_through_gateway(harness: Harness) -> TriageThroughGateway:
         gateway=client,
         model=script.model,
     )
-    with bind_run(TRIAGE_RUN):
-        run = await agent.run(helpers.triage_task(), nonce=helpers.NONCE)
+    run = await agent.run(helpers.triage_task(), run_id=TRIAGE_RUN, nonce=helpers.NONCE)
     return TriageThroughGateway(run=run, requests=script.requests, evidence_ids=evidence_ids)

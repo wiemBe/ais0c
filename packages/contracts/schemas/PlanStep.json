@@ -60,6 +60,30 @@
       "title": "Objective",
       "type": "string"
     },
+    "skill_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Skill Id"
+    },
+    "skill_version": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Skill Version"
+    },
     "time_window": {
       "$ref": "#/$defs/TimeWindow"
     }

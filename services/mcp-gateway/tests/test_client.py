@@ -7,7 +7,7 @@ import pytest
 from gateway_support import AGENT_RUN, TRIAGE_RUN, Harness, new_token, triage_through_gateway
 
 from ais0c_agents import GatewayClient, GatewayError, GatewayUnavailableError, ToolsetProfile
-from ais0c_agents.gateway_http import HttpGatewayClient, bind_run
+from ais0c_agents.gateway_http import HttpGatewayClient
 from ais0c_contracts import RunStatus, ToolIntent, ToolStatus
 from ais0c_storage import PolicyDecision
 
@@ -31,8 +31,7 @@ async def test_a_call_returns_the_recorded_result(harness: Harness) -> None:
     run = await harness.start_run(AGENT_RUN, profile=TRIAGE, agent_id="triage")
     client = harness.http_client(TRIAGE)
 
-    with bind_run(run):
-        result = await client.call(intent(harness))
+    result = await client.call(intent(harness))
 
     assert result.status is ToolStatus.OK
     assert result.data[0]["id"] == 1001
@@ -44,8 +43,7 @@ async def test_a_denial_comes_back_as_a_result(harness: Harness) -> None:
     run = await harness.start_run(AGENT_RUN, profile=TRIAGE, agent_id="triage")
     client = harness.http_client(TRIAGE)
 
-    with bind_run(run):
-        result = await client.call(intent(harness, "list_reference_sets", limit=5))
+    result = await client.call(intent(harness, "list_reference_sets", limit=5))
 
     assert result.status is ToolStatus.DENIED
     assert result.deny_reason == (
@@ -61,16 +59,6 @@ async def test_the_toolset_is_the_registry_profile(harness: Harness) -> None:
     assert toolset == ToolsetProfile.model_validate(harness.registry.profiles[TRIAGE].tool_list())
 
 
-async def test_a_call_outside_a_run_reaches_nothing(harness: Harness) -> None:
-    await harness.start_run(AGENT_RUN, profile=TRIAGE, agent_id="triage")
-
-    with pytest.raises(GatewayError, match="no agent run is bound"):
-        await harness.http_client(TRIAGE).call(intent(harness))
-
-    assert harness.fake.calls == []
-    assert await harness.tool_calls(AGENT_RUN) == []
-
-
 @pytest.mark.parametrize(
     ("token", "run_id", "message"),
     [
@@ -84,8 +72,8 @@ async def test_no_result_is_a_gateway_error(
     await harness.start_run(AGENT_RUN, profile=TRIAGE, agent_id="triage")
     client = harness.http_client(TRIAGE, token=token)
 
-    with bind_run(run_id), pytest.raises(GatewayError, match=message) as raised:
-        await client.call(intent(harness))
+    with pytest.raises(GatewayError, match=message) as raised:
+        await client.call(intent(harness).model_copy(update={"run_id": run_id}))
 
     assert not isinstance(raised.value, GatewayUnavailableError)
     assert harness.fake.calls == []
@@ -101,4 +89,6 @@ async def test_a_triage_run_goes_through_the_gateway(harness: Harness) -> None:
     assert harness.fake.tool_calls("get_offense") == [{"offense_id": 4711}]
     [row] = await harness.tool_calls(TRIAGE_RUN)
     assert (row.status, row.evidence_id) == (ToolStatus.OK, evidence_id)
+    # The agent put its run into the intent (T-013).
+    assert row.intent.run_id == TRIAGE_RUN
     assert await harness.evidence(evidence_id) is not None

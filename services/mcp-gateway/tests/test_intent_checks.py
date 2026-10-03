@@ -3,6 +3,8 @@
 A time window longer than the profile allows, or an intent without case_id and hunt_id, is
 rejected. So are a wrong schema version, arguments outside the tool's schema and a call that
 does not match its agent run. A rejected call never reaches the MCP server.
+
+The agent run comes only from the intent's `run_id` (T-013 criterion 5).
 """
 
 from datetime import timedelta
@@ -195,28 +197,83 @@ async def test_an_overlong_query_is_denied_without_echoing_it(harness: Harness) 
 
 
 async def test_a_call_needs_a_recorded_run(harness: Harness) -> None:
+    await triage_run(harness)
+
     async with harness.client() as client:
         response = await harness.post(client, offense_intent(harness), run_id="run-unknown")
+
+    assert response.status_code == 422
+    assert response.json()["title"] == "gateway.unknown_run"
+    assert response.json()["detail"] == "no agent run with this run_id is recorded"
+    assert harness.fake.calls == []
+    assert await harness.tool_calls(AGENT_RUN) == []
+
+
+@pytest.mark.parametrize("run_id", [None, "", "r" * 201, 4711])
+async def test_an_intent_without_a_valid_run_id_is_rejected(
+    harness: Harness, run_id: object
+) -> None:
+    await triage_run(harness)
+    intent = offense_intent(harness)
+    if run_id is None:
+        del intent["run_id"]
+    else:
+        intent["run_id"] = run_id
+
+    async with harness.client() as client:
+        response = await client.post(
+            "/v1/tool-calls", json=intent, headers=auth(harness.tokens[TRIAGE])
+        )
+
+    assert response.status_code == 422
+    assert response.json()["title"] == "gateway.invalid_intent"
+    assert response.json()["detail"].startswith("run_id: ")
+    assert harness.fake.calls == []
+
+
+@pytest.mark.parametrize(
+    "run_id", ["run with spaces", "../etc/passwd", "run\x00", "-run", "run-1\n", "ü" * 10]
+)
+async def test_a_run_id_the_platform_never_issues_names_no_run(
+    harness: Harness, run_id: str
+) -> None:
+    # Even when a run with that ID is recorded: no lookup is made for it.
+    await harness.start_run(run_id.replace("\x00", ""), profile=TRIAGE, agent_id="triage")
+
+    async with harness.client() as client:
+        response = await harness.post(client, offense_intent(harness), run_id=run_id)
 
     assert response.status_code == 422
     assert response.json()["title"] == "gateway.unknown_run"
     assert harness.fake.calls == []
 
 
-@pytest.mark.parametrize("run_header", [None, "", "run with spaces", "r" * 201, "../etc/passwd"])
-async def test_a_call_needs_a_valid_run_header(harness: Harness, run_header: str | None) -> None:
+async def test_the_old_run_header_means_nothing(harness: Harness) -> None:
+    """T-011 sent the run in `X-Ais0c-Run-Id`; the gateway now ignores that header."""
+    run = await triage_run(harness)
+    other = await harness.start_run("run-other", profile=TRIAGE, agent_id="triage")
     headers = auth(harness.tokens[TRIAGE])
-    if run_header is not None:
-        headers["X-Ais0c-Run-Id"] = run_header
 
     async with harness.client() as client:
-        response = await client.post(
-            "/v1/tool-calls", json=offense_intent(harness), headers=headers
+        # The header names another recorded run: the call is the intent's run's.
+        recorded = await client.post(
+            "/v1/tool-calls",
+            json=offense_intent(harness, run_id=run),
+            headers=headers | {"X-Ais0c-Run-Id": other},
+        )
+        # The header names a recorded run, the intent an unknown one: refused.
+        refused = await client.post(
+            "/v1/tool-calls",
+            json=offense_intent(harness, run_id="run-unknown"),
+            headers=headers | {"X-Ais0c-Run-Id": run},
         )
 
-    assert response.status_code == 422
-    assert response.json()["title"] == "gateway.invalid_run_id"
-    assert harness.fake.calls == []
+    assert tool_result(recorded).status is ToolStatus.OK
+    assert [row.intent.run_id for row in await harness.tool_calls(run)] == [run]
+    assert await harness.tool_calls(other) == []
+    assert refused.status_code == 422
+    assert refused.json()["title"] == "gateway.unknown_run"
+    assert len(harness.fake.calls) == 1
 
 
 async def test_a_finished_run_makes_no_more_calls(harness: Harness) -> None:
@@ -260,8 +317,8 @@ async def test_a_run_of_another_profile_is_refused(harness: Harness) -> None:
     "body", [b"", b"not json", b"[]", b'{"tool_id": "get_offense"}', b'{"case_id": 1}']
 )
 async def test_a_body_that_is_not_a_tool_intent_is_rejected(harness: Harness, body: bytes) -> None:
-    run = await triage_run(harness)
-    headers = auth(harness.tokens[TRIAGE]) | {"X-Ais0c-Run-Id": run}
+    await triage_run(harness)
+    headers = auth(harness.tokens[TRIAGE])
 
     async with harness.client() as client:
         response = await client.post("/v1/tool-calls", content=body, headers=headers)
@@ -272,9 +329,9 @@ async def test_a_body_that_is_not_a_tool_intent_is_rejected(harness: Harness, bo
 
 
 async def test_an_oversized_body_is_rejected(harness: Harness) -> None:
-    run = await triage_run(harness)
+    await triage_run(harness)
     intent = offense_intent(harness, arguments={"offense_id": 1, "fields": "x" * 300_000})
-    headers = auth(harness.tokens[TRIAGE]) | {"X-Ais0c-Run-Id": run}
+    headers = auth(harness.tokens[TRIAGE])
 
     async with harness.client() as client:
         response = await client.post("/v1/tool-calls", json=intent, headers=headers)

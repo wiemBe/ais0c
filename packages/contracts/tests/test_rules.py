@@ -1,4 +1,5 @@
-"""Cross-field rules: case/hunt scope, hunt window, tuning risk flag, hunt outcome, ranks."""
+"""Cross-field rules: case/hunt scope, plan step skills, hunt window, tuning risk flag, hunt
+outcome, ranks."""
 
 import pytest
 from pydantic import ValidationError
@@ -6,11 +7,13 @@ from pydantic import ValidationError
 from ais0c_contracts import (
     MAX_HUNT_WINDOW_MONTHS,
     AgentTask,
+    CasePlan,
     CaseReport,
     ContractModel,
     HuntOutcome,
     HuntReport,
     HuntRequest,
+    PlanStep,
     ToolIntent,
     TuningProposal,
     derive_hunt_outcome,
@@ -57,6 +60,50 @@ def test_case_and_hunt_id_both_missing_is_rejected(model: type[ContractModel]) -
 )
 def test_case_or_hunt_id_is_enough(model: type[ContractModel], ids: dict[str, object]) -> None:
     model.model_validate(VALID[model]() | ids)
+
+
+@pytest.mark.parametrize(
+    "skill",
+    [
+        {"skill_id": "lateral-movement-smb", "skill_version": "1.0.0"},
+        {"skill_id": None, "skill_version": None},
+        {},
+        # An empty string counts as not set.
+        {"skill_id": "", "skill_version": None},
+        {"skill_id": "", "skill_version": ""},
+    ],
+)
+def test_plan_step_with_skill_and_version_or_neither_is_accepted(skill: dict[str, object]) -> None:
+    payload = payloads.plan_step()
+    del payload["skill_id"], payload["skill_version"]
+    PlanStep.model_validate(payload | skill)
+
+
+@pytest.mark.parametrize(
+    "skill",
+    [
+        {"skill_id": "lateral-movement-smb"},
+        {"skill_version": "1.0.0"},
+        {"skill_id": "lateral-movement-smb", "skill_version": None},
+        {"skill_id": None, "skill_version": "1.0.0"},
+        {"skill_id": "lateral-movement-smb", "skill_version": ""},
+        {"skill_id": "", "skill_version": "1.0.0"},
+    ],
+)
+def test_plan_step_with_only_one_of_skill_and_version_is_rejected(
+    skill: dict[str, object],
+) -> None:
+    payload = payloads.plan_step()
+    del payload["skill_id"], payload["skill_version"]
+    with pytest.raises(ValidationError, match="skill_id and skill_version must be set together"):
+        PlanStep.model_validate(payload | skill)
+
+
+def test_case_plan_with_a_step_missing_its_skill_version_is_rejected() -> None:
+    payload = payloads.case_plan()
+    payload["steps"] = [payloads.plan_step(), payloads.plan_step() | {"skill_version": None}]
+    with pytest.raises(ValidationError, match="skill_id and skill_version must be set together"):
+        CasePlan.model_validate(payload)
 
 
 def _hunt_window(start: str, end: str) -> dict[str, object]:

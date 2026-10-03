@@ -2,8 +2,9 @@
 
 `TriageRuntime` holds the T-009 Triage agent with Pydantic AI's TemporalDurability. Its `run` is
 called from TriageWorkflow's workflow code, where each model request and each tool call becomes
-an activity of that workflow; the worker registers those activities with the rest. The agent's
-gateway client is an `AgentRunGateway`, so the gateway records every tool call under the run.
+an activity of that workflow; the worker registers those activities with the rest. The run's
+ID is the workflow's ID (`<case_id>-triage-<n>`); every tool call carries it in its ToolIntent,
+so the gateway records the call under the run (T-19).
 
 `TriageRunActivities` record the run in `agent_runs`: `begin_triage_run` before the agent
 starts, because the gateway takes calls only for a recorded run in progress, and
@@ -36,7 +37,7 @@ from temporalio.exceptions import ApplicationError
 from temporalio.workflow import ActivityCancellationType, ActivityConfig
 
 from ais0c_activities.db import SessionFactory
-from ais0c_activities.gateway import AgentRunGateway, utc_now
+from ais0c_activities.gateway import utc_now
 from ais0c_activities.names import BEGIN_TRIAGE_RUN, FINISH_TRIAGE_RUN
 from ais0c_agents import (
     AgentManifest,
@@ -114,7 +115,7 @@ class TriageRuntime:
             manifest=manifest,
             prompt=prompt,
             profiles={profile.name: profile},
-            gateway=AgentRunGateway(gateway),
+            gateway=gateway,
             model=model,
             capabilities=[
                 TemporalDurability[RunDeps](
@@ -141,10 +142,13 @@ class TriageRuntime:
     ) -> AgentRun[TriageResult]:
         """One Triage run, in TriageWorkflow's workflow code (`TriageAgentRun`).
 
-        Durations come from the workflow clock, so a replay measures what the run measured.
+        The run's ID is the workflow's ID, under which `begin_triage_run` recorded the run; the
+        agent writes it into every ToolIntent. Durations come from the workflow clock, so a
+        replay measures what the run measured.
         """
         return await self.agent.run(
             TriageTask(task=task, offense=offense, enrichment=enrichment),
+            run_id=workflow.info().workflow_id,
             nonce=nonce,
             clock=workflow.time,
         )

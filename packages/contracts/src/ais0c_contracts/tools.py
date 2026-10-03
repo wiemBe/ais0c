@@ -8,6 +8,7 @@ from ais0c_contracts.common import (
     ContractModel,
     DataGap,
     EvidenceId,
+    RunId,
     ShortText,
     TimeWindow,
     check_case_or_hunt,
@@ -16,6 +17,8 @@ from ais0c_contracts.enums import CostClass, ToolStatus
 
 
 class ToolIntent(ContractModel):
+    # The agent run the call belongs to; the gateway records the call under it (v0.2, T-19).
+    run_id: RunId
     case_id: str | None = None
     hunt_id: str | None = None
     agent_id: str

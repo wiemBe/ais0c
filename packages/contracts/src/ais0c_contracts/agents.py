@@ -65,9 +65,19 @@ class TriageResult(AgentResult):
 class PlanStep(ContractModel):
     # Registry and workflow-type checks happen in the workflow, not here.
     agent_id: str
+    # Only from the router's candidate list; the workflow checks the skill's status, version
+    # and budget (v0.2, T-21). Set both or neither; an empty string counts as not set.
+    skill_id: str | None = None
+    skill_version: str | None = None
     objective: ShortText
     time_window: TimeWindow
     budget: Budget
+
+    @model_validator(mode="after")
+    def _skill_and_version_together(self) -> Self:
+        if bool(self.skill_id) != bool(self.skill_version):
+            raise ValueError("skill_id and skill_version must be set together")
+        return self
 
 
 class CasePlan(AgentResult):

@@ -18,6 +18,7 @@ from .helpers import (
     END,
     OFFENSE_EVIDENCE,
     RULE_EVIDENCE,
+    RUN_ID,
     START,
     ScriptedModel,
     answer,
@@ -35,6 +36,7 @@ from .helpers import (
 
 def intent(tool_id: str = "get_offense", **changes: object) -> ToolIntent:
     fields: dict[str, object] = {
+        "run_id": RUN_ID,
         "case_id": "case-4711",
         "agent_id": "triage",
         "toolset_profile": "qradar-triage-read",
@@ -147,6 +149,7 @@ def test_every_intent_the_agent_sends_conforms_to_the_contract() -> None:
     assert [sent.tool_id for sent in fake.intents] == ["get_offense", "get_rule"]
     for sent in fake.intents:
         assert ToolIntent.model_validate(sent.model_dump()) == sent
+        assert sent.run_id == RUN_ID
         assert sent.reason.strip()
         assert sent.expected_evidence.strip()
         assert sent.time_window == TimeWindow(start=START, end=END)
@@ -155,6 +158,20 @@ def test_every_intent_the_agent_sends_conforms_to_the_contract() -> None:
         assert (sent.tool_schema_version, sent.cost_class) == ("1", CostClass.LOW)
     assert fake.intents[1].arguments == {"rule_id": 100234}
     assert fake.intents[1].reason == "Check what the rule matches."
+
+
+def test_every_intent_carries_the_run_id_the_run_was_given() -> None:
+    fake = gateway()
+    script = ScriptedModel(
+        call("get_offense", offense_id=4711),
+        call("get_rule", rule_id=100234),
+        answer(triage_output(OFFENSE_EVIDENCE, RULE_EVIDENCE)),
+    )
+
+    run = run_triage(build(script, fake), run_id="case-4711-triage-7")
+
+    assert run.status is RunStatus.COMPLETED
+    assert [sent.run_id for sent in fake.intents] == ["case-4711-triage-7"] * 2
 
 
 @pytest.mark.parametrize(

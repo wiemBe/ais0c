@@ -1,8 +1,6 @@
 """The Triage runtime and the run records: the agent's TemporalDurability activities, the run's
-AgentTask, `begin_triage_run` and `finish_triage_run`, and the gateway client that binds each
-tool call to its run (T-012 criteria 2 and 3)."""
+AgentTask, `begin_triage_run` and `finish_triage_run` (T-012 criteria 2 and 3)."""
 
-import dataclasses
 import re
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -13,27 +11,17 @@ from pydantic_ai.models.test import TestModel
 from temporalio.exceptions import ApplicationError
 from temporalio.testing import ActivityEnvironment
 
-from ais0c_activities import AgentRunGateway, SessionFactory, TriageRunActivities, TriageRuntime
+import ais0c_activities.gateway
+from ais0c_activities import SessionFactory, TriageRunActivities, TriageRuntime
 from ais0c_agents import (
     FakeGatewayClient,
-    GatewayError,
     ToolsetProfile,
     ToolSpec,
     load_manifest,
     load_model_registry,
     load_prompt,
 )
-from ais0c_agents.gateway_http import bound_run
-from ais0c_contracts import (
-    CostClass,
-    RunStatus,
-    TimeWindow,
-    ToolCoverage,
-    ToolIntent,
-    ToolResult,
-    ToolStatus,
-    Usage,
-)
+from ais0c_contracts import CostClass, RunStatus, TimeWindow, Usage
 from ais0c_storage.repositories import get_agent_run
 
 pytestmark = pytest.mark.anyio
@@ -217,61 +205,9 @@ async def test_finish_records_the_triage_result(
     )
 
 
-class BindingGateway(FakeGatewayClient):
-    def __init__(self) -> None:
-        super().__init__(
-            {
-                "get_offense": ToolResult(
-                    status=ToolStatus.OK,
-                    evidence_id="ev_1",
-                    data=[],
-                    truncated=False,
-                    coverage=ToolCoverage(complete=True, gaps=[]),
-                )
-            }
-        )
-        self.runs: list[str | None] = []
-
-    async def call(self, intent: ToolIntent) -> ToolResult:
-        self.runs.append(bound_run())
-        return await super().call(intent)
-
-
-def intent() -> ToolIntent:
-    return ToolIntent(
-        case_id="case-7",
-        agent_id="triage",
-        toolset_profile="qradar-triage-read",
-        tool_id="get_offense",
-        tool_schema_version="1",
-        arguments={"offense_id": 7},
-        reason="Read the offense.",
-        expected_evidence="The offense record.",
-        time_window=TimeWindow(start=NOW - timedelta(hours=1), end=NOW),
-        cost_class=CostClass.LOW,
-    )
-
-
-async def test_a_tool_call_is_bound_to_the_run_of_its_workflow() -> None:
-    """The tool activity's workflow is the Triage run, and its ID is the run's ID."""
-    inner = BindingGateway()
-    env = ActivityEnvironment()
-    env.info = dataclasses.replace(env.info, workflow_id=RUN_ID)
-
-    result = await env.run(AgentRunGateway(inner).call, intent())
-
-    assert result.status is ToolStatus.OK
-    assert inner.runs == [RUN_ID]
-    assert bound_run() is None
-
-
-async def test_a_call_outside_a_runs_activity_is_refused() -> None:
-    inner = BindingGateway()
-    no_workflow = ActivityEnvironment()
-    no_workflow.info = dataclasses.replace(no_workflow.info, workflow_id=None)
-
-    with pytest.raises(GatewayError, match="no workflow"):
-        await no_workflow.run(AgentRunGateway(inner).call, intent())
-    with pytest.raises(GatewayError, match="tool activity"):
-        await AgentRunGateway(inner).call(intent())
-    assert inner.intents == []
+def test_tool_calls_name_their_run_without_a_client_wrapper() -> None:
+    """T-013: the agent writes the run's ID from its deps into every ToolIntent, so the agent
+    gets the gateway client itself; the client that bound calls to the tool activity's workflow
+    is gone. The worker tests check the ID of a run under Temporal."""
+    assert not hasattr(ais0c_activities, "AgentRunGateway")
+    assert not hasattr(ais0c_activities.gateway, "AgentRunGateway")

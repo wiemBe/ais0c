@@ -17,6 +17,7 @@ from ais0c_contracts.agents import (
     VerificationResult,
 )
 from ais0c_contracts.common import (
+    RUN_ID_MAX_LENGTH,
     SHORT_TEXT_MAX_LENGTH,
     SUMMARY_MAX_LENGTH,
     Budget,
@@ -26,6 +27,7 @@ from ais0c_contracts.common import (
     EvidenceId,
     EvidenceRef,
     Recommendation,
+    RunId,
     ShortText,
     Summary,
     TimeWindow,
@@ -73,11 +75,13 @@ from ais0c_contracts.offense import (
     IocHit,
     OffenseSnapshot,
 )
+from ais0c_contracts.registry import ModelRelease, SkillRef
 from ais0c_contracts.tools import ToolCoverage, ToolIntent, ToolResult
 from ais0c_contracts.tuning import Backtest, OperatorFeedback, TuningProposal
 
 __all__ = [
     "MAX_HUNT_WINDOW_MONTHS",
+    "RUN_ID_MAX_LENGTH",
     "SHORT_TEXT_MAX_LENGTH",
     "SUMMARY_MAX_LENGTH",
     "ActionType",
@@ -121,14 +125,17 @@ __all__ = [
     "InvestigationResult",
     "IocHit",
     "Level",
+    "ModelRelease",
     "NoteContent",
     "OffenseSnapshot",
     "OperatorFeedback",
     "PlanStep",
     "QAReason",
     "Recommendation",
+    "RunId",
     "RunStatus",
     "ShortText",
+    "SkillRef",
     "Summary",
     "TimeWindow",
     "TimelineEntry",

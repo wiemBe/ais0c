@@ -121,7 +121,7 @@ async def test_without_a_valid_token_nothing_happens(
     intent = harness.intent(
         "qradar-triage-read", "get_offense", {"offense_id": 1001}, agent_id="triage"
     )
-    headers = {"X-Ais0c-Run-Id": run}
+    headers: dict[str, str] = {}
     if authorization is not None:
         headers["Authorization"] = authorization.format(token=harness.tokens["qradar-triage-read"])
 

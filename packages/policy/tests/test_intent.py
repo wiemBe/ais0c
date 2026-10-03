@@ -14,6 +14,7 @@ RULES = IntentRules(max_time_window=timedelta(days=7))
 
 def intent(**changes: object) -> ToolIntent:
     fields: dict[str, object] = {
+        "run_id": "case-1001-triage-1",
         "case_id": "case-1001",
         "agent_id": "triage",
         "toolset_profile": "qradar-triage-read",

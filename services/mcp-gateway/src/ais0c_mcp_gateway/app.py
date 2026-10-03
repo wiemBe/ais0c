@@ -1,7 +1,6 @@
 """The gateway's HTTP interface towards the agents (T-007 report, "T-011 için önerilen yapı").
 
     POST /v1/tool-calls  Authorization: Bearer <profile token>
-                         X-Ais0c-Run-Id: <agent run, agent_runs.run_id>
                          body: ToolIntent -> 200 ToolResult (status ok, denied or error)
     GET  /v1/tools       Authorization: Bearer <profile token>
                          -> the profile's tools as agents see them (agents ToolsetProfile)
@@ -13,12 +12,12 @@ headers are not used; the network decides who reaches the gateway (architecture 
 
 A denial is a ToolResult, not an HTTP error. HTTP errors (application/problem+json, with a
 machine-readable `title`) mean no ToolResult can be given: an unknown token (401), a request
-that is not a ToolIntent or names no recorded agent run (422), a body over 256 KiB (413) or an
-unreachable database (503). The run ID travels in a header because the ToolIntent contract has
-no field for it, while every `tool_calls` row needs one.
+that is not a ToolIntent (422, `gateway.invalid_intent`) or whose `run_id` names no recorded
+agent run (422, `gateway.unknown_run`), a body over 256 KiB (413) or an unreachable database
+(503). The agent run comes only from the ToolIntent's `run_id` (contracts v0.2, T-19); no
+request header names or changes it.
 """
 
-import re
 from typing import Final
 
 from fastapi import FastAPI, Request
@@ -30,9 +29,7 @@ from ais0c_mcp_gateway.auth import ProfileAuthenticator
 from ais0c_mcp_gateway.pipeline import Gateway, StorageUnavailableError, UnknownRunError
 from ais0c_mcp_gateway.upstream import one_line
 
-RUN_ID_HEADER: Final = "X-Ais0c-Run-Id"
 MAX_BODY_BYTES: Final = 256 * 1024
-_RUN_ID: Final = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,199}")
 _PROBLEM_JSON: Final = "application/problem+json"
 
 
@@ -44,9 +41,6 @@ def create_app(gateway: Gateway, authenticator: ProfileAuthenticator) -> FastAPI
         profile = authenticator.authenticate(request.headers.get("authorization"))
         if profile is None or profile not in gateway.registry.profiles:
             return problem(401, "gateway.unauthorized")
-        run_id = request.headers.get(RUN_ID_HEADER, "")
-        if not _RUN_ID.fullmatch(run_id):
-            return problem(422, "gateway.invalid_run_id", f"{RUN_ID_HEADER} is missing or invalid")
         body = await _read_body(request)
         if body is None:
             return problem(413, "gateway.body_too_large")
@@ -55,9 +49,9 @@ def create_app(gateway: Gateway, authenticator: ProfileAuthenticator) -> FastAPI
         except ValidationError as error:
             return problem(422, "gateway.invalid_intent", _describe(error))
         try:
-            result = await gateway.call(profile, run_id, intent)
+            result = await gateway.call(profile, intent)
         except UnknownRunError:
-            return problem(422, "gateway.unknown_run", "no agent run with this ID is recorded")
+            return problem(422, "gateway.unknown_run", "no agent run with this run_id is recorded")
         except StorageUnavailableError:
             return problem(503, "gateway.storage_unavailable")
         return JSONResponse(result.model_dump(mode="json"))
