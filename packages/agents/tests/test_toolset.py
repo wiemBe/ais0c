@@ -6,7 +6,7 @@ import pytest
 from pydantic import ValidationError
 
 from ais0c_agents import ToolsetProfile, ToolSpec, build_triage_agent
-from ais0c_agents.toolset import build_gateway_toolset, tool_parameters_schema
+from ais0c_agents.toolset import build_gateway_toolset, result_source, tool_parameters_schema
 from ais0c_contracts import CostClass, RunStatus
 
 from .helpers import (
@@ -146,7 +146,8 @@ def test_profile_filed_under_another_name_stops_the_build() -> None:
     [
         {"input_schema": "InvestigationTask"},
         {"output_schema": "InvestigationResult"},
-        {"prompt": "prompts/triage/v2.md"},
+        {"prompt": "prompts/triage/v1.md"},
+        {"shared_rules": "prompts/_shared/rules/v1.md"},
         {"toolset_profile": None},
     ],
 )
@@ -230,9 +231,21 @@ def test_profile_lists_each_tool_once() -> None:
         )
 
 
-def test_profile_tool_source_fits_the_wrapper() -> None:
-    with pytest.raises(ValidationError, match="longer than 64"):
-        ToolsetProfile(name="p", connector="c" * 30, tools=(tool_spec("t" * 40),))
+@pytest.mark.parametrize(
+    ("connector", "tool_id"),
+    [("qradar", "t" * 58), ("misp", "get_event"), ("platform", "enrichment"), ("kb", "runbook")],
+)
+def test_profile_tool_source_must_be_one_the_wrapper_accepts(connector: str, tool_id: str) -> None:
+    # T-015 criterion 2: result blocks are named qradar.<tool> or falcon.<tool>, at most 64
+    # characters; an unknown connector fails when the profile loads, before any run.
+    with pytest.raises(ValidationError, match="not a source the wrapper accepts"):
+        ToolsetProfile(name="p", connector=connector, tools=(tool_spec(tool_id),))
+
+
+def test_profile_of_a_known_connector_loads() -> None:
+    profile = ToolsetProfile(name="p", connector="falcon", tools=(tool_spec("t" * 57),))
+
+    assert result_source(profile, "t" * 57) == "falcon." + "t" * 57
 
 
 def test_profile_needs_a_tool() -> None:

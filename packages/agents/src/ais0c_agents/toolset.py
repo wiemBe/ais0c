@@ -41,6 +41,7 @@ from ais0c_contracts import (
     ToolResult,
     ToolStatus,
 )
+from ais0c_policy import CONNECTOR_SOURCES, MAX_SOURCE_LENGTH, is_known_source
 
 ToolName = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9_]{0,63}$")]
 Name = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9-]{0,62}$")]
@@ -49,8 +50,6 @@ NonBlankShortText = Annotated[
 ]
 
 TOOLSET_ID_PREFIX: Final = "gateway-"
-# Longest `source` attribute the policy package's wrapper accepts.
-MAX_SOURCE_LENGTH: Final = 64
 # The policy package's wrapper accepts the same nonces; checking early fails a run before any
 # model request.
 _NONCE = re.compile(r"^[0-9a-f]{8,64}$")
@@ -87,7 +86,8 @@ class ToolsetProfile(BaseModel):
 
     name: Name
     connector: Name
-    """Connector id (config/connectors/); prefixes the `source` of every result block."""
+    """Connector id (config/connectors/); prefixes the `source` of every result block. Only
+    the connectors the policy package's wrapper knows are accepted (qradar, falcon)."""
     tools: Annotated[tuple[ToolSpec, ...], Field(min_length=1)]
 
     @model_validator(mode="after")
@@ -96,8 +96,14 @@ class ToolsetProfile(BaseModel):
         if len(ids) != len(set(ids)):
             raise ValueError(f"profile {self.name!r} lists a tool twice")
         for tool_id in ids:
-            if len(result_source(self, tool_id)) > MAX_SOURCE_LENGTH:
-                raise ValueError(f"{self.connector}.{tool_id} is longer than {MAX_SOURCE_LENGTH}")
+            # A tool result is named after its connector; kb.* names external knowledge.
+            source = result_source(self, tool_id)
+            if self.connector not in CONNECTOR_SOURCES or not is_known_source(source):
+                raise ValueError(
+                    f"{source} is not a source the wrapper accepts for tool results: "
+                    f"{' or '.join(CONNECTOR_SOURCES)} tools, at most {MAX_SOURCE_LENGTH} "
+                    "characters"
+                )
         return self
 
 

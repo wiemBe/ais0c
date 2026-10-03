@@ -17,20 +17,34 @@ from ais0c_policy.field_filter import (
     normalize_field_name,
 )
 from ais0c_policy.intent import IntentRejectReason, IntentRules, check_intent
-from ais0c_policy.untrusted import neutralize_tags, new_nonce, wrap_untrusted
+from ais0c_policy.untrusted import (
+    CONNECTOR_SOURCES,
+    KNOWLEDGE_SOURCES,
+    MAX_SOURCE_LENGTH,
+    KnowledgeKind,
+    is_known_source,
+    neutralize_tags,
+    new_nonce,
+    wrap_untrusted,
+)
 
 __all__ = [
+    "CONNECTOR_SOURCES",
+    "KNOWLEDGE_SOURCES",
+    "MAX_SOURCE_LENGTH",
     "AqlGuardResult",
     "AqlProfile",
     "AqlRejectReason",
     "FieldFilter",
     "IntentRejectReason",
     "IntentRules",
+    "KnowledgeKind",
     "QueryWindow",
     "aql_filtered_field_references",
     "check_aql",
     "check_intent",
     "filter_rows",
+    "is_known_source",
     "neutralize_tags",
     "new_nonce",
     "normalize_field_name",

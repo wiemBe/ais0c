@@ -1,7 +1,7 @@
 # Triage agent manifest (docs/architecture.md §8.1). Checked against the model registry
 # (config/models/, §8.4) before the agent starts: packages/agents/src/ais0c_agents/manifest.py.
 id: triage
-version: 1.0.0
+version: 1.1.0
 role: "QRadar offense ilk değerlendirmesi"
 workflow_types: [case]
 model_alias: soc-fast
@@ -23,5 +23,7 @@ budgets:
   wall_clock_seconds: 420
 autonomy: L0
 can_delegate: false
-prompt: prompts/triage/v1.md
-eval_suites: [triage-gold, prompt-injection, failure-recovery]
+prompt: prompts/triage/v2.md
+# Shared rules version the prompt is assembled with (docs/impl/prompts.md, T-015).
+shared_rules: prompts/_shared/rules/v2.md
+eval_suites: [triage-gold, prompt-injection, failure-recovery, trust-layers]

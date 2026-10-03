@@ -1,10 +1,13 @@
 """The Triage agent (architecture §7, §9): the first decision on one QRadar offense.
 
-Input is a TriageTask: the AgentTask, the offense snapshot and the deterministic enrichment.
-The model sees the Analysis Catalog as trusted <org_context>; the snapshot and the rest of the
-enrichment only inside the `untrusted_*` wrapper. Neither is evidence: claims must cite what the
-agent's own tool calls returned. The model returns a TriageOutput, and the run adds the task ID,
-status and usage to make the TriageResult.
+Input is a TriageTask: the AgentTask, the offense snapshot, the deterministic enrichment and
+external knowledge. Each part reaches the model in its trust layer (architecture §22, T-20):
+the Analysis Catalog entries and critical asset hits as organization facts in <org_context>;
+the snapshot, the entity resolutions, the IOC hits and other knowledge only inside the
+`untrusted_*` wrapper. The floor level is policy, which code applies, so the model never sees
+it. None of the context is evidence: claims must cite what the agent's own tool calls returned.
+The model returns a TriageOutput, and the run adds the task ID, status and usage to make the
+TriageResult.
 """
 
 import time
@@ -12,14 +15,21 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Annotated, Final
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, JsonValue
 from pydantic_ai import Agent, AgentRetries, ToolOutput
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.models import Model
 
 from ais0c_agents.gateway import GatewayClient
 from ais0c_agents.manifest import AgentManifest
-from ais0c_agents.prompts import PromptTemplate, render_org_context, wrap_json_lines
+from ais0c_agents.prompts import (
+    SHARED_RULES_PLACEHOLDER,
+    KnowledgeItem,
+    PromptTemplate,
+    render_knowledge,
+    render_org_context,
+    wrap_json_lines,
+)
 from ais0c_agents.runner import (
     AgentRun,
     check_cited_evidence,
@@ -52,6 +62,16 @@ OUTPUT_TOOL: Final = "final_result"
 TOOL_RETRIES: Final = 2
 OUTPUT_RETRIES: Final = 2
 RETRIES: Final[AgentRetries] = {"tools": TOOL_RETRIES, "output": OUTPUT_RETRIES}
+# The template's inputs besides the shared rules (prompts/triage/v2.md).
+PLACEHOLDERS: Final = frozenset(
+    {"org_context", "offense_snapshot", "entity_resolutions", "knowledge", "tools", "tool_budget"}
+)
+OFFENSE_SOURCE: Final = "qradar.offense"
+# Entity resolution answers from QRadar's DHCP, VPN and logon events and asset model (§16).
+ENTITY_RESOLUTION_SOURCE: Final = "qradar.entity_resolution"
+NO_ENTITY_RESOLUTION: Final = "No entity resolution is available for this offense."
+NO_KNOWLEDGE: Final = "No external knowledge is available for this offense."
+MAX_KNOWLEDGE_ITEMS: Final = 10
 
 
 # Not a ContractModel: contract models are defined only in packages/contracts.
@@ -63,6 +83,9 @@ class TriageTask(BaseModel):
     task: AgentTask
     offense: OffenseSnapshot
     enrichment: EnrichmentContext
+    knowledge: Annotated[list[KnowledgeItem], Field(max_length=MAX_KNOWLEDGE_ITEMS)] = []
+    """External knowledge about the offense: ATT&CK, CTI, runbooks, past cases. Empty until
+    the knowledge plane supplies it (Faz 3); the enrichment's IOC hits come on their own."""
 
 
 # What the model returns: a TriageResult without task_id, status and usage, which the run fills
@@ -90,17 +113,30 @@ class TriageAgent:
     agent: Agent[RunDeps, TriageOutput]
 
     def render_instructions(self, task: TriageTask, *, nonce: str, tool_budget: int) -> str:
-        """The prompt for one run; `nonce` is that run's `untrusted_*` tag suffix."""
-        enrichment = task.enrichment.model_dump(mode="json", exclude={"catalog"})
+        """The prompt for one run; `nonce` is that run's `untrusted_*` tag suffix.
+
+        The enrichment's `floor_level` and `group_id` stay out: code applies the floor, and
+        the group is the platform's own bookkeeping.
+        """
+        enrichment = task.enrichment
+        resolutions: list[JsonValue] = [
+            resolution.model_dump(mode="json") for resolution in enrichment.entity_resolutions
+        ]
+        knowledge = render_knowledge([*enrichment.ioc_hits, *task.knowledge], nonce=nonce)
         return self.prompt.render(
             {
-                "org_context": render_org_context(task.enrichment.catalog),
+                "org_context": render_org_context(
+                    enrichment.catalog, critical_assets=enrichment.critical_asset_hits
+                ),
                 "offense_snapshot": wrap_json_lines(
-                    [task.offense.model_dump(mode="json")], source="qradar.offense", nonce=nonce
+                    [task.offense.model_dump(mode="json")], source=OFFENSE_SOURCE, nonce=nonce
                 ),
-                "enrichment": wrap_json_lines(
-                    [enrichment], source="platform.enrichment", nonce=nonce
+                "entity_resolutions": (
+                    wrap_json_lines(resolutions, source=ENTITY_RESOLUTION_SOURCE, nonce=nonce)
+                    if resolutions
+                    else NO_ENTITY_RESOLUTION
                 ),
+                "knowledge": knowledge or NO_KNOWLEDGE,
                 "tools": ", ".join(tool.id for tool in self.profile.tools),
                 "tool_budget": str(tool_budget),
             }
@@ -168,7 +204,8 @@ def build_triage_agent(
     The agent gets only the tools of its manifest's profile. `capabilities` are attached when
     the agent is built, the only time Pydantic AI binds them; a workflow passes
     TemporalDurability here. Raises ValueError when the manifest does not describe a triage
-    agent, its prompt or profile is not the one given, or the profile is unknown.
+    agent, its prompt, shared rules or profile is not the one given, the prompt does not take
+    this agent's inputs, or the profile is unknown.
     """
     if (manifest.input_schema, manifest.output_schema) != (INPUT_SCHEMA, OUTPUT_SCHEMA):
         raise ValueError(
@@ -177,6 +214,15 @@ def build_triage_agent(
         )
     if prompt.path != manifest.prompt:
         raise ValueError(f"manifest {manifest.id!r} uses {manifest.prompt}, not {prompt.path}")
+    if prompt.shared_rules_path != manifest.shared_rules:
+        raise ValueError(
+            f"manifest {manifest.id!r} uses {manifest.shared_rules}, not {prompt.shared_rules_path}"
+        )
+    if (inputs := prompt.placeholders - {SHARED_RULES_PLACEHOLDER}) != PLACEHOLDERS:
+        raise ValueError(
+            f"{prompt.path} takes {', '.join(sorted(inputs))}; the Triage agent fills "
+            f"{', '.join(sorted(PLACEHOLDERS))}"
+        )
     profile = profiles.get(manifest.toolset_profile or "")
     if profile is None or profile.name != manifest.toolset_profile:
         raise ValueError(f"unknown toolset profile {manifest.toolset_profile!r}")

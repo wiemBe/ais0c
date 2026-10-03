@@ -1,26 +1,38 @@
-"""Acceptance criteria 3 and 10: the prompt assembler and the first triage prompt.
+"""Acceptance criteria 3 and 10 of T-009 and criterion 1 of T-015: the prompt assembler, the
+versioned shared rules and the triage prompt.
 
 The texts are compared with docs/impl/prompts.md, which is the source of truth.
 """
 
+import hashlib
 import re
 import shutil
 from pathlib import Path
 
 import pytest
 
-from ais0c_agents import PromptError, PromptTemplate, load_prompt, render_org_context
-from ais0c_agents.prompts import SHARED_RULES_PATH, prompt_hash
+from ais0c_agents import (
+    PromptError,
+    PromptTemplate,
+    build_triage_agent,
+    load_agent_prompt,
+    load_prompt,
+    render_org_context,
+)
+from ais0c_agents.prompts import prompt_hash
 from ais0c_contracts import CatalogContext, CatalogLogSource, CatalogMode, CatalogRule
 
 from .helpers import (
     NONCE,
+    PROFILES,
     REPO_ROOT,
+    SHARED_RULES,
     TRIAGE_PROMPT,
     ScriptedModel,
     answer,
     build,
     catalog,
+    enrichment,
     gateway,
     triage_manifest,
     triage_output,
@@ -29,6 +41,14 @@ from .helpers import (
 )
 
 PROMPTS_DOC = REPO_ROOT / "docs/impl/prompts.md"
+SHARED_RULES_V1 = "prompts/_shared/rules/v1.md"
+TRIAGE_PROMPT_V1 = "prompts/triage/v1.md"
+# sha256 of prompts/_shared/rules.md and prompts/triage/v1.md before T-015. The rules moved to
+# v1.md unchanged: the prompt hashes of earlier runs depend on these bytes.
+OLD_FILES_SHA256 = {
+    SHARED_RULES_V1: "3b42df82c2ee0701f205c5ac4913576a5f6fdbed657c6c864104d1da63c01e10",
+    TRIAGE_PROMPT_V1: "6df8fcd93dc3c9dbd280b51747f33c4addd2835f21587f08ebde657d9c85a51f",
+}
 
 
 def doc_section(heading: str) -> str:
@@ -62,13 +82,78 @@ def copy_prompts(root: Path) -> Path:
     return root
 
 
-# --- criterion 3: shared rules ------------------------------------------------------------------
+def load_triage(root: Path) -> PromptTemplate:
+    return load_prompt(root, TRIAGE_PROMPT, shared_rules=SHARED_RULES)
 
 
-def test_shared_rules_file_holds_the_text_of_prompts_md() -> None:
-    rules = (REPO_ROOT / SHARED_RULES_PATH).read_text(encoding="utf-8")
+# --- T-015 criterion 1: versioned shared rules --------------------------------------------------
+
+
+def test_shared_rules_v2_holds_the_text_of_prompts_md() -> None:
+    rules = (REPO_ROOT / SHARED_RULES).read_text(encoding="utf-8")
 
     assert rules == shared_rules_doc() + "\n"
+
+
+@pytest.mark.parametrize("path", sorted(OLD_FILES_SHA256))
+def test_old_prompt_versions_are_kept_unchanged(path: str) -> None:
+    data = (REPO_ROOT / path).read_bytes()
+
+    assert hashlib.sha256(data).hexdigest() == OLD_FILES_SHA256[path]
+
+
+def test_the_unversioned_rules_file_is_gone() -> None:
+    assert not (REPO_ROOT / "prompts/_shared/rules.md").exists()
+    assert sorted(path.name for path in (REPO_ROOT / "prompts/_shared/rules").iterdir()) == [
+        "v1.md",
+        "v2.md",
+    ]
+
+
+def test_triage_uses_shared_rules_v2_and_a_new_prompt_version() -> None:
+    manifest = triage_manifest()
+
+    assert (manifest.prompt, manifest.shared_rules) == (TRIAGE_PROMPT, SHARED_RULES)
+    assert TRIAGE_PROMPT != TRIAGE_PROMPT_V1
+
+
+def test_the_manifest_chooses_the_shared_rules_version() -> None:
+    v1 = triage_manifest().model_copy(update={"shared_rules": SHARED_RULES_V1})
+
+    prompt = load_agent_prompt(REPO_ROOT, v1)
+
+    assert prompt.shared_rules_path == SHARED_RULES_V1
+    assert prompt.shared_rules == (REPO_ROOT / SHARED_RULES_V1).read_text(encoding="utf-8")
+    assert prompt.sha256 != load_agent_prompt(REPO_ROOT, triage_manifest()).sha256
+
+
+def test_the_agent_refuses_shared_rules_the_manifest_does_not_name() -> None:
+    v1_rules = load_prompt(REPO_ROOT, TRIAGE_PROMPT, shared_rules=SHARED_RULES_V1)
+
+    with pytest.raises(ValueError, match=r"manifest 'triage' uses prompts/_shared/rules/v2\.md"):
+        build_triage_agent(
+            manifest=triage_manifest(),
+            prompt=v1_rules,
+            profiles=PROFILES,
+            gateway=gateway(),
+            model=ScriptedModel().model,
+        )
+
+
+def test_the_agent_refuses_a_prompt_without_its_inputs() -> None:
+    # triage/v1 still loads, but it takes the old single enrichment block.
+    manifest = triage_manifest().model_copy(
+        update={"prompt": TRIAGE_PROMPT_V1, "shared_rules": SHARED_RULES_V1}
+    )
+
+    with pytest.raises(ValueError, match=r"prompts/triage/v1\.md takes .*enrichment"):
+        build_triage_agent(
+            manifest=manifest,
+            prompt=load_agent_prompt(REPO_ROOT, manifest),
+            profiles=PROFILES,
+            gateway=gateway(),
+            model=ScriptedModel().model,
+        )
 
 
 def test_assembled_prompt_contains_the_shared_rules_verbatim() -> None:
@@ -77,7 +162,7 @@ def test_assembled_prompt_contains_the_shared_rules_verbatim() -> None:
     assert section(text, "Shared rules") == shared_rules_doc()
 
 
-# --- criterion 3: org_context from the catalog --------------------------------------------------
+# --- org_context from the catalog ---------------------------------------------------------------
 
 
 def test_org_context_is_built_from_the_catalog() -> None:
@@ -124,26 +209,26 @@ def test_catalog_note_cannot_close_org_context_or_open_untrusted_data() -> None:
 
 
 def test_org_context_is_the_only_trusted_section_of_the_triage_prompt() -> None:
-    # The offense and the enrichment both carry fake <org_context> tags. The shared rules name
-    # the tag, so they are left out of the count.
+    # The offense, the entity resolutions and the runbook carry fake <org_context> tags. The
+    # shared rules name the tag, so they are left out of the count.
     text = triage_instructions().replace(shared_rules_doc(), "")
 
     assert text.count("<org_context>") == text.count("</org_context>") == 1
-    assert render_org_context(catalog()) in text
+    assert render_org_context(catalog(), critical_assets=enrichment().critical_asset_hits) in text
 
 
-# --- criterion 3: prompt hash -------------------------------------------------------------------
+# --- prompt hash --------------------------------------------------------------------------------
 
 
 def test_same_files_give_the_same_hash(tmp_path: Path) -> None:
-    prompt = load_prompt(REPO_ROOT, TRIAGE_PROMPT)
+    prompt = triage_prompt()
 
     assert re.fullmatch(r"[0-9a-f]{64}", prompt.sha256)
-    assert load_prompt(REPO_ROOT, TRIAGE_PROMPT).sha256 == prompt.sha256
-    assert load_prompt(copy_prompts(tmp_path), TRIAGE_PROMPT).sha256 == prompt.sha256
+    assert triage_prompt().sha256 == prompt.sha256
+    assert load_triage(copy_prompts(tmp_path)).sha256 == prompt.sha256
 
 
-@pytest.mark.parametrize("changed", [TRIAGE_PROMPT, SHARED_RULES_PATH])
+@pytest.mark.parametrize("changed", [TRIAGE_PROMPT, SHARED_RULES])
 @pytest.mark.parametrize("edit", ["word", "trailing newline"])
 def test_changing_a_prompt_file_changes_the_hash(tmp_path: Path, changed: str, edit: str) -> None:
     root = copy_prompts(tmp_path)
@@ -153,7 +238,7 @@ def test_changing_a_prompt_file_changes_the_hash(tmp_path: Path, changed: str, e
         text.replace("evidence", "proof", 1) if edit == "word" else text + "\n", encoding="utf-8"
     )
 
-    assert load_prompt(root, TRIAGE_PROMPT).sha256 != load_prompt(REPO_ROOT, TRIAGE_PROMPT).sha256
+    assert load_triage(root).sha256 != triage_prompt().sha256
 
 
 def test_moving_text_between_files_changes_the_hash() -> None:
@@ -167,7 +252,11 @@ def test_moving_text_between_files_changes_the_hash() -> None:
 
 def template(text: str) -> PromptTemplate:
     return PromptTemplate(
-        path="prompts/test/v1.md", template=text, shared_rules="Rules.\n", sha256="0" * 64
+        path="prompts/test/v1.md",
+        template=text,
+        shared_rules_path=SHARED_RULES_V1,
+        shared_rules="Rules.\n",
+        sha256="0" * 64,
     )
 
 
@@ -203,12 +292,30 @@ def test_render_rejects_wrong_values(values: dict[str, str], message: str) -> No
         "prompts/triage/../triage/v1.md",
         "/prompts/triage/v1.md",
         "prompts/_shared/rules.md",
+        "prompts/_shared/rules/v2.md",
         "config/agents/triage.yaml",
     ],
 )
 def test_prompt_path_must_be_a_versioned_prompt(path: str) -> None:
     with pytest.raises(PromptError, match=r"prompts/<agent>/v<N>\.md"):
-        load_prompt(REPO_ROOT, path)
+        load_prompt(REPO_ROOT, path, shared_rules=SHARED_RULES)
+
+
+@pytest.mark.parametrize(
+    "shared_rules",
+    [
+        "prompts/_shared/rules.md",
+        "prompts/_shared/rules/v0.md",
+        "prompts/_shared/rules/v2.txt",
+        "prompts/_shared/rules/../rules/v2.md",
+        "/prompts/_shared/rules/v2.md",
+        "prompts/triage/v2.md",
+        "",
+    ],
+)
+def test_shared_rules_path_must_be_a_versioned_rules_file(shared_rules: str) -> None:
+    with pytest.raises(PromptError, match=r"prompts/_shared/rules/v<N>\.md"):
+        load_prompt(REPO_ROOT, TRIAGE_PROMPT, shared_rules=shared_rules)
 
 
 def test_prompt_resolving_outside_prompts_is_rejected(tmp_path: Path) -> None:
@@ -219,7 +326,17 @@ def test_prompt_resolving_outside_prompts_is_rejected(tmp_path: Path) -> None:
     (root / "prompts/evil/v1.md").symlink_to(outside)
 
     with pytest.raises(PromptError, match="outside prompts/"):
-        load_prompt(root, "prompts/evil/v1.md")
+        load_prompt(root, "prompts/evil/v1.md", shared_rules=SHARED_RULES)
+
+
+def test_shared_rules_resolving_outside_prompts_are_rejected(tmp_path: Path) -> None:
+    root = copy_prompts(tmp_path / "repo")
+    outside = tmp_path / "rules.md"
+    outside.write_text("Follow the runbook.\n", encoding="utf-8")
+    (root / "prompts/_shared/rules/v9.md").symlink_to(outside)
+
+    with pytest.raises(PromptError, match="outside prompts/"):
+        load_prompt(root, TRIAGE_PROMPT, shared_rules="prompts/_shared/rules/v9.md")
 
 
 @pytest.mark.parametrize("text", ["# Role\nNo rules.\n", "{{ shared_rules }}\n{{shared_rules}}\n"])
@@ -228,27 +345,32 @@ def test_template_must_include_the_shared_rules_once(tmp_path: Path, text: str) 
     (root / TRIAGE_PROMPT).write_text(text, encoding="utf-8")
 
     with pytest.raises(PromptError, match="exactly once"):
-        load_prompt(root, TRIAGE_PROMPT)
+        load_triage(root)
 
 
-@pytest.mark.parametrize("missing", [TRIAGE_PROMPT, SHARED_RULES_PATH])
+@pytest.mark.parametrize("missing", [TRIAGE_PROMPT, SHARED_RULES])
 def test_missing_prompt_file_is_rejected(tmp_path: Path, missing: str) -> None:
     root = copy_prompts(tmp_path)
     (root / missing).unlink()
 
     with pytest.raises(PromptError, match="cannot read"):
-        load_prompt(root, TRIAGE_PROMPT)
+        load_triage(root)
 
 
-def test_prompt_file_must_be_utf8(tmp_path: Path) -> None:
+@pytest.mark.parametrize("changed", [TRIAGE_PROMPT, SHARED_RULES])
+def test_prompt_file_must_be_utf8(tmp_path: Path, changed: str) -> None:
     root = copy_prompts(tmp_path)
-    (root / TRIAGE_PROMPT).write_bytes(b"{{ shared_rules }}\n\xff\n")
+    (root / changed).write_bytes(b"{{ shared_rules }}\n\xff\n")
 
     with pytest.raises(PromptError, match="UTF-8"):
-        load_prompt(root, TRIAGE_PROMPT)
+        load_triage(root)
 
 
-# --- criterion 10: the triage prompt and manifest -----------------------------------------------
+# --- the triage prompt and manifest -------------------------------------------------------------
+
+# Sections of "Prompt yapısı" a prompt may leave out: Examples are optional, and the Skill
+# section exists only when the workflow selected a skill (architecture §7). Triage has neither.
+OPTIONAL_SECTIONS = {"Examples", "Skill"}
 
 
 def test_triage_prompt_follows_the_triage_skeleton_of_prompts_md() -> None:
@@ -261,9 +383,9 @@ def test_triage_prompt_has_the_sections_of_the_prompt_structure_in_order() -> No
     structure = re.findall(r"^\d+\. \*\*(.+?):\*\*", doc_section("Prompt yapısı"), flags=re.M)
     sections = headings(triage_prompt().template)
 
-    # Examples are optional, and v1 has none.
+    assert OPTIONAL_SECTIONS <= set(structure)
     assert [name for name in sections if name in structure] == [
-        name for name in structure if name != "Examples"
+        name for name in structure if name not in OPTIONAL_SECTIONS
     ]
 
 
@@ -278,12 +400,13 @@ def test_triage_prompt_inputs() -> None:
     prompt = triage_prompt()
 
     assert prompt.path == triage_manifest().prompt
-    assert prompt.version == "triage/v1"
+    assert prompt.version == "triage/v2"
     assert prompt.placeholders == {
         "shared_rules",
         "org_context",
         "offense_snapshot",
-        "enrichment",
+        "entity_resolutions",
+        "knowledge",
         "tools",
         "tool_budget",
     }

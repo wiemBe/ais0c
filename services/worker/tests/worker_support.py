@@ -2,7 +2,7 @@
 and a fake gateway, and a running platform (Temporal test server, PostgreSQL, the real workflows
 and activities, a fake offense source).
 
-The Triage agent is the real one (config/agents/triage.yaml, prompts/triage/v1.md) with Pydantic
+The Triage agent is the real one (config/agents/triage.yaml, prompts/triage/v2.md) with Pydantic
 AI's TemporalDurability; only its model and its gateway are stand-ins. The model is a
 FunctionModel that reads the offense through the gateway once and then answers, citing what the
 gateway returned. Its calls run inside the agent's model activities, so a test can see the
@@ -39,9 +39,9 @@ from ais0c_agents import (
     FakeGatewayClient,
     ToolsetProfile,
     ToolSpec,
+    load_agent_prompt,
     load_manifest,
     load_model_registry,
-    load_prompt,
 )
 from ais0c_contracts import (
     CostClass,
@@ -249,7 +249,7 @@ def triage_runtime(
         manifest = manifest.model_copy(update={"budgets": budgets})
     return TriageRuntime.build(
         manifest=manifest,
-        prompt=load_prompt(REPO_ROOT, manifest.prompt),
+        prompt=load_agent_prompt(REPO_ROOT, manifest),
         profile=TRIAGE_PROFILE,
         gateway=gateway,
         model=model.model,

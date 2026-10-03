@@ -17,9 +17,9 @@ from ais0c_agents import (
     FakeGatewayClient,
     ToolsetProfile,
     ToolSpec,
+    load_agent_prompt,
     load_manifest,
     load_model_registry,
-    load_prompt,
 )
 from ais0c_contracts import CostClass, RunStatus, TimeWindow, Usage
 from ais0c_storage.repositories import get_agent_run
@@ -52,7 +52,7 @@ def runtime(gateway: FakeGatewayClient | None = None) -> TriageRuntime:
     )
     return TriageRuntime.build(
         manifest=manifest,
-        prompt=load_prompt(REPO_ROOT, manifest.prompt),
+        prompt=load_agent_prompt(REPO_ROOT, manifest),
         profile=PROFILE,
         gateway=gateway or FakeGatewayClient(),
         model=TestModel(),
@@ -95,7 +95,7 @@ def test_the_task_carries_the_manifests_budget_and_the_offenses_window() -> None
         None,
         "case-run-1",
     )
-    assert (task.agent_id, task.agent_version) == ("triage", "1.0.0")
+    assert (task.agent_id, task.agent_version) == ("triage", "1.1.0")
     assert task.objective == "Triage QRadar offense 7 (evaluation 1)."
     assert task.time_window == TimeWindow(start=NOW - timedelta(hours=2), end=NOW)
     assert (task.budget.tokens, task.budget.tool_calls, task.budget.seconds) == (150000, 12, 420)
@@ -137,8 +137,8 @@ async def test_begin_records_the_run_before_the_agent_calls_the_gateway(
     assert (row.case_id, row.agent_id, row.agent_version, row.prompt_version) == (
         "case-7",
         "triage",
-        "1.0.0",
-        "triage/v1",
+        "1.1.0",
+        "triage/v2",
     )
     assert (row.model_alias, row.model_target, row.toolset_profile) == (
         "soc-fast",

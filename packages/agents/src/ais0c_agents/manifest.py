@@ -20,6 +20,10 @@ SchemaName = Annotated[str, StringConstraints(pattern=r"^[A-Z][A-Za-z0-9]{0,99}$
 PromptPath = Annotated[
     str, StringConstraints(pattern=r"^prompts/[a-z][a-z0-9-]*/v[1-9][0-9]*\.md$")
 ]
+# A version of the shared rules, prompts/_shared/rules/v<N>.md (T-015).
+SharedRulesPath = Annotated[
+    str, StringConstraints(pattern=r"^prompts/_shared/rules/v[1-9][0-9]*\.md$")
+]
 SemVer = Annotated[str, StringConstraints(pattern=r"^(0|[1-9][0-9]*)(\.(0|[1-9][0-9]*)){2}$")]
 WorkflowType = Literal["case", "hunt", "tuning"]
 
@@ -37,7 +41,7 @@ class Budgets(BaseModel):
 
 
 class AgentManifest(BaseModel):
-    """The fields of architecture §8.1. Unknown fields are rejected."""
+    """The fields of architecture §8.1 and `shared_rules` (T-015). Unknown fields are rejected."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -59,6 +63,9 @@ class AgentManifest(BaseModel):
     autonomy: Literal["L0"]
     can_delegate: bool
     prompt: PromptPath
+    # The shared rules version the prompt is assembled with. Old versions stay, because the
+    # prompt hashes of past runs depend on them.
+    shared_rules: SharedRulesPath
     eval_suites: Annotated[frozenset[Name], Field(min_length=1)]
 
 

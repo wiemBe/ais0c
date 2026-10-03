@@ -23,7 +23,8 @@ from ais0c_agents.registry import parse_model_registry
 
 from .helpers import REPO_ROOT, TRIAGE_MANIFEST, registry, registry_data
 
-# The fields of the example manifest in architecture §8.1.
+# The fields of the example manifest in architecture §8.1, and `shared_rules`, which T-015 adds:
+# the manifest names the shared rules version its prompt uses.
 MANIFEST_FIELDS = {
     "id",
     "version",
@@ -39,6 +40,7 @@ MANIFEST_FIELDS = {
     "autonomy",
     "can_delegate",
     "prompt",
+    "shared_rules",
     "eval_suites",
 }
 
@@ -47,7 +49,7 @@ def manifest_data() -> dict[str, Any]:
     return yaml.safe_load(TRIAGE_MANIFEST.read_text(encoding="utf-8"))
 
 
-def test_manifest_model_has_exactly_the_fields_of_8_1() -> None:
+def test_manifest_model_has_exactly_the_fields_of_8_1_and_shared_rules() -> None:
     assert set(AgentManifest.model_fields) == MANIFEST_FIELDS
     assert set(Budgets.model_fields) == {"tokens", "tool_calls", "wall_clock_seconds"}
 
@@ -57,7 +59,7 @@ def test_triage_manifest_loads() -> None:
 
     assert manifest == AgentManifest(
         id="triage",
-        version="1.0.0",
+        version="1.1.0",
         role="QRadar offense ilk değerlendirmesi",
         workflow_types=frozenset({"case"}),
         model_alias="soc-fast",
@@ -69,8 +71,11 @@ def test_triage_manifest_loads() -> None:
         budgets=Budgets(tokens=150000, tool_calls=12, wall_clock_seconds=420),
         autonomy="L0",
         can_delegate=False,
-        prompt="prompts/triage/v1.md",
-        eval_suites=frozenset({"triage-gold", "prompt-injection", "failure-recovery"}),
+        prompt="prompts/triage/v2.md",
+        shared_rules="prompts/_shared/rules/v2.md",
+        eval_suites=frozenset(
+            {"triage-gold", "prompt-injection", "failure-recovery", "trust-layers"}
+        ),
     )
 
 
@@ -113,6 +118,13 @@ def test_unknown_field_is_rejected() -> None:
         ("prompt", "prompts/triage/../../config/agents/triage.yaml"),
         ("prompt", "/etc/passwd"),
         ("prompt", "prompts/_shared/rules.md"),
+        ("prompt", "prompts/_shared/rules/v2.md"),
+        ("shared_rules", "prompts/_shared/rules.md"),
+        ("shared_rules", "prompts/_shared/rules/v0.md"),
+        ("shared_rules", "prompts/_shared/rules/v2.txt"),
+        ("shared_rules", "prompts/_shared/rules/../../triage/v2.md"),
+        ("shared_rules", "prompts/triage/v2.md"),
+        ("shared_rules", None),
         ("eval_suites", []),
     ],
 )

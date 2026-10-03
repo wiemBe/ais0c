@@ -34,7 +34,7 @@ from ais0c_activities.gateway_source import GatewayOffenseSource
 from ais0c_activities.offense_source import OffenseSource
 from ais0c_activities.settings import CaseSettings
 from ais0c_activities.triage import TriageRuntime
-from ais0c_agents import build_model, load_manifest, load_model_registry, load_prompt
+from ais0c_agents import build_model, load_agent_prompt, load_manifest, load_model_registry
 from ais0c_agents.gateway_http import HttpGatewayClient
 from ais0c_storage import create_engine, create_session_factory, database_url
 
@@ -89,7 +89,7 @@ async def load_case_runtime(environ: Mapping[str, str] | None = None) -> CaseRun
     sessions = create_session_factory(engine)
     triage = TriageRuntime.build(
         manifest=manifest,
-        prompt=load_prompt(root, manifest.prompt),
+        prompt=load_agent_prompt(root, manifest),
         profile=profile,
         gateway=gateway,
         model=build_model(

@@ -93,11 +93,11 @@ async def test_the_triage_agent_runs_as_temporal_activities(
         "case-70-triage-1",
         RunStatus.COMPLETED,
         "triage",
-        "1.0.0",
+        "1.1.0",
     )
     assert (run.model_alias, run.prompt_version, run.toolset_profile) == (
         "soc-fast",
-        "triage/v1",
+        "triage/v2",
         "qradar-triage-read",
     )
     assert (run.tool_calls, run.ended_at is not None) == (1, True)
