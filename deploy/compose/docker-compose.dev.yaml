@@ -1,0 +1,170 @@
+# Development stack: Temporal, PostgreSQL + pgvector, LiteLLM and the OpenTelemetry collector
+# (docs/architecture.md §4, §25; T-11). How to run it: deploy/compose/README.md.
+#
+#   docker compose -f deploy/compose/docker-compose.dev.yaml up -d --wait
+#
+# - Images are pinned by tag and digest: a tag can be moved, a digest cannot.
+# - Secrets come only from the environment, usually deploy/compose/.env (git-ignored; template:
+#   .env.example). Compose stops with a message when a required one is missing.
+# - Ports are published on 127.0.0.1 only; Temporal has no authentication in this setup.
+# - Bind mounts are read-only and carry the SELinux label "z" for Fedora and RHEL hosts.
+#
+# Checks: tests/deploy/test_compose_file.py (static) and tests/deploy/test_dev_stack.py
+# (against the running stack).
+
+name: ais0c-dev
+
+services:
+  # Application data, knowledge store and Temporal's databases, in separate databases (§25).
+  postgres:
+    image: docker.io/pgvector/pgvector:0.8.7-pg18-trixie@sha256:9d9c930220cb9bf2f956d10a8f909cf9973d9672ca0278aef2c1e6facccad2e0
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in deploy/compose/.env}
+      # Read by postgres/init/10-databases.sh on the first start.
+      AIS0C_DB_PASSWORD: ${AIS0C_DB_PASSWORD:?Set AIS0C_DB_PASSWORD in deploy/compose/.env}
+      TEMPORAL_DB_PASSWORD: ${TEMPORAL_DB_PASSWORD:?Set TEMPORAL_DB_PASSWORD in deploy/compose/.env}
+    volumes:
+      # PostgreSQL 18 images keep PGDATA under /var/lib/postgresql/18/docker.
+      - postgres-data:/var/lib/postgresql
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro,z
+    ports:
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      # TCP rather than the Unix socket: during the first start the init scripts run against a
+      # temporary server that listens only on the socket.
+      test: ["CMD", "pg_isready", "--host=127.0.0.1", "--username=postgres", "--dbname=postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+
+  # One-shot job: creates or upgrades Temporal's tables, then exits.
+  temporal-schema:
+    image: docker.io/temporalio/admin-tools:1.31.3@sha256:76a70ead160808b54acdbc98944dfc07990d9637dda999118a2d9ee1f58b9bc9
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      SQL_PLUGIN: postgres12
+      SQL_HOST: postgres
+      SQL_PORT: "5432"
+      SQL_USER: temporal
+      SQL_PASSWORD: ${TEMPORAL_DB_PASSWORD:?Set TEMPORAL_DB_PASSWORD in deploy/compose/.env}
+    volumes:
+      - ./temporal/setup-schema.sh:/scripts/setup-schema.sh:ro,z
+    entrypoint: ["/bin/sh", "/scripts/setup-schema.sh"]
+    restart: "no"
+
+  temporal:
+    image: docker.io/temporalio/server:1.31.3@sha256:b4a78d2186e558aa3502be08d576086c3a82fccdf6184cb4c819eb27bea7bd63
+    depends_on:
+      temporal-schema:
+        condition: service_completed_successfully
+    environment:
+      DB: postgres12
+      DB_PORT: "5432"
+      POSTGRES_SEEDS: postgres
+      POSTGRES_USER: temporal
+      POSTGRES_PWD: ${TEMPORAL_DB_PASSWORD:?Set TEMPORAL_DB_PASSWORD in deploy/compose/.env}
+      BIND_ON_IP: 0.0.0.0
+      DYNAMIC_CONFIG_FILE_PATH: /etc/temporal/config/dynamicconfig/development-sql.yaml
+    volumes:
+      - ./temporal/dynamicconfig:/etc/temporal/config/dynamicconfig:ro,z
+    ports:
+      - "127.0.0.1:7233:7233"
+    healthcheck:
+      # The frontend's HTTP API (port 7243, not published) answers only once it serves requests;
+      # an open gRPC port alone does not prove that.
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:7243/api/v1/cluster-info"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+
+  # Registers the default namespace and stays up for the Temporal CLI:
+  #   docker compose -f deploy/compose/docker-compose.dev.yaml exec temporal-admin-tools temporal workflow list
+  temporal-admin-tools:
+    image: docker.io/temporalio/admin-tools:1.31.3@sha256:76a70ead160808b54acdbc98944dfc07990d9637dda999118a2d9ee1f58b9bc9
+    depends_on:
+      temporal:
+        condition: service_healthy
+    environment:
+      TEMPORAL_ADDRESS: temporal:7233
+    volumes:
+      - ./temporal/create-namespace.sh:/scripts/create-namespace.sh:ro,z
+    entrypoint: ["/bin/sh", "/scripts/create-namespace.sh"]
+    healthcheck:
+      # Healthy once the namespace that workers and clients use exists.
+      test: ["CMD", "temporal", "operator", "namespace", "describe", "--namespace", "default"]
+      interval: 5s
+      timeout: 10s
+      retries: 30
+      start_period: 30s
+
+  temporal-ui:
+    image: docker.io/temporalio/ui:2.54.1@sha256:ff0943fe532b8e33c46cd28b29e81e0ce0b6f55b9ee50a38ef1b437cc4de3fa5
+    depends_on:
+      temporal-admin-tools:
+        condition: service_healthy
+    environment:
+      TEMPORAL_ADDRESS: temporal:7233
+    ports:
+      - "127.0.0.1:8080:8080"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/healthz"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+
+  # Model gateway (§19). Dev routes every alias to OpenRouter: config/litellm/litellm.dev.yaml.
+  litellm:
+    image: ghcr.io/berriai/litellm:v1.103.2@sha256:f63fb81b831b170ec16851e23c36ac5bf52ef106b271406429524a2ed730bbfd
+    command: ["--config", "/etc/litellm/config.yaml", "--port", "4000"]
+    environment:
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:?Set LITELLM_MASTER_KEY in deploy/compose/.env}
+      # Optional: without it the proxy starts, but model calls fail.
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      # Use the model cost map bundled in the image instead of downloading it at startup.
+      LITELLM_LOCAL_MODEL_COST_MAP: "True"
+    volumes:
+      - ../../config/litellm/litellm.dev.yaml:/etc/litellm/config.yaml:ro,z
+    ports:
+      - "127.0.0.1:4000:4000"
+    # The image runs as root by default; the proxy needs neither root nor a writable image.
+    user: "65534:65534"
+    read_only: true
+    tmpfs:
+      - /tmp
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request; urllib.request.urlopen("http://127.0.0.1:4000/health/liveliness", timeout=3)
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  otel-collector:
+    image: docker.io/otel/opentelemetry-collector-contrib:0.161.0@sha256:fd328de2552466ad78385e1b1289c3f2402b1c45f265b252aab1955b42845ac1
+    volumes:
+      - ./otel-collector/config.yaml:/etc/otelcol-contrib/config.yaml:ro,z
+      # The collector image holds only the collector binary: no shell, no HTTP client. The
+      # healthcheck runs a statically linked busybox from this pinned image, mounted read-only.
+      - type: image
+        source: docker.io/library/busybox:1.37.0-musl@sha256:5cec3fc171c87218698e85a52af7087de727372aae264a787b8112901a5b0092
+        target: /probe
+    ports:
+      - "127.0.0.1:4317:4317" # OTLP gRPC
+      - "127.0.0.1:4318:4318" # OTLP HTTP
+    healthcheck:
+      test: ["CMD", "/probe/bin/busybox", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:13133/"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 5s
+
+volumes:
+  postgres-data:

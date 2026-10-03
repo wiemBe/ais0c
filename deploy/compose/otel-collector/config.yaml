@@ -1,0 +1,41 @@
+# OpenTelemetry collector for the dev stack (docs/architecture.md §26). It receives OTLP and
+# writes only to the debug exporter; the trace UI is chosen later (T-12 in docs/decisions.md).
+#
+# verbosity "basic" logs one line per batch, without span attributes: prompts and tool results
+# are not redacted yet (docs/agent-harness.md §13). Use "detailed" locally to see spans.
+
+extensions:
+  # Probed by the compose healthcheck from inside the container; not published.
+  health_check:
+    endpoint: 127.0.0.1:13133
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  batch: {}
+
+exporters:
+  debug:
+    verbosity: basic
+
+service:
+  extensions: [health_check]
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [debug]
+    metrics:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [debug]
+    logs:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [debug]

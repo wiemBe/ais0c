@@ -1,0 +1,60 @@
+# LiteLLM proxy configuration for dev and lab (docs/architecture.md §4, §19).
+#
+# Code knows only the model aliases below (T-03). Dev reaches the prod models through OpenRouter
+# (D-10, D-12), so only synthetic and lab data may be sent. Every alias goes to the same model
+# as in litellm.prod.yaml. The mapping is a starting point that harness results may change
+# (D-21); the fixed rule is that soc-reasoning and soc-verifier go to different models.
+# soc-embed is not needed in phase 0.
+#
+# Capabilities of each alias: config/models/registry.dev.yaml.
+# Checks: tests/deploy/test_litellm_config.py and tests/deploy/test_model_registry.py.
+#
+# OpenRouter provider routing (extra_body.provider), the same for every alias:
+# - require_parameters: route only to providers that support every request parameter, so tool
+#   calls and structured output are never dropped silently;
+# - data_collection: deny: skip providers that store prompts or train on them.
+
+model_list:
+  # Triage. Same model as soc-reasoning; soc-verifier checks both, so it uses the other model.
+  - model_name: soc-fast
+    litellm_params:
+      model: openrouter/deepseek/deepseek-v4-flash
+      api_key: os.environ/OPENROUTER_API_KEY
+      extra_body:
+        provider:
+          require_parameters: true
+          data_collection: deny
+
+  # Orchestrator, investigation, hunters, tuning.
+  - model_name: soc-reasoning
+    litellm_params:
+      model: openrouter/deepseek/deepseek-v4-flash
+      api_key: os.environ/OPENROUTER_API_KEY
+      extra_body:
+        provider:
+          require_parameters: true
+          data_collection: deny
+
+  # Independent verification: a different model family from soc-reasoning (§19).
+  - model_name: soc-verifier
+    litellm_params:
+      model: openrouter/qwen/qwen3.5-122b-a10b
+      api_key: os.environ/OPENROUTER_API_KEY
+      extra_body:
+        provider:
+          require_parameters: true
+          data_collection: deny
+
+  # Turkish report. Chosen by the harness Turkish suite (D-07); not measured yet.
+  - model_name: soc-report
+    litellm_params:
+      model: openrouter/qwen/qwen3.5-122b-a10b
+      api_key: os.environ/OPENROUTER_API_KEY
+      extra_body:
+        provider:
+          require_parameters: true
+          data_collection: deny
+
+general_settings:
+  # Clients (agents, the smoke script) send this key as a bearer token.
+  master_key: os.environ/LITELLM_MASTER_KEY
