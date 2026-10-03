@@ -1,19 +1,47 @@
 """Criterion 7: every call is written to tool_calls, every successful query to evidence, and the
-evidence_id the agent gets is the key of that evidence row."""
+evidence_id the agent gets is the key of that evidence row. An empty read of the offense source
+is the exception (T-014 criterion 4, D-33)."""
 
 from datetime import timedelta
+from typing import Any
 
 import pytest
 from gateway_support import AGENT_RUN, LOG_INJECTION, Harness, tool_result
+from sqlalchemy import func, select
 
+from ais0c_activities import SOURCE_AGENT_ID
 from ais0c_contracts import EvidenceSource, ToolStatus
+from ais0c_mcp_gateway.evidence import OFFENSE_SOURCE_AGENT_ID
 from ais0c_storage import PolicyDecision
+from ais0c_storage.models import EvidenceRow
 from ais0c_storage.repositories import find_unknown_evidence_ids
 
 pytestmark = pytest.mark.anyio
 
 INVESTIGATE = "qradar-investigate-read"
+TRIAGE = "qradar-triage-read"
 QUERY = "SELECT qid FROM events WHERE username = 'svc_backup_7731' LIMIT 10 LAST 2 HOURS"
+# The intake's reads: the pseudo agent `offense-source` in the context `offense-intake`, with the
+# Triage profile (ais0c_activities.GatewayOffenseSource).
+SOURCE_RUN = "run-offense-intake-1"
+INTAKE_CONTEXT = "offense-intake"
+NO_OFFENSES = {"offenses": [], "count": 0, "total_count": 0}
+CHANGED_OFFENSES = {"filter": 'status = "OPEN" and last_updated_time > 1759525200000', "limit": 50}
+
+
+async def evidence_rows(harness: Harness) -> int:
+    async with harness.sessions() as session:
+        return await session.scalar(select(func.count()).select_from(EvidenceRow)) or 0
+
+
+def intake_read(harness: Harness) -> dict[str, Any]:
+    return harness.intent(
+        TRIAGE,
+        "list_offenses",
+        CHANGED_OFFENSES,
+        agent_id=OFFENSE_SOURCE_AGENT_ID,
+        case_id=INTAKE_CONTEXT,
+    )
 
 
 async def test_every_call_is_recorded_and_ok_calls_have_evidence(harness: Harness) -> None:
@@ -152,6 +180,52 @@ async def test_denied_and_failed_calls_leave_no_evidence(harness: Harness) -> No
 
     assert (failed.evidence_id, denied.evidence_id) == (None, None)
     assert [row.evidence_id for row in await harness.tool_calls(run)] == [None, None]
+
+
+async def test_an_empty_read_of_the_offense_source_leaves_no_evidence(harness: Harness) -> None:
+    """T-014 criterion 4: most intake polls find no changed offense; such a read is recorded as
+    a call without evidence. A read that finds offenses has its evidence as before."""
+    run = await harness.start_run(
+        SOURCE_RUN, profile=TRIAGE, agent_id=OFFENSE_SOURCE_AGENT_ID, case_id=INTAKE_CONTEXT
+    )
+    harness.fake.responses["list_offenses"] = lambda _: NO_OFFENSES
+    async with harness.client() as client:
+        empty = tool_result(await harness.post(client, intake_read(harness), run_id=run))
+        harness.fake.responses.clear()
+        found = tool_result(await harness.post(client, intake_read(harness), run_id=run))
+
+    assert (empty.status, empty.data, empty.evidence_id) == (ToolStatus.OK, [], None)
+    assert empty.coverage.complete
+    assert found.evidence_id is not None
+    rows = await harness.tool_calls(run)
+    assert [(row.policy_decision, row.status, row.evidence_id) for row in rows] == [
+        (PolicyDecision.ALLOW, ToolStatus.OK, None),
+        (PolicyDecision.ALLOW, ToolStatus.OK, found.evidence_id),
+    ]
+    assert await evidence_rows(harness) == 1
+
+
+async def test_an_empty_result_of_an_agent_is_evidence(harness: Harness) -> None:
+    """For an agent, "searched and found nothing" is evidence too: an empty result keeps it."""
+    run = await harness.start_run(AGENT_RUN, profile=INVESTIGATE)
+    harness.fake.responses["list_offenses"] = lambda _: NO_OFFENSES
+    async with harness.client() as client:
+        result = tool_result(
+            await harness.post(
+                client, harness.intent(INVESTIGATE, "list_offenses", CHANGED_OFFENSES), run_id=run
+            )
+        )
+
+    assert (result.status, result.data) == (ToolStatus.OK, [])
+    assert result.evidence_id is not None
+    evidence = await harness.evidence(result.evidence_id)
+    assert evidence is not None
+    assert (evidence.identifiers["rows"], evidence.excerpt) == ("0", "[]")
+    assert [row.evidence_id for row in await harness.tool_calls(run)] == [result.evidence_id]
+
+
+def test_the_offense_source_is_the_intakes_pseudo_agent() -> None:
+    assert OFFENSE_SOURCE_AGENT_ID == SOURCE_AGENT_ID
 
 
 async def test_excerpts_keep_free_text_out_under_any_name(harness: Harness) -> None:

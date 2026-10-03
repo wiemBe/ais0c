@@ -14,7 +14,8 @@ A call passes these steps in order; the first one that fails decides the answer:
 7. the call to the MCP server: one attempt with a deadline;
 8. the result: rows taken from the structured result, the profile's output filter applied,
    rows and bytes capped;
-9. the records: the call in tool_calls, a successful call's evidence in evidence.
+9. the records: the call in tool_calls, a successful call's evidence in evidence; an empty read
+   of the offense source has no evidence (D-33, evidence.py).
 
 A denial (`denied`) or a failed call (`error`) is an answer, not an exception, and is recorded
 like any other call. An exception means no answer can be given: the run is unknown, or the
@@ -50,7 +51,7 @@ from ais0c_contracts import (
     ToolStatus,
 )
 from ais0c_mcp_gateway.ariel import FINAL_STATUSES, SEARCH_ID, find_owned_search
-from ais0c_mcp_gateway.evidence import build_evidence, record_call, tool_query
+from ais0c_mcp_gateway.evidence import build_evidence, is_evidence, record_call, tool_query
 from ais0c_mcp_gateway.logs import Redactor
 from ais0c_mcp_gateway.quotas import Admission, QuotaDenial, QuotaPool
 from ais0c_mcp_gateway.registry import POOL_NAMES, PoolName, Profile, Registry, SearchStep, Tool
@@ -289,10 +290,14 @@ class Gateway:
         truncated = cut or (plan.page_clamped and len(rows) >= (plan.page_size or 0))
 
         retrieved_at = self.now()
-        evidence = self._evidence(profile, intent, plan, search_id, data, retrieved_at)
+        evidence = (
+            self._evidence(profile, intent, plan, search_id, data, retrieved_at)
+            if is_evidence(intent.agent_id, rows)
+            else None
+        )
         result = ToolResult(
             status=ToolStatus.OK,
-            evidence_id=evidence.evidence_id,
+            evidence_id=None if evidence is None else evidence.evidence_id,
             data=data,
             truncated=truncated,
             coverage=ToolCoverage(complete=not truncated, gaps=[]),

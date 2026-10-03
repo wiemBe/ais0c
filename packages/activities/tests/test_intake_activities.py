@@ -1,4 +1,5 @@
-"""Intake activities on a real database (criteria 2, 3, 4 and 5 at the activity level)."""
+"""Intake activities on a real database (T-010 criteria 2, 3, 4 and 5 at the activity level, and
+the catalog check of updates, T-014 criterion 3)."""
 
 from datetime import datetime, timedelta
 
@@ -128,6 +129,105 @@ async def test_a_change_is_reported_only_for_an_offense_with_an_open_case(
     row = await seen(sessions, 5)
     assert row is not None
     assert row.last_updated_at == v3
+
+
+async def test_an_open_case_hears_no_more_once_its_rules_are_all_skipped(
+    sessions: SessionFactory, intake: IntakeActivities
+) -> None:
+    """T-014 criterion 3: an update is checked against the catalog again. The case of an
+    offense whose rules are all `skip` now is not told of it, so its decision stays."""
+    await catalog_rule(sessions, NOISY_RULE)
+    await admit(intake, offense(8, rule_ids=[NOISY_RULE]))
+    await start_case_row(sessions, 8)
+    await catalog_rule(sessions, NOISY_RULE, mode=CatalogMode.SKIP)
+
+    v2 = T0 + timedelta(minutes=2)
+    assert await admit(intake, offense(8, updated=v2, rule_ids=[NOISY_RULE])) == []
+    assert await admit(intake, offense(8, updated=v2, rule_ids=[NOISY_RULE])) == []
+    row = await seen(sessions, 8)
+    assert row is not None
+    assert (row.status, row.catalog_mode, row.last_updated_at) == (
+        OffenseStatus.RUNNING,
+        CatalogMode.SKIP,
+        v2,
+    )
+    stored_case = await case(sessions, "case-8")
+    assert stored_case is not None
+    assert stored_case.evaluation_no == 1
+
+    # A rule the catalog does not skip joins the offense: the case is told again.
+    v3 = T0 + timedelta(minutes=3)
+    assert await admit(intake, offense(8, updated=v3, rule_ids=[NOISY_RULE, 100305])) == [8]
+    row = await seen(sessions, 8)
+    assert row is not None
+    assert (row.status, row.catalog_mode) == (OffenseStatus.RUNNING, CatalogMode.ANALYZE)
+
+
+async def test_a_skipped_offense_is_analyzed_once_one_of_its_rules_is(
+    sessions: SessionFactory, intake: IntakeActivities
+) -> None:
+    """T-014 criterion 3: an update of a skipped offense whose rule is `analyze` now admits it
+    for analysis like a new one; the intake starts its case with the other pending ones."""
+    await catalog_rule(sessions, SKIP_RULE, mode=CatalogMode.SKIP)
+    await admit(intake, offense(6, rule_ids=[SKIP_RULE]))
+    v2 = T0 + timedelta(minutes=2)
+    await admit(intake, offense(6, updated=v2, rule_ids=[SKIP_RULE]))
+    row = await seen(sessions, 6)
+    assert row is not None
+    assert row.status is OffenseStatus.SKIPPED  # the catalog has not changed
+
+    await catalog_rule(sessions, SKIP_RULE, mode=CatalogMode.ANALYZE)
+    later = NOW + timedelta(hours=1)
+    v3 = T0 + timedelta(minutes=3)
+    assert await admit(intake, offense(6, updated=v3, rule_ids=[SKIP_RULE]), at=later) == []
+
+    row = await seen(sessions, 6)
+    assert row is not None
+    assert (row.status, row.catalog_mode, row.last_updated_at) == (
+        OffenseStatus.PENDING,
+        CatalogMode.ANALYZE,
+        v3,
+    )
+    assert row.first_seen_at == later
+    assert row.group_id == new_group_id(rule_set_hash([SKIP_RULE]), later)
+    assert await ActivityEnvironment().run(intake.next_pending_offenses) == [6]
+
+
+async def test_a_skipped_offense_with_a_new_rule_outside_the_catalog_is_analyzed(
+    sessions: SessionFactory, intake: IntakeActivities
+) -> None:
+    await catalog_rule(sessions, SKIP_RULE, mode=CatalogMode.SKIP)
+    await admit(intake, offense(9, rule_ids=[SKIP_RULE]))
+
+    v2 = T0 + timedelta(minutes=2)
+    await admit(intake, offense(9, updated=v2, rule_ids=[SKIP_RULE, NOISY_RULE]))
+
+    row = await seen(sessions, 9)
+    assert row is not None
+    assert (row.status, row.catalog_mode) == (OffenseStatus.PENDING, CatalogMode.ANALYZE)
+
+
+async def test_offenses_taken_off_skip_count_towards_the_group_limit(
+    sessions: SessionFactory, intake: IntakeActivities
+) -> None:
+    """A rule taken off `skip` cannot start a storm of cases: its offenses go through grouping,
+    and count as first seen when they are admitted for analysis."""
+    await catalog_rule(sessions, SKIP_RULE, mode=CatalogMode.SKIP)
+    ids = range(90, 97)
+
+    def storm(updated: datetime | None = None) -> list[OffenseSnapshot]:
+        return [
+            offense(n, updated=updated, rule_ids=[SKIP_RULE], destination_ips=[f"192.0.2.{n}"])
+            for n in ids
+        ]
+
+    await admit(intake, *storm())
+    await catalog_rule(sessions, SKIP_RULE, mode=CatalogMode.ANALYZE)
+    await admit(intake, *storm(T0 + timedelta(minutes=1)), at=NOW + timedelta(hours=3))
+
+    rows = [await seen(sessions, n) for n in ids]
+    statuses = [row.status for row in rows if row is not None]
+    assert statuses == [OffenseStatus.PENDING] * 5 + [OffenseStatus.GROUPED] * 2
 
 
 async def test_a_storm_is_grouped_after_n_full_analyses_an_hour(

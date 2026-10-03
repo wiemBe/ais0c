@@ -1,8 +1,9 @@
-"""TriageWorkflow: the run record around the agent, the wall clock budget, failures and replay.
+"""TriageWorkflow: the run record around the agent, the wall clock budget, failures and why the
+run failed (T-014 criterion 5), and replay.
 
-The agent is ScriptedAgent, installed the way the worker installs the real one; its one activity
-stands for the model and tool activities TemporalDurability creates (those are covered with the
-real agent in services/worker). Time is skipped on the Temporal test server.
+The agent is ScriptedAgent, installed the way the worker installs the real one; its activities
+stand for the model and tool activities TemporalDurability creates and have their names (the
+real agent is covered in services/worker). Time is skipped on the Temporal test server.
 """
 
 from collections.abc import AsyncIterator
@@ -34,7 +35,14 @@ from ais0c_contracts import (
     RunStatus,
     TriageResult,
 )
-from ais0c_workflows import TriageOutcome, TriageRequest, TriageWorkflow, agent_runtime
+from ais0c_workflows import (
+    MODEL_ACCESS_FAILURES,
+    TriageFailure,
+    TriageOutcome,
+    TriageRequest,
+    TriageWorkflow,
+    agent_runtime,
+)
 from ais0c_workflows.names import (
     BEGIN_TRIAGE_RUN,
     CASE_TASK_QUEUE,
@@ -98,6 +106,7 @@ async def test_a_run_is_recorded_before_and_after_the_agent(
         result=triage_result(),
         usage=triage_result().usage,
         error=None,
+        failure=None,
     )
     # The run ID is the workflow ID; the request's case, evaluation and parent run go to the
     # run record, which exists before the agent makes its first call.
@@ -124,6 +133,9 @@ async def test_the_wall_clock_budget_ends_the_run_as_budget_exhausted(
 
     assert (outcome.status, outcome.result) == (RunStatus.BUDGET_EXHAUSTED, None)
     assert outcome.error == "the wall clock budget of 180 seconds ran out"
+    # The model did not answer in time: a failure CaseWorkflow retries.
+    assert outcome.failure is TriageFailure.TIMEOUT
+    assert outcome.failure in MODEL_ACCESS_FAILURES
     assert outcome.usage.tokens == 0
     assert outcome.usage.seconds >= 180
     assert [(status, error) for _, status, _, error in fakes.finished] == [
@@ -143,7 +155,44 @@ async def test_an_activity_that_fails_for_good_ends_the_run_as_failed(
 
     assert (outcome.status, outcome.result) == (RunStatus.FAILED, None)
     assert outcome.error == "ModelHTTPError: LiteLLM answered 503"
+    # The failed activity was a model request: a failure CaseWorkflow retries.
+    assert outcome.failure is TriageFailure.MODEL_ERROR
+    assert outcome.failure in MODEL_ACCESS_FAILURES
     assert [status for _, status, _, _ in fakes.finished] == [RunStatus.FAILED]
+
+
+async def test_a_model_request_out_of_attempts_is_a_model_error(
+    env: WorkflowEnvironment, agent: ScriptedAgent
+) -> None:
+    async def model_keeps_timing_out(run_id: str, attempt: int) -> TriageResult:
+        raise ApplicationError("Request timed out.", type="APITimeoutError")
+
+    fakes = TriageFakes(budget_seconds=3600, step=model_keeps_timing_out)
+    async with running_triage(env, fakes) as handle:
+        outcome = await handle.result()
+
+    assert (outcome.status, outcome.failure) == (RunStatus.FAILED, TriageFailure.MODEL_ERROR)
+    assert fakes.events.names().count("step") == 3
+
+
+async def test_a_tool_call_that_fails_for_good_is_not_a_model_error(
+    env: WorkflowEnvironment,
+) -> None:
+    """The gateway's outage is not the model's (architecture §13.3: fail closed)."""
+    agent_runtime.install_triage_agent(ScriptedAgent(tool_call=True))
+
+    async def gateway_unreachable(run_id: str, attempt: int) -> None:
+        raise ApplicationError(
+            "the gateway cannot be reached", type="GatewayUnavailableError", non_retryable=True
+        )
+
+    fakes = TriageFakes(tool=gateway_unreachable)
+    async with running_triage(env, fakes) as handle:
+        outcome = await handle.result()
+
+    assert (outcome.status, outcome.failure) == (RunStatus.FAILED, TriageFailure.TOOL_ERROR)
+    assert outcome.failure not in MODEL_ACCESS_FAILURES
+    assert fakes.events.names() == ["tool", "finished"]
 
 
 async def test_a_run_ending_without_a_result_is_recorded_as_such(
@@ -170,9 +219,33 @@ async def test_a_run_ending_without_a_result_is_recorded_as_such(
         RunStatus.BUDGET_EXHAUSTED,
         "UsageLimitExceeded: tool_calls_limit",
     )
+    assert outcome.failure is TriageFailure.BUDGET_EXHAUSTED
+    assert outcome.failure not in MODEL_ACCESS_FAILURES
     assert fakes.finished == [
         (RUN_ID, RunStatus.BUDGET_EXHAUSTED, None, "UsageLimitExceeded: tool_calls_limit")
     ]
+
+
+async def test_a_run_the_agent_ends_failed_is_invalid_output(env: WorkflowEnvironment) -> None:
+    """The agent catches what its model got wrong: output that kept failing validation."""
+
+    async def invalid_output(
+        task: AgentTask, offense: OffenseSnapshot, enrichment: EnrichmentContext, *, nonce: str
+    ) -> AgentReport:
+        return AgentReport(
+            status=RunStatus.FAILED,
+            result=None,
+            usage=NO_USAGE,
+            error="UnexpectedModelBehavior: Exceeded maximum retries (2) for output validation",
+        )
+
+    agent_runtime.install_triage_agent(invalid_output)
+    fakes = TriageFakes()
+    async with running_triage(env, fakes) as handle:
+        outcome = await handle.result()
+
+    assert (outcome.status, outcome.failure) == (RunStatus.FAILED, TriageFailure.INVALID_OUTPUT)
+    assert outcome.failure not in MODEL_ACCESS_FAILURES
 
 
 async def test_triage_history_replays(env: WorkflowEnvironment, agent: ScriptedAgent) -> None:

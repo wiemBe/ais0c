@@ -4,6 +4,10 @@ Every call becomes a `tool_calls` row; every successful call also becomes an `ev
 and the evidence ID the agent gets back is that row's key. Both rows are written in one
 transaction, so the agent never receives an ID the gateway did not store.
 
+A successful call that returns no rows is evidence too: "searched and found nothing". The one
+exception is a read of the offense source, the pseudo agent the platform's intake runs as
+(D-33): most of its polls find no changed offense, and those reads get no evidence row.
+
 The evidence row says how to find the data again at the source: the query and its hash, the
 time range, the tool and its arguments. Its excerpt is short and masked: payload fields are
 left out, credential-like fields are masked, and every text value longer than 80 characters is
@@ -26,6 +30,8 @@ from ais0c_storage import PolicyDecision, new_uuid7
 from ais0c_storage.repositories import record_evidence, record_tool_call
 
 EVIDENCE_ID_PREFIX: Final = "ev_"
+# The pseudo agent of the platform's own offense reads (`ais0c_activities.SOURCE_AGENT_ID`).
+OFFENSE_SOURCE_AGENT_ID: Final = "offense-source"
 MAX_EXCERPT_LENGTH: Final = 500
 MAX_QUERY_TEXT_LENGTH: Final = 4000
 MAX_IDENTIFIER_LENGTH: Final = 200
@@ -52,6 +58,12 @@ _CREDENTIAL_FRAGMENTS: Final = (
 def new_evidence_id() -> str:
     """`ev_` and a UUIDv7: unique and sortable by creation time."""
     return f"{EVIDENCE_ID_PREFIX}{new_uuid7().hex}"
+
+
+def is_evidence(agent_id: str, rows: Sequence[object]) -> bool:
+    """Whether a successful call's result is recorded as evidence: every one but an empty read
+    of the offense source."""
+    return bool(rows) or agent_id != OFFENSE_SOURCE_AGENT_ID
 
 
 def tool_query(tool_id: str, arguments: Mapping[str, JsonValue]) -> tuple[str, str]:
@@ -110,8 +122,8 @@ async def record_call(
     deny_reason: str | None,
     evidence: EvidenceRef | None,
 ) -> None:
-    """Write the call under its run (`intent.run_id`) and, for a successful one, its evidence;
-    the caller owns the transaction."""
+    """Write the call under its run (`intent.run_id`) and its evidence, when it has some; the
+    caller owns the transaction."""
     if evidence is not None:
         await record_evidence(session, evidence)
     await record_tool_call(

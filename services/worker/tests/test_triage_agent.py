@@ -11,6 +11,7 @@ from datetime import timedelta
 import pytest
 from pydantic_ai.messages import ModelRequest, ToolReturnPart
 from temporalio.client import WorkflowHistory
+from temporalio.exceptions import ApplicationError
 from temporalio.testing import WorkflowEnvironment
 from worker_support import (
     ESCAPE,
@@ -32,7 +33,7 @@ from worker_support import (
 from ais0c_activities import CaseSettings, FakeOffenseSource, SessionFactory
 from ais0c_contracts import CaseVerdict, Confidence, Level, RunStatus, TriageResult
 from ais0c_storage.enums import CaseStatus
-from ais0c_storage.models import CaseRow
+from ais0c_storage.models import AgentRunRow, CaseRow
 from ais0c_storage.repositories import get_case, list_agent_runs
 from ais0c_worker import build_case_worker
 from ais0c_workflows import OffenseIntake
@@ -160,6 +161,43 @@ def test_the_wrapper_check_finds_unwrapped_tool_results() -> None:
     assert unwrapped_tool_returns(request(wrapped), nonce) == []
     for bad in ('{"status": "ok"}', wrapped.replace(nonce, "fedcba9876543210"), smuggled):
         assert unwrapped_tool_returns(request(bad), nonce) == [bad]
+
+
+async def test_a_run_the_model_ended_is_retried_once(
+    env: WorkflowEnvironment, sessions: SessionFactory
+) -> None:
+    """T-014 criterion 5 with the real agent: the first run's model request fails for good, so
+    the run ends with a model error; after the wait the case runs Triage once more, as an agent
+    run of its own, and that run decides."""
+
+    async def unreachable_for_the_first_run(run_id: str, step: int, attempt: int) -> None:
+        if not run_id.endswith("-retry"):
+            raise ApplicationError(
+                "LiteLLM answered 503", type="ModelHTTPError", non_retryable=True
+            )
+
+    model = TriageModel(hook=unreachable_for_the_first_run)
+    async with running_platform(env, sessions, model=model) as platform:
+        first = await platform.run_intake()
+        await env.sleep(timedelta(minutes=1))
+        platform.source.put(offense(73, start=await env.get_current_time()))
+        await platform.run_intake(first)
+
+        async def first_run_failed() -> list[AgentRunRow] | None:
+            runs = await platform.agent_runs("case-73")
+            return runs if any(run.status is RunStatus.FAILED for run in runs) else None
+
+        await eventually(first_run_failed)
+        await env.sleep(timedelta(minutes=5))
+        case = await platform.case_when("case-73", lambda row: row.status is CaseStatus.DECIDED)
+        runs = await platform.agent_runs("case-73")
+
+    assert [(run.run_id, run.status) for run in runs] == [
+        ("case-73-triage-1", RunStatus.FAILED),
+        ("case-73-triage-1-retry", RunStatus.COMPLETED),
+    ]
+    assert platform.triage_runs() == ["case-73-triage-1", "case-73-triage-1-retry"]
+    assert (case.evaluation_no, case.verdict) == (1, CaseVerdict.SUSPICIOUS)
 
 
 async def test_a_worker_restart_resumes_the_triage_run(

@@ -5,10 +5,14 @@ starts the next evaluation and sets the SLA deadline), the Triage run (the child
 TriageWorkflow; its activities are in `ais0c_activities.triage`), then `record_decision`, or
 `mark_no_ai_decision` when the SLA runs out or triage gives no decision. `close_case` ends the
 case when the offense is closed in QRadar.
+
+An update of the offense is fetched and recorded (`record_offense_update`) whether or not it is
+evaluated again (D-31). `reevaluation_interval` and `triage_retry_delay` hand the workflow its
+settings, which it may not read itself.
 """
 
 from collections.abc import Callable
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from temporalio import activity
 from temporalio.exceptions import ApplicationError
@@ -22,7 +26,10 @@ from ais0c_activities.names import (
     FETCH_OFFENSE,
     MARK_NO_AI_DECISION,
     RECORD_DECISION,
+    RECORD_OFFENSE_UPDATE,
+    REEVALUATION_INTERVAL,
     START_EVALUATION,
+    TRIAGE_RETRY_DELAY,
 )
 from ais0c_activities.offense_source import OffenseSource
 from ais0c_activities.settings import CaseSettings
@@ -77,8 +84,11 @@ class CaseActivities:
     def activities(self) -> list[Callable[..., object]]:
         return [
             self.fetch_offense,
+            self.record_offense_update,
+            self.reevaluation_interval,
             self.enrich_offense,
             self.start_evaluation,
+            self.triage_retry_delay,
             self.record_decision,
             self.mark_no_ai_decision,
             self.close_case,
@@ -95,6 +105,35 @@ class CaseActivities:
                 non_retryable=True,
             )
         return offense
+
+    @activity.defn(name=RECORD_OFFENSE_UPDATE)
+    async def record_offense_update(self, offense: OffenseSnapshot) -> None:
+        """Record the offense's latest state, also when the update is not evaluated again.
+
+        Only a newer version replaces the record: the intake records the versions it reads too.
+        """
+        async with self._sessions.begin() as session:
+            seen = await get_offense_seen(session, offense.offense_id)
+            if seen is not None and offense.last_updated_time > seen.last_updated_at:
+                await update_offense_seen(
+                    session,
+                    offense.offense_id,
+                    last_updated_at=offense.last_updated_time,
+                    description=offense.description,
+                    rule_ids=offense.rule_ids,
+                )
+
+    @activity.defn(name=REEVALUATION_INTERVAL)
+    async def reevaluation_interval(self) -> timedelta:
+        """How long after an evaluation an update that only brings more events is evaluated
+        again (D-31)."""
+        return self._settings.reevaluation_interval
+
+    @activity.defn(name=TRIAGE_RETRY_DELAY)
+    async def triage_retry_delay(self) -> timedelta:
+        """How long to wait before a Triage run that the model's outage ended runs once more
+        (D-33)."""
+        return self._settings.triage_retry_delay
 
     @activity.defn(name=ENRICH_OFFENSE)
     async def enrich_offense(self, offense: OffenseSnapshot) -> EnrichmentContext:

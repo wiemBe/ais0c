@@ -12,20 +12,30 @@ from typing import Final
 
 from ais0c_workflows.case import CaseCarry, CaseStatus, CaseView, CaseWorkflow
 from ais0c_workflows.intake import IntakeCheckpoint, OffenseIntake
-from ais0c_workflows.triage import TriageOutcome, TriageRequest, TriageWorkflow
+from ais0c_workflows.reevaluation import should_reevaluate
+from ais0c_workflows.triage import (
+    MODEL_ACCESS_FAILURES,
+    TriageFailure,
+    TriageOutcome,
+    TriageRequest,
+    TriageWorkflow,
+)
 
 # Workflows of the `soc-case` task queue.
 CASE_QUEUE_WORKFLOWS: Final = (OffenseIntake, CaseWorkflow, TriageWorkflow)
 
 __all__ = [
     "CASE_QUEUE_WORKFLOWS",
+    "MODEL_ACCESS_FAILURES",
     "CaseCarry",
     "CaseStatus",
     "CaseView",
     "CaseWorkflow",
     "IntakeCheckpoint",
     "OffenseIntake",
+    "TriageFailure",
     "TriageOutcome",
     "TriageRequest",
     "TriageWorkflow",
+    "should_reevaluate",
 ]

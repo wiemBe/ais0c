@@ -14,10 +14,19 @@ from temporalio.contrib.pydantic import pydantic_data_converter
 from temporalio.exceptions import ApplicationError
 from temporalio.testing import WorkflowEnvironment
 from temporalio.worker import Replayer, UnsandboxedWorkflowRunner, Worker
-from workflow_fakes import CaseFakes, CaseStub, IntakeFakes, TriageStub, offense, triage_result
+from workflow_fakes import (
+    CaseFakes,
+    CaseStub,
+    IntakeFakes,
+    TriageCall,
+    TriageStub,
+    offense,
+    triage_failure,
+    triage_result,
+)
 
 from ais0c_contracts import TriageResult
-from ais0c_workflows import CASE_QUEUE_WORKFLOWS, CaseWorkflow, OffenseIntake
+from ais0c_workflows import CASE_QUEUE_WORKFLOWS, CaseWorkflow, OffenseIntake, TriageFailure
 from ais0c_workflows.names import (
     CASE_TASK_QUEUE,
     CASE_WORKFLOW,
@@ -38,15 +47,18 @@ async def replay(history: WorkflowHistory) -> None:
 
 
 async def case_history(env: WorkflowEnvironment) -> WorkflowHistory:
-    """A case with a missed SLA and a late decision, an update and a closure."""
+    """A case with a missed SLA and a late decision, an update that is not evaluated again, one
+    that is, whose Triage run the model's outage ends and its retry decides, and a closure."""
     now = await env.get_current_time()
 
-    async def model_down_once(evaluation_no: int, attempt: int) -> TriageResult:
-        if evaluation_no == 1 and attempt == 1:
+    async def scripted(call: TriageCall) -> TriageResult:
+        if call.evaluation_no == 1 and call.attempt == 1:
             raise ApplicationError("model unavailable", next_retry_delay=timedelta(minutes=20))
+        if call.evaluation_no == 2 and not call.retry:
+            raise triage_failure(TriageFailure.MODEL_ERROR)
         return triage_result()
 
-    fakes = CaseFakes(offense(101, start=now), triage_behavior=model_down_once)
+    fakes = CaseFakes(offense(101, start=now), triage_behavior=scripted)
     async with Worker(
         env.client,
         task_queue=CASE_TASK_QUEUE,
@@ -59,13 +71,20 @@ async def case_history(env: WorkflowEnvironment) -> WorkflowHistory:
         await fakes.events.wait_for("triage", 1)
         await env.sleep(timedelta(minutes=25))
         await fakes.events.wait_for("decided", 1)
-        updated = now + timedelta(minutes=30)
-        fakes.offense = offense(101, start=now, updated=updated)
-        await handle.signal(OFFENSE_UPDATED, updated)
+        more_events = now + timedelta(minutes=26)
+        fakes.offense = offense(101, start=now, updated=more_events, event_count=20)
+        await handle.signal(OFFENSE_UPDATED, more_events)
+        await fakes.events.wait_for("recorded", 1)
+        new_user = now + timedelta(minutes=27)
+        fakes.offense = offense(101, start=now, updated=new_user, usernames=["svc_backup_7731"])
+        await handle.signal(OFFENSE_UPDATED, new_user)
+        await fakes.events.wait_for("retry")
+        await env.sleep(timedelta(minutes=5))
         await fakes.events.wait_for("decided", 2)
         await handle.signal(OFFENSE_CLOSED)
         await handle.result()
-    assert "no_ai_decision" in fakes.events.names()
+    assert fakes.evaluations == [(1, now), (2, new_user)]
+    assert {"no_ai_decision", "retry"} <= set(fakes.events.names())
     return await handle.fetch_history()
 
 

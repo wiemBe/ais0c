@@ -8,12 +8,18 @@ decision. The SLA timer runs alongside triage: when the deadline passes first th
 later decision still replaces that status.
 
 Triage is the child workflow TriageWorkflow, one per evaluation: the Triage agent runs there
-through Pydantic AI's TemporalDurability. A run that ends without a decision (budget exhausted,
-failed) leaves the case `no_ai_decision` until the next update.
+through Pydantic AI's TemporalDurability. A run the model's outage ended (a model request that
+failed for good, or a run out of its wall clock) is run once more after the configured wait
+(D-33); meanwhile only the SLA timer marks the case `no_ai_decision`. A run that ends without a
+decision for another reason (invalid output, the token, tool call or step budget, a failed tool
+call), or a second run that fails too, leaves the case `no_ai_decision` until an update is
+evaluated.
 
-Between evaluations the case waits. `offense_updated` with a version not evaluated yet starts the
-next evaluation; `offense_closed` ends the workflow. A long-lived case continues as new when
-Temporal suggests it.
+Between evaluations the case waits. `offense_updated` with a version not checked yet makes the
+case fetch the offense and record it; the update is evaluated only when `should_reevaluate` says
+so (D-31). The intake does not report an update of an offense whose rules are all `skip` now, so
+its current decision stays. `offense_closed` ends the workflow. A long-lived case continues as
+new when Temporal suggests it.
 """
 
 import asyncio
@@ -35,11 +41,15 @@ from ais0c_workflows.names import (
     OFFENSE_CLOSED,
     OFFENSE_UPDATED,
     RECORD_DECISION,
+    RECORD_OFFENSE_UPDATE,
+    REEVALUATION_INTERVAL,
     START_EVALUATION,
+    TRIAGE_RETRY_DELAY,
     TRIAGE_WORKFLOW,
     triage_workflow_id,
 )
-from ais0c_workflows.triage import TriageOutcome, TriageRequest
+from ais0c_workflows.reevaluation import should_reevaluate
+from ais0c_workflows.triage import MODEL_ACCESS_FAILURES, TriageOutcome, TriageRequest
 
 with workflow.unsafe.imports_passed_through():
     from pydantic import AwareDatetime, BaseModel, ConfigDict
@@ -76,7 +86,9 @@ class CaseCarry(BaseModel):
     status: CaseStatus
     evaluation_no: int
     notify_level: Level | None
-    evaluated_version: AwareDatetime | None
+    evaluated_offense: OffenseSnapshot | None
+    evaluated_at: AwareDatetime | None
+    checked_version: AwareDatetime | None
     latest_version: AwareDatetime | None
 
 
@@ -88,9 +100,13 @@ class CaseWorkflow:
         self._status = CaseStatus.RUNNING
         self._evaluation_no = 0
         self._notify_level: Level | None = None
-        # `last_updated_time` of the newest offense version evaluated and of the newest one
-        # announced by `offense_updated`.
-        self._evaluated_version: datetime | None = None
+        # The offense as the last evaluation saw it, and when that evaluation started: what an
+        # update is compared with (D-31).
+        self._evaluated_offense: OffenseSnapshot | None = None
+        self._evaluated_at: datetime | None = None
+        # `last_updated_time` of the newest offense version checked, evaluated or not, and of
+        # the newest one announced by `offense_updated`.
+        self._checked_version: datetime | None = None
         self._latest_version: datetime | None = None
         self._closed = False
 
@@ -101,19 +117,21 @@ class CaseWorkflow:
         if carry is not None:
             self._restore(carry)
         while not self._closed:
-            if self._evaluation_due():
-                await self._evaluate()
+            if self._evaluation_no == 0:
+                await self._evaluate(await self._fetch())
+            elif self._update_due():
+                await self._check_update()
             elif workflow.info().is_continue_as_new_suggested():
                 workflow.continue_as_new(args=[offense_id, self._carry()])
             else:
-                await workflow.wait_condition(lambda: self._closed or self._evaluation_due())
+                await workflow.wait_condition(lambda: self._closed or self._update_due())
         await call(CLOSE_CASE, self._case_id, offense_id, result_type=type(None))
         self._status = CaseStatus.CLOSED
         return self.state()
 
     @workflow.signal(name=OFFENSE_UPDATED)
     def offense_updated(self, last_updated_time: datetime) -> None:
-        """The offense changed in QRadar. A version already evaluated changes nothing."""
+        """The offense changed in QRadar. A version already checked changes nothing."""
         if self._latest_version is None or last_updated_time > self._latest_version:
             self._latest_version = last_updated_time
 
@@ -132,16 +150,12 @@ class CaseWorkflow:
             notify_level=self._notify_level,
         )
 
-    def _evaluation_due(self) -> bool:
-        if self._evaluation_no == 0:
-            return True
+    def _update_due(self) -> bool:
         return self._latest_version is not None and (
-            self._evaluated_version is None or self._latest_version > self._evaluated_version
+            self._checked_version is None or self._latest_version > self._checked_version
         )
 
-    async def _evaluate(self) -> None:
-        self._evaluation_no += 1
-        evaluation_no = self._evaluation_no
+    async def _fetch(self) -> OffenseSnapshot:
         announced = self._latest_version
         offense = await call(
             FETCH_OFFENSE,
@@ -150,11 +164,40 @@ class CaseWorkflow:
             attempt_timeout=SOURCE_TIMEOUT,
         )
         # Updates announced before the fetch are covered by it, even if the source lags behind.
-        self._evaluated_version = (
+        self._checked_version = (
             offense.last_updated_time
             if announced is None
             else max(offense.last_updated_time, announced)
         )
+        return offense
+
+    async def _check_update(self) -> None:
+        """Record the updated offense; evaluate it again only when D-31 says so."""
+        offense = await self._fetch()
+        await call(RECORD_OFFENSE_UPDATE, offense, result_type=type(None))
+        previous, evaluated_at = self._evaluated_offense, self._evaluated_at
+        if previous is not None and evaluated_at is not None:
+            interval = await call(REEVALUATION_INTERVAL, result_type=timedelta)
+            if not should_reevaluate(
+                previous,
+                offense,
+                last_evaluated_at=evaluated_at,
+                now=workflow.now(),
+                min_interval=interval,
+            ):
+                workflow.logger.info(
+                    "offense %d updated at %s; not evaluated again",
+                    self._offense_id,
+                    offense.last_updated_time.isoformat(),
+                )
+                return
+        if not self._closed:
+            await self._evaluate(offense)
+
+    async def _evaluate(self, offense: OffenseSnapshot) -> None:
+        self._evaluation_no += 1
+        evaluation_no = self._evaluation_no
+        self._evaluated_offense, self._evaluated_at = offense, workflow.now()
         enrichment = await call(ENRICH_OFFENSE, offense, result_type=EnrichmentContext)
         info = workflow.info()
         sla_due_at = await call(
@@ -197,12 +240,8 @@ class CaseWorkflow:
     ) -> TriageResult | None:
         """Run the Triage agent for this evaluation; None when it gives no decision.
 
-        The run is the child workflow TriageWorkflow, so its many activities stay out of this
-        history. Closing the case abandons the child instead of cancelling it: the run finishes
-        on its own and records itself, and no cancel request can cross its completion. Its ID
-        is never reused, so an evaluation is triaged at most once.
+        A run the model's outage ended is run once more after the configured wait (D-33).
         """
-        run_id = triage_workflow_id(self._case_id, evaluation_no)
         request = TriageRequest(
             case_id=self._case_id,
             evaluation_no=evaluation_no,
@@ -210,6 +249,27 @@ class CaseWorkflow:
             offense=offense,
             enrichment=enrichment,
         )
+        outcome = await self._triage_run(request, retry=False)
+        if outcome is not None and outcome.failure in MODEL_ACCESS_FAILURES:
+            delay = await call(TRIAGE_RETRY_DELAY, result_type=timedelta)
+            workflow.logger.warning(
+                "triage run %s is retried in %s: %s", outcome.run_id, delay, outcome.failure
+            )
+            await workflow.sleep(delay, summary="triage retry")
+            outcome = await self._triage_run(request, retry=True)
+        if outcome is None or outcome.status is not RunStatus.COMPLETED:
+            return None
+        return outcome.result
+
+    async def _triage_run(self, request: TriageRequest, *, retry: bool) -> TriageOutcome | None:
+        """One Triage run; None when its workflow failed.
+
+        The run is the child workflow TriageWorkflow, so its many activities stay out of this
+        history. Closing the case abandons the child instead of cancelling it: the run finishes
+        on its own and records itself, and no cancel request can cross its completion. Its ID
+        is never reused, so an evaluation is triaged at most once, and retried at most once.
+        """
+        run_id = triage_workflow_id(self._case_id, request.evaluation_no, retry=retry)
         try:
             outcome = await workflow.execute_child_workflow(
                 TRIAGE_WORKFLOW,
@@ -225,10 +285,13 @@ class CaseWorkflow:
             return None
         if outcome.status is not RunStatus.COMPLETED or outcome.result is None:
             workflow.logger.warning(
-                "triage run %s ended %s: %s", run_id, outcome.status, outcome.error
+                "triage run %s ended %s (%s): %s",
+                run_id,
+                outcome.status,
+                outcome.failure,
+                outcome.error,
             )
-            return None
-        return outcome.result
+        return outcome
 
     async def _settled_by(
         self, deadline: datetime, triage: asyncio.Task[TriageResult | None]
@@ -254,7 +317,9 @@ class CaseWorkflow:
             status=self._status,
             evaluation_no=self._evaluation_no,
             notify_level=self._notify_level,
-            evaluated_version=self._evaluated_version,
+            evaluated_offense=self._evaluated_offense,
+            evaluated_at=self._evaluated_at,
+            checked_version=self._checked_version,
             latest_version=self._latest_version,
         )
 
@@ -262,5 +327,7 @@ class CaseWorkflow:
         self._status = carry.status
         self._evaluation_no = carry.evaluation_no
         self._notify_level = carry.notify_level
-        self._evaluated_version = carry.evaluated_version
+        self._evaluated_offense = carry.evaluated_offense
+        self._evaluated_at = carry.evaluated_at
+        self._checked_version = carry.checked_version
         self._latest_version = carry.latest_version

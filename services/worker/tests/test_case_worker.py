@@ -128,9 +128,16 @@ async def test_offenses_flow_from_intake_to_closed_cases(
         assert started is not None
         assert (started.status, started.case_id) == (OffenseStatus.RUNNING, "case-2")
 
-        # Criterion 7: an update re-evaluates the case...
+        # Criterion 7: an update re-evaluates the case, here one with a new destination (D-31)...
         t2 = await env.get_current_time()
-        platform.source.put(offense(2, start=t1 - timedelta(minutes=4), updated=t2))
+        platform.source.put(
+            offense(
+                2,
+                start=t1 - timedelta(minutes=4),
+                updated=t2,
+                destination_ips=["198.51.100.15", "192.0.2.20"],
+            )
+        )
         third = await platform.run_intake(second)
         await platform.case_when(
             "case-2", lambda row: row.evaluation_no == 2 and row.status is CaseStatus.DECIDED

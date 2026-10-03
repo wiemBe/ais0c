@@ -1,8 +1,9 @@
-"""CaseWorkflow: evaluations, signals, the SLA timer (T-010 criteria 7 and 8) and the Triage
-child run (T-012 criterion 2).
+"""CaseWorkflow: evaluations, signals, the SLA timer (T-010 criteria 7 and 8), the Triage child
+run (T-012 criterion 2), re-evaluation of updates (T-014 criterion 2) and the retry of a run the
+model's outage ended (T-014 criterion 5).
 
 The workflow runs in the sandbox against fake activities and TriageStub in place of
-TriageWorkflow; the SLA tests skip time on the Temporal test server.
+TriageWorkflow; the SLA and retry tests skip time on the Temporal test server.
 """
 
 import asyncio
@@ -20,19 +21,31 @@ from workflow_fakes import (
     BudgetExhaustedTriage,
     CaseFakes,
     CrashingTriage,
+    TriageCall,
     TriageStub,
     offense,
+    triage_failure,
     triage_result,
 )
 
 from ais0c_contracts import Level, RunStatus, TriageResult
-from ais0c_workflows import CaseCarry, CaseStatus, CaseView, CaseWorkflow, TriageOutcome
+from ais0c_workflows import (
+    CaseCarry,
+    CaseStatus,
+    CaseView,
+    CaseWorkflow,
+    TriageFailure,
+    TriageOutcome,
+)
 from ais0c_workflows.names import CASE_TASK_QUEUE, OFFENSE_CLOSED, OFFENSE_UPDATED, TRIAGE_WORKFLOW
 
 pytestmark = pytest.mark.anyio
 
 OFFENSE_ID = 101
 CASE_ID = "case-101"
+FIRST_RUN = f"{CASE_ID}-triage-1"
+RETRY_RUN = f"{CASE_ID}-triage-1-retry"
+NEW_RULE = (100201, 100305)
 
 
 @asynccontextmanager
@@ -75,6 +88,10 @@ async def close(handle: WorkflowHandle[CaseWorkflow, CaseView]) -> CaseView:
     return await handle.result()
 
 
+def triage_numbers(fakes: CaseFakes) -> list[int]:
+    return [number for name, number in fakes.events.seen if name == "triage"]
+
+
 async def test_first_evaluation_records_the_triage_decision(env: WorkflowEnvironment) -> None:
     now = await env.get_current_time()
     fakes = CaseFakes(offense(OFFENSE_ID, start=now), floor_level=Level.MEDIUM)
@@ -104,29 +121,30 @@ async def test_offense_updated_increments_evaluation_and_runs_triage_again(
     async with running_case(env, fakes) as handle:
         await fakes.events.wait_for("decided", 1)
         updated = now + timedelta(minutes=3)
-        fakes.offense = offense(OFFENSE_ID, start=now, updated=updated)
+        fakes.offense = offense(OFFENSE_ID, start=now, updated=updated, rule_ids=NEW_RULE)
         await handle.signal(OFFENSE_UPDATED, updated)
         await fakes.events.wait_for("decided", 2)
         assert (await handle.query(CaseWorkflow.state)).evaluation_no == 2
 
-        # A version already evaluated starts nothing.
+        # A version already checked starts nothing.
         await handle.signal(OFFENSE_UPDATED, updated)
         await handle.signal(OFFENSE_UPDATED, now)
         result = await close(handle)
 
     assert result.evaluation_no == 2
-    assert [number for name, number in fakes.events.seen if name == "triage"] == [1, 2]
+    assert triage_numbers(fakes) == [1, 2]
     assert fakes.evaluations == [(1, now), (2, updated)]
+    assert fakes.recorded == [updated]
 
 
-async def test_updates_during_an_evaluation_are_evaluated_once_after_it(
+async def test_updates_during_an_evaluation_are_checked_once_after_it(
     env: WorkflowEnvironment,
 ) -> None:
     now = await env.get_current_time()
     release = asyncio.Event()
 
-    async def slow_first(evaluation_no: int, attempt: int) -> TriageResult:
-        if evaluation_no == 1:
+    async def slow_first(call: TriageCall) -> TriageResult:
+        if call.evaluation_no == 1:
             await release.wait()
         return triage_result()
 
@@ -134,7 +152,9 @@ async def test_updates_during_an_evaluation_are_evaluated_once_after_it(
     async with running_case(env, fakes) as handle:
         await fakes.events.wait_for("triage", 1)
         latest = now + timedelta(minutes=2)
-        fakes.offense = offense(OFFENSE_ID, start=now, updated=latest)
+        fakes.offense = offense(
+            OFFENSE_ID, start=now, updated=latest, usernames=["svc_backup_7731"]
+        )
         await handle.signal(OFFENSE_UPDATED, now + timedelta(minutes=1))
         await handle.signal(OFFENSE_UPDATED, latest)
         release.set()
@@ -143,6 +163,72 @@ async def test_updates_during_an_evaluation_are_evaluated_once_after_it(
 
     assert result.evaluation_no == 2
     assert fakes.evaluations == [(1, now), (2, latest)]
+    assert fakes.recorded == [latest]
+
+
+async def test_an_update_with_only_more_events_waits_for_the_interval(
+    env: WorkflowEnvironment,
+) -> None:
+    """Criterion 2: an update `should_reevaluate` turns down is recorded, without triage. More
+    events count once the interval has passed since the evaluation, compared with what the
+    evaluation saw."""
+    now = await env.get_current_time()
+    fakes = CaseFakes(offense(OFFENSE_ID, start=now, event_count=12))
+
+    async with running_case(env, fakes) as handle:
+        await fakes.events.wait_for("decided", 1)
+
+        await env.sleep(timedelta(minutes=10))
+        v2 = now + timedelta(minutes=10)
+        fakes.offense = offense(OFFENSE_ID, start=now, updated=v2, event_count=40)
+        await handle.signal(OFFENSE_UPDATED, v2)
+        await fakes.events.wait_for("recorded", 1)
+        # The decision stays as it is.
+        state = await handle.query(CaseWorkflow.state)
+        assert (state.status, state.evaluation_no, state.notify_level) == (
+            CaseStatus.DECIDED,
+            1,
+            Level.HIGH,
+        )
+
+        # 35 minutes after the evaluation; this update brings no event of its own, but the
+        # evaluation saw 12 events and there are 40 now.
+        await env.sleep(timedelta(minutes=25))
+        v3 = now + timedelta(minutes=35)
+        fakes.offense = offense(OFFENSE_ID, start=now, updated=v3, event_count=40)
+        await handle.signal(OFFENSE_UPDATED, v3)
+        await fakes.events.wait_for("decided", 2)
+        result = await close(handle)
+
+    assert fakes.recorded == [v2, v3]
+    # v2 was never evaluated: evaluation 2 is v3.
+    assert fakes.evaluations == [(1, now), (2, v3)]
+    assert triage_numbers(fakes) == [1, 2]
+    assert result.evaluation_no == 2
+
+
+async def test_the_interval_comes_from_the_settings(env: WorkflowEnvironment) -> None:
+    now = await env.get_current_time()
+    fakes = CaseFakes(
+        offense(OFFENSE_ID, start=now, event_count=12), reevaluation_interval=timedelta(hours=2)
+    )
+
+    async with running_case(env, fakes) as handle:
+        await fakes.events.wait_for("decided", 1)
+        await env.sleep(timedelta(minutes=40))
+        v2 = now + timedelta(minutes=40)
+        fakes.offense = offense(OFFENSE_ID, start=now, updated=v2, event_count=40)
+        await handle.signal(OFFENSE_UPDATED, v2)
+        await fakes.events.wait_for("recorded", 1)
+
+        await env.sleep(timedelta(minutes=90))
+        v3 = now + timedelta(minutes=130)
+        fakes.offense = offense(OFFENSE_ID, start=now, updated=v3, event_count=41)
+        await handle.signal(OFFENSE_UPDATED, v3)
+        await fakes.events.wait_for("decided", 2)
+        await close(handle)
+
+    assert fakes.evaluations == [(1, now), (2, v3)]
 
 
 async def test_offense_closed_ends_the_workflow(env: WorkflowEnvironment) -> None:
@@ -166,7 +252,7 @@ async def test_offense_closed_during_triage_abandons_the_evaluation(
     now = await env.get_current_time()
     release = asyncio.Event()
 
-    async def never_finishes(evaluation_no: int, attempt: int) -> TriageResult:
+    async def never_finishes(call: TriageCall) -> TriageResult:
         await release.wait()
         return triage_result()
 
@@ -175,7 +261,7 @@ async def test_offense_closed_during_triage_abandons_the_evaluation(
         await fakes.events.wait_for("triage", 1)
         result = await close(handle)
         # The run is abandoned, not cancelled: it finishes on its own and records itself.
-        run = env.client.get_workflow_handle(f"{CASE_ID}-triage-1", result_type=TriageOutcome)
+        run = env.client.get_workflow_handle(FIRST_RUN, result_type=TriageOutcome)
         assert (await run.describe()).status is WorkflowExecutionStatus.RUNNING
         release.set()
         outcome = await run.result()
@@ -213,8 +299,8 @@ async def test_triage_past_the_sla_marks_no_ai_decision(env: WorkflowEnvironment
     """Triage cannot reach the model; the next attempt is due after the 10-minute SLA."""
     now = await env.get_current_time()
 
-    async def model_down_once(evaluation_no: int, attempt: int) -> TriageResult:
-        if attempt == 1:
+    async def model_down_once(call: TriageCall) -> TriageResult:
+        if call.attempt == 1:
             raise ApplicationError("model unavailable", next_retry_delay=timedelta(minutes=20))
         return triage_result()
 
@@ -248,14 +334,14 @@ async def test_case_started_after_its_sla_is_marked_at_once(env: WorkflowEnviron
     assert fakes.events.names() == ["evaluation", "no_ai_decision", "triage", "decided", "closed"]
 
 
-async def test_failed_triage_marks_no_ai_decision_until_the_next_update(
+async def test_failed_triage_marks_no_ai_decision_until_an_update_is_evaluated(
     env: WorkflowEnvironment,
 ) -> None:
     now = await env.get_current_time()
 
-    async def fails_first_evaluation(evaluation_no: int, attempt: int) -> TriageResult:
-        if evaluation_no == 1:
-            raise ApplicationError("malformed output", non_retryable=True)
+    async def fails_first_evaluation(call: TriageCall) -> TriageResult:
+        if call.evaluation_no == 1:
+            raise triage_failure(TriageFailure.INVALID_OUTPUT)
         return triage_result()
 
     fakes = CaseFakes(offense(OFFENSE_ID, start=now), triage_behavior=fails_first_evaluation)
@@ -263,7 +349,9 @@ async def test_failed_triage_marks_no_ai_decision_until_the_next_update(
         await state_when(handle, lambda view: view.status is CaseStatus.NO_AI_DECISION)
 
         updated = now + timedelta(minutes=1)
-        fakes.offense = offense(OFFENSE_ID, start=now, updated=updated)
+        fakes.offense = offense(
+            OFFENSE_ID, start=now, updated=updated, destination_ips=["198.51.100.15", "192.0.2.20"]
+        )
         await handle.signal(OFFENSE_UPDATED, updated)
         await fakes.events.wait_for("decided", 2)
         result = await close(handle)
@@ -271,44 +359,56 @@ async def test_failed_triage_marks_no_ai_decision_until_the_next_update(
     assert (result.status, result.evaluation_no) == (CaseStatus.CLOSED, 2)
 
 
-async def test_a_continued_case_keeps_its_evaluation_count(env: WorkflowEnvironment) -> None:
-    """The input Continue-As-New hands to the next run: nothing to evaluate until an update."""
+async def test_a_continued_case_keeps_its_evaluation_and_what_it_saw(
+    env: WorkflowEnvironment,
+) -> None:
+    """The input Continue-As-New hands to the next run: nothing to check until an update, which
+    is compared with the snapshot the carried evaluation saw."""
     now = await env.get_current_time()
-    fakes = CaseFakes(offense(OFFENSE_ID, start=now))
+    seen = offense(OFFENSE_ID, start=now)
+    fakes = CaseFakes(seen)
     carry = CaseCarry(
         status=CaseStatus.DECIDED,
         evaluation_no=3,
         notify_level=Level.HIGH,
-        evaluated_version=now,
+        evaluated_offense=seen,
+        evaluated_at=now,
+        checked_version=now,
         latest_version=now,
     )
 
     async with running_case(env, fakes, carry) as handle:
         assert (await handle.query(CaseWorkflow.state)).evaluation_no == 3
-        updated = now + timedelta(minutes=1)
-        fakes.offense = offense(OFFENSE_ID, start=now, updated=updated)
-        await handle.signal(OFFENSE_UPDATED, updated)
+        v1 = now + timedelta(minutes=1)
+        fakes.offense = offense(OFFENSE_ID, start=now, updated=v1)
+        await handle.signal(OFFENSE_UPDATED, v1)
+        await fakes.events.wait_for("recorded", 1)
+
+        v2 = now + timedelta(minutes=2)
+        fakes.offense = offense(OFFENSE_ID, start=now, updated=v2, log_source_ids=[112, 413])
+        await handle.signal(OFFENSE_UPDATED, v2)
         await fakes.events.wait_for("decided", 4)
         result = await close(handle)
 
-    assert fakes.evaluations == [(4, updated)]
+    assert fakes.recorded == [v1, v2]
+    assert fakes.evaluations == [(4, v2)]
     assert result.evaluation_no == 4
 
 
 async def test_each_evaluation_is_triaged_by_its_own_run(env: WorkflowEnvironment) -> None:
-    """Criterion 2: triage is the child workflow TriageWorkflow, one run per evaluation."""
+    """T-012 criterion 2: triage is the child workflow TriageWorkflow, one run per evaluation."""
     now = await env.get_current_time()
     fakes = CaseFakes(offense(OFFENSE_ID, start=now))
 
     async with running_case(env, fakes) as handle:
         await fakes.events.wait_for("decided", 1)
         updated = now + timedelta(minutes=1)
-        fakes.offense = offense(OFFENSE_ID, start=now, updated=updated)
+        fakes.offense = offense(OFFENSE_ID, start=now, updated=updated, rule_ids=NEW_RULE)
         await handle.signal(OFFENSE_UPDATED, updated)
         await fakes.events.wait_for("decided", 2)
         await close(handle)
 
-    assert fakes.triage_runs == [f"{CASE_ID}-triage-1", f"{CASE_ID}-triage-2"]
+    assert fakes.triage_runs == [FIRST_RUN, f"{CASE_ID}-triage-2"]
     request = await env.client.get_workflow_handle(f"{CASE_ID}-triage-2").fetch_history()
     started = request.events[0].workflow_execution_started_event_attributes
     assert started.workflow_type.name == TRIAGE_WORKFLOW
@@ -328,3 +428,148 @@ async def test_a_triage_run_without_a_decision_marks_no_ai_decision(
 
     assert (state.evaluation_no, fakes.decisions) == (1, [])
     assert result.status is CaseStatus.CLOSED
+    assert "retry" not in fakes.events.names()
+
+
+# --- D-33: a run the model's outage ended is run once more ------------------------------------
+
+
+@pytest.mark.parametrize("failure", [TriageFailure.MODEL_ERROR, TriageFailure.TIMEOUT])
+async def test_a_run_the_model_ended_is_retried_after_the_wait(
+    env: WorkflowEnvironment, failure: TriageFailure
+) -> None:
+    """Criterion 5: a model request that failed for good, or a run out of its wall clock, gets
+    one more run after the configured wait, here 7 minutes. It decides within the SLA, so the
+    case is never `no_ai_decision`."""
+    now = await env.get_current_time()
+
+    async def model_back_for_the_retry(call: TriageCall) -> TriageResult:
+        if not call.retry:
+            raise triage_failure(failure)
+        return triage_result()
+
+    fakes = CaseFakes(
+        offense(OFFENSE_ID, start=now),
+        sla=timedelta(minutes=10),
+        retry_delay=timedelta(minutes=7),
+        triage_behavior=model_back_for_the_retry,
+    )
+    async with running_case(env, fakes) as handle:
+        await fakes.events.wait_for("retry")
+        await env.sleep(timedelta(minutes=7))
+        state = await state_when(handle, lambda view: view.status is CaseStatus.DECIDED)
+        await close(handle)
+
+    assert fakes.triage_runs == [FIRST_RUN, RETRY_RUN]
+    assert fakes.events.names() == [
+        "evaluation",
+        "triage",
+        "retry",
+        "triage",
+        "decided",
+        "closed",
+    ]
+    _, _, decided_at = fakes.decisions[0]
+    assert timedelta(minutes=7) <= decided_at - now < timedelta(minutes=10)
+    assert state.evaluation_no == 1
+
+
+async def test_a_second_model_failure_leaves_no_ai_decision(env: WorkflowEnvironment) -> None:
+    now = await env.get_current_time()
+
+    async def model_down(call: TriageCall) -> TriageResult:
+        raise ApplicationError("LiteLLM answered 503", type="ModelHTTPError", non_retryable=True)
+
+    fakes = CaseFakes(
+        offense(OFFENSE_ID, start=now), sla=timedelta(minutes=30), triage_behavior=model_down
+    )
+    async with running_case(env, fakes) as handle:
+        await fakes.events.wait_for("retry")
+        await env.sleep(timedelta(minutes=5))
+        state = await state_when(handle, lambda view: view.status is CaseStatus.NO_AI_DECISION)
+        await close(handle)
+
+    # One retry, after the default five minutes; the case is `no_ai_decision` before its SLA.
+    assert fakes.triage_runs == [FIRST_RUN, RETRY_RUN]
+    assert fakes.events.names() == [
+        "evaluation",
+        "triage",
+        "retry",
+        "triage",
+        "no_ai_decision",
+        "closed",
+    ]
+    assert (state.evaluation_no, fakes.decisions) == (1, [])
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [TriageFailure.INVALID_OUTPUT, TriageFailure.BUDGET_EXHAUSTED, TriageFailure.TOOL_ERROR],
+)
+async def test_other_failures_are_not_retried(
+    env: WorkflowEnvironment, failure: TriageFailure
+) -> None:
+    """Invalid output and an exhausted budget are not the model's outage, nor is a tool call
+    the gateway did not answer: the case is `no_ai_decision` at once."""
+    now = await env.get_current_time()
+
+    async def fails(call: TriageCall) -> TriageResult:
+        raise triage_failure(failure)
+
+    fakes = CaseFakes(offense(OFFENSE_ID, start=now), triage_behavior=fails)
+    async with running_case(env, fakes) as handle:
+        await state_when(handle, lambda view: view.status is CaseStatus.NO_AI_DECISION)
+        await close(handle)
+
+    assert fakes.triage_runs == [FIRST_RUN]
+    assert fakes.events.names() == ["evaluation", "triage", "no_ai_decision", "closed"]
+
+
+async def test_the_sla_can_pass_while_the_retry_waits(env: WorkflowEnvironment) -> None:
+    """The SLA timer keeps running during the wait; the retry's decision replaces "no AI
+    decision" like any late decision."""
+    now = await env.get_current_time()
+
+    async def model_back_for_the_retry(call: TriageCall) -> TriageResult:
+        if not call.retry:
+            raise triage_failure(TriageFailure.MODEL_ERROR)
+        return triage_result()
+
+    fakes = CaseFakes(
+        offense(OFFENSE_ID, start=now),
+        sla=timedelta(minutes=10),
+        retry_delay=timedelta(minutes=15),
+        triage_behavior=model_back_for_the_retry,
+    )
+    async with running_case(env, fakes) as handle:
+        await fakes.events.wait_for("retry")
+        await env.sleep(timedelta(minutes=11))
+        await state_when(handle, lambda view: view.status is CaseStatus.NO_AI_DECISION)
+        await env.sleep(timedelta(minutes=5))
+        await state_when(handle, lambda view: view.status is CaseStatus.DECIDED)
+        await close(handle)
+
+    assert fakes.events.names() == [
+        "evaluation",
+        "triage",
+        "retry",
+        "no_ai_decision",
+        "triage",
+        "decided",
+        "closed",
+    ]
+
+
+async def test_closing_during_the_wait_drops_the_retry(env: WorkflowEnvironment) -> None:
+    now = await env.get_current_time()
+
+    async def model_down(call: TriageCall) -> TriageResult:
+        raise triage_failure(TriageFailure.MODEL_ERROR)
+
+    fakes = CaseFakes(offense(OFFENSE_ID, start=now), triage_behavior=model_down)
+    async with running_case(env, fakes) as handle:
+        await fakes.events.wait_for("retry")
+        result = await close(handle)
+
+    assert result.status is CaseStatus.CLOSED
+    assert fakes.triage_runs == [FIRST_RUN]

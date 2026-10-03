@@ -10,7 +10,8 @@ Reading offenses is the platform's own work, not an agent's, but the gateway rec
 under an agent run. Each read is therefore a system run of the pseudo agent `offense-source`
 (`ais0c_activities.gateway.system_run`): the intake's reads belong to the context
 `offense-intake`, the read of one offense to its case ID. The gateway records their calls and
-evidence like any other.
+evidence like any other, except that a read that finds nothing leaves no evidence (D-33): most
+intake polls find no changed offense.
 
 QRadar's values are untrusted. The snapshot keeps them as they are, because they reach a prompt
 only inside the `untrusted_*` wrapper, but within the contract's limits: the description is cut

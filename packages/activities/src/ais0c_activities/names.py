@@ -26,8 +26,11 @@ START_CASE: Final = "start_case"
 # Case activities (CaseWorkflow). The intake also calls `close_case` for an offense whose case
 # workflow no longer exists.
 FETCH_OFFENSE: Final = "fetch_offense"
+RECORD_OFFENSE_UPDATE: Final = "record_offense_update"
+REEVALUATION_INTERVAL: Final = "reevaluation_interval"
 ENRICH_OFFENSE: Final = "enrich_offense"
 START_EVALUATION: Final = "start_evaluation"
+TRIAGE_RETRY_DELAY: Final = "triage_retry_delay"
 RECORD_DECISION: Final = "record_decision"
 MARK_NO_AI_DECISION: Final = "mark_no_ai_decision"
 CLOSE_CASE: Final = "close_case"

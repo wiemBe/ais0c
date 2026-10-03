@@ -191,3 +191,37 @@ async def test_fetching_an_unknown_offense_fails_without_retries(
     with pytest.raises(ApplicationError) as error:
         await env.run(activities.fetch_offense, 404)
     assert (error.value.type, error.value.non_retryable) == ("OffenseNotFound", True)
+
+
+async def test_an_update_is_recorded_when_it_is_newer(
+    sessions: SessionFactory, source: FakeOffenseSource, activities: CaseActivities
+) -> None:
+    """T-014 criterion 2: the case records the offense's latest state, evaluated or not."""
+    intake = IntakeActivities(sessions=sessions, source=source, settings=CaseSettings())
+    env = ActivityEnvironment()
+    await env.run(intake.admit_offenses, [offense(7)], T0)
+    v2 = T0 + timedelta(minutes=10)
+    newer = offense(7, updated=v2, rule_ids=[100201, 100305])
+
+    await env.run(activities.record_offense_update, newer)
+    await env.run(activities.record_offense_update, offense(7, updated=T0 + timedelta(minutes=5)))
+    await env.run(activities.record_offense_update, offense(404))  # not recorded: no error
+
+    row = await seen(sessions, 7)
+    assert row is not None
+    assert (row.last_updated_at, row.rule_ids) == (v2, [100201, 100305])
+    assert row.status is OffenseStatus.PENDING
+
+
+async def test_the_workflow_gets_its_timings_from_the_settings(sessions: SessionFactory) -> None:
+    activities = CaseActivities(
+        sessions=sessions,
+        source=FakeOffenseSource(),
+        settings=CaseSettings(
+            reevaluation_interval=timedelta(minutes=45), triage_retry_delay=timedelta(minutes=2)
+        ),
+    )
+    env = ActivityEnvironment()
+
+    assert await env.run(activities.reevaluation_interval) == timedelta(minutes=45)
+    assert await env.run(activities.triage_retry_delay) == timedelta(minutes=2)
