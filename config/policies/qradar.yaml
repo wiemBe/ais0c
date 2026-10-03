@@ -1,0 +1,52 @@
+# Gateway policy of the QRadar connector's profiles (architecture §11.2, §13.3, §14).
+#
+# The MCP Policy Gateway (services/mcp-gateway) reads this file with
+# config/connectors/qradar.yaml: the connector manifest says which tools a profile has, this
+# file says which rules its calls must pass. Each profile must appear in both files. Values are
+# starting points until prod measurements (S-02); durations are ISO 8601.
+connector: qradar
+
+# Fields QRadar indexes. A query whose window is wider than the profile's
+# wide_window_threshold must filter on one of them. The telemetry inventory (§11.4) replaces
+# this list once it exists.
+indexed_fields: [sourceip, destinationip, username, qid, logsourceid, devicetype, category]
+
+output_filters:
+  # Payload and free-text fields (§11.2, §22: the verifier never reads free text). Names are
+  # compared without case and punctuation, so utf8_payload and "UTF8 Payload" are the same
+  # name. A profile with this filter may not name these fields in its AQL either, so a query
+  # cannot select them under another name. Add the bank's free-text custom properties here.
+  free-text:
+    drop_fields:
+      - message
+      - description
+      - Process CommandLine
+      - Command
+      - User Agent
+      - URL
+      - Filename
+      - Subject
+    drop_fields_containing: [payload]
+
+profiles:
+  # max_time_window: the longest ToolIntent.time_window a call may declare.
+  # aql: AQL Guard rules (packages/policy aql_guard.AqlProfile) for create_ariel_search.
+  # output_filter: removes fields from every result of the profile.
+  qradar-triage-read:
+    max_time_window: P31D
+  qradar-investigate-read:
+    max_time_window: P31D
+    aql: {max_window: P7D, max_limit: 1000, allowed_tables: [events], wide_window_threshold: PT24H}
+  qradar-verify-read:
+    max_time_window: P31D
+    aql: {max_window: PT2H, max_limit: 200, allowed_tables: [events], wide_window_threshold: PT1H}
+    output_filter: free-text
+  qradar-hunt-read:
+    # Hunts cover up to 12 months (HuntRequest) in slices of at most one day.
+    max_time_window: P366D
+    aql: {max_window: P1D, max_limit: 10000, allowed_tables: [events], wide_window_threshold: PT6H}
+  qradar-inventory-read:
+    max_time_window: P31D
+  qradar-tuning-read:
+    max_time_window: P92D
+    aql: {max_window: P31D, max_limit: 1000, allowed_tables: [events], wide_window_threshold: PT24H}

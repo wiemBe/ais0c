@@ -9,6 +9,8 @@ dependencies = [
     # Agent runtime (decision T-02); the extra brings the OpenAI-compatible client that llm.py
     # uses to reach LiteLLM. Nothing else may import that client (AGENTS.md hard rule 3).
     "pydantic-ai-slim[openai]>=2.53,<3",
+    # HTTP client of the MCP Policy Gateway (gateway_http.py); pydantic-ai-slim uses it too.
+    "httpx2>=2.13.1,<3",
     # Output, manifest and run models; same version range as ais0c-contracts.
     "pydantic>=2.12,<3",
     # Agent manifests (config/agents/) and the model registry (config/models/) are YAML.

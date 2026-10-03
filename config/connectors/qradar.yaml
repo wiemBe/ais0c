@@ -5,14 +5,15 @@
 # the example names in architecture §8.2, e.g. ariel_search_create is create_ariel_search.
 #
 # server_profiles are the fork's --profile values. Each runs as its own instance with its
-# own QRadar token (§11.2). The gateway profiles of §8.2 (qradar-triage-read,
-# qradar-investigate-read, ...), tool descriptions and quota pools are added by T-011 and
-# may only use tools listed here.
+# own QRadar token (§11.2). The MCP Policy Gateway (services/mcp-gateway) reads the rest of
+# this file: the tool registry, the gateway profiles, the quota pools and the limits. Gateway
+# profiles may only use tools listed in their server profile. The rules each gateway profile
+# is held to (AQL Guard, ToolIntent window, output filter) are in config/policies/qradar.yaml.
 id: qradar
 server: qradar-mcp-fork
-# Fork commit with the T-006 changes. Replace with the fork's merge commit or image tag
-# once the fork PR is merged.
-server_version: ced331c77f12d211d924a7c2eb9a7a19e2deb771
+# Fork commit with the T-006 changes; the input schemas under `tools` are its snapshots.
+# Replace with the fork's merge commit or image tag once the fork PR is merged.
+server_version: 238ab6b9d0d49ba1d137fa70d1a86d05bf00e013
 upstream:
   repository: https://github.com/IBM/qradar-mcp
   commit: f51c0070f0b480c401fd527b0bf5b8e1bf360169
@@ -23,6 +24,8 @@ capability_discovery: /api/help/versions
 # Known versions; the server picks the highest one QRadar serves. Lab verification is
 # reported in the T-006 PR.
 supported_api_versions: ["27.0", "29.0"]
+# The gateway records evidence from this connector under this EvidenceSource.
+evidence_source: qradar
 server_profiles:
   qradar-read:
     instance: qradar-mcp-read
@@ -56,5 +59,403 @@ server_profiles:
     tools:
       - {id: add_offense_note, risk: write}
       - {id: get_offense_notes, risk: read}
+
+# Tool registry (architecture §13.3): the descriptions and input schemas agents see. They come
+# from here only; the gateway never reads tool metadata from the MCP server, so text in the
+# server's descriptions cannot reach an agent. The input schemas are the fork's snapshots at
+# server_version with platform limits added: free-form strings have a maxLength and an AQL
+# query fits EvidenceRef.query_text (4000). The tool_schema_version agents send is a hash of
+# input_schema, so it changes whenever the schema does.
+#
+# result: object (the tool returns one object, one row) or {rows: <key>} (the rows under that
+#   key). search: the tool's step in the Ariel search lifecycle. page_size_argument: the
+#   argument the gateway lowers to the profile's max_rows.
+tools:
+  get_offense:
+    description: 'Read one QRadar offense by ID: description, offense type and source, rule and category
+      lists, event count, magnitude, log sources and times.'
+    cost_class: low
+    result: object
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: [offense_id]
+      properties:
+        offense_id: {type: integer, minimum: 0, description: The ID of the offense to retrieve}
+  list_offenses:
+    description: List QRadar offenses. Narrow the list with filter (QRadar API filter syntax, for
+      example status = OPEN), pick fields and sort; page with limit and offset.
+    cost_class: low
+    result: {rows: offenses}
+    page_size_argument: limit
+    input_schema:
+      type: object
+      additionalProperties: false
+      properties:
+        fields: {type: string, maxLength: 1000, description: Comma-separated list of fields to include.}
+        filter: {type: string, maxLength: 1000, description: Optional filter expression.}
+        limit: {type: integer, minimum: 1, maximum: 10000, default: 10, description: 'Maximum number of offenses to return (default: 10, max: 10000)'}
+        offset: {type: integer, minimum: 0, default: 0, description: 'Number of offenses to skip for pagination (default: 0)'}
+        sort: {type: string, maxLength: 1000, description: Sort expression.}
+  list_offense_types:
+    description: 'List offense types: the property an offense is indexed on, such as source IP or
+      username.'
+    cost_class: low
+    result: {rows: items}
+    page_size_argument: limit
+    input_schema:
+      type: object
+      additionalProperties: false
+      properties:
+        fields: {type: string, maxLength: 1000, description: Optional comma-separated list of fields to return.}
+        filter: {type: string, maxLength: 1000, description: Optional AQL filter expression.}
+        limit: {type: integer, minimum: 1, maximum: 10000, default: 10, description: 'Maximum number of results to return (default: 10)'}
+        sort: {type: string, maxLength: 1000, description: Optional sort expression.}
+  list_source_addresses:
+    description: List offense source addresses with the offenses they appear in.
+    cost_class: low
+    result: {rows: items}
+    page_size_argument: limit
+    input_schema:
+      type: object
+      additionalProperties: false
+      properties:
+        fields: {type: string, maxLength: 1000, description: Optional comma-separated list of fields to return}
+        filter: {type: string, maxLength: 1000, description: Optional filter expression.}
+        limit: {type: integer, minimum: 1, maximum: 10000, default: 10, description: 'Maximum number of results to return (default: 10)'}
+        offset: {type: integer, minimum: 0, description: Starting position for pagination (0-based)}
+  list_local_destination_addresses:
+    description: List local destination addresses of offenses with the offenses they appear in.
+    cost_class: low
+    result: {rows: items}
+    page_size_argument: limit
+    input_schema:
+      type: object
+      additionalProperties: false
+      properties:
+        fields: {type: string, maxLength: 1000, description: Optional comma-separated list of fields to return.}
+        filter: {type: string, maxLength: 1000, description: Optional filter expression.}
+        limit: {type: integer, minimum: 1, maximum: 10000, default: 10, description: 'Maximum number of results to return (default: 10)'}
+  list_rules:
+    description: 'List QRadar analytics rules: ID, name, type, enabled state and origin.'
+    cost_class: low
+    result: {rows: items}
+    page_size_argument: limit
+    input_schema:
+      type: object
+      additionalProperties: false
+      properties:
+        fields: {type: string, maxLength: 1000, description: Optional comma-separated list of fields to include.}
+        filter: {type: string, maxLength: 1000, description: Optional filter expression.}
+        limit: {type: integer, minimum: 1, maximum: 10000, default: 10, description: 'Maximum number of rules to return (default: 10, max: 10000)'}
+        offset: {type: integer, minimum: 0, default: 0, description: 'Number of rules to skip for pagination (default: 0)'}
+  get_rule:
+    description: Read one QRadar analytics rule by ID.
+    cost_class: low
+    result: object
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: [rule_id]
+      properties:
+        fields: {type: string, maxLength: 1000, description: 'Optional comma-separated list of fields to return (e.g., ''id,name,type,enabled'')'}
+        rule_id: {type: integer, minimum: 0, description: The ID of the analytics rule to retrieve}
+  list_assets:
+    description: 'List assets from the QRadar asset model: IP addresses, host names, users and properties.'
+    cost_class: low
+    result: {rows: items}
+    page_size_argument: limit
+    input_schema:
+      type: object
+      additionalProperties: false
+      properties:
+        fields: {type: string, maxLength: 1000, description: Optional comma-separated list of fields to return.}
+        filter: {type: string, maxLength: 1000, description: Optional filter expression.}
+        limit: {type: integer, minimum: 1, maximum: 10000, description: 'Maximum number of assets to return (default: 50, max: 10000)'}
+        offset: {type: integer, minimum: 0, description: 'Number of assets to skip for pagination (default: 0)'}
+        sort: {type: string, maxLength: 1000, description: Optional sort expression.}
+  list_log_sources:
+    description: 'List log sources: ID, name, type, enabled state and status.'
+    cost_class: low
+    result: {rows: items}
+    page_size_argument: limit
+    input_schema:
+      type: object
+      additionalProperties: false
+      properties:
+        fields: {type: string, maxLength: 1000, description: Optional comma-separated list of fields to include.}
+        filter: {type: string, maxLength: 1000, description: Optional filter expression.}
+        limit: {type: integer, minimum: 1, maximum: 10000, default: 10, description: 'Maximum number of log sources to return (default: 10, max: 10000)'}
+        offset: {type: integer, minimum: 0, default: 0, description: 'Number of log sources to skip for pagination (default: 0)'}
+        sort: {type: string, maxLength: 1000, description: Optional sort expression.}
+  get_log_source:
+    description: Read one log source by ID.
+    cost_class: low
+    result: object
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: [log_source_id]
+      properties:
+        fields: {type: string, maxLength: 1000, description: 'Optional comma-separated list of fields to return (e.g., "id,name,enabled,status")'}
+        log_source_id: {type: integer, minimum: 0, description: The ID of the log source to retrieve}
+  list_log_source_types:
+    description: 'List log source types: ID and name.'
+    cost_class: low
+    result: {rows: items}
+    page_size_argument: limit
+    input_schema:
+      type: object
+      additionalProperties: false
+      properties:
+        fields: {type: string, maxLength: 1000, description: Optional comma-separated list of fields to return.}
+        filter: {type: string, maxLength: 1000, description: Optional filter expression.}
+        limit: {type: integer, minimum: 1, maximum: 10000, default: 10, description: 'Maximum number of types to return (default: 10)'}
+        offset: {type: integer, minimum: 0, description: Starting index for pagination (0-based)}
+  list_reference_sets:
+    description: 'List reference sets: name, element type and number of entries.'
+    cost_class: low
+    result: {rows: items}
+    page_size_argument: limit
+    input_schema:
+      type: object
+      additionalProperties: false
+      properties:
+        fields: {type: string, maxLength: 1000, description: Optional comma-separated list of fields to include.}
+        filter: {type: string, maxLength: 1000, description: Optional AQL-style filter expression.}
+        limit: {type: integer, minimum: 1, maximum: 10000, description: 'Maximum number of sets to return (default: 50, max: 10000)'}
+        offset: {type: integer, minimum: 0, description: 'Number of sets to skip for pagination (default: 0)'}
+        sort: {type: string, maxLength: 1000, description: Optional sort expression.}
+  get_reference_set:
+    description: Read one reference set by ID.
+    cost_class: low
+    result: object
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: [set_id]
+      properties:
+        fields: {type: string, maxLength: 1000, description: 'Optional comma-separated list of fields to return (e.g., ''id,name,entry_type,number_of_entries'')'}
+        set_id: {type: integer, minimum: 0, description: The ID of the reference set to retrieve}
+  list_reference_maps:
+    description: 'List reference maps: name, key and value labels and number of entries.'
+    cost_class: low
+    result: {rows: items}
+    page_size_argument: limit
+    input_schema:
+      type: object
+      additionalProperties: false
+      properties:
+        fields: {type: string, maxLength: 1000, description: Optional comma-separated list of fields to return.}
+        filter: {type: string, maxLength: 1000, description: Optional AQL-style filter expression.}
+        limit: {type: integer, minimum: 1, maximum: 10000, description: 'Maximum number of maps to return (default: 50, max: 10000)'}
+        offset: {type: integer, minimum: 0, description: 'Number of maps to skip for pagination (default: 0)'}
+        sort: {type: string, maxLength: 1000, description: Optional sort expression.}
+  get_reference_map:
+    description: Read the entries of one reference map by name; page with limit and offset.
+    cost_class: medium
+    result: object
+    page_size_argument: limit
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        fields: {type: string, maxLength: 1000, description: Optional comma-separated list of fields to return}
+        filter: {type: string, maxLength: 1000, description: Optional AQL filter to restrict map entries}
+        limit: {type: integer, minimum: 1, maximum: 10000, default: 50, description: 'Maximum number of entries to return (default: 50)'}
+        name: {type: string, pattern: '^(?!\.{1,2}$)[^/\\?#%]{1,255}$', description: The name of the reference map to retrieve}
+        namespace: {type: string, enum: [SHARED, TENANT], description: 'Optional namespace: SHARED or TENANT (default: SHARED)'}
+        offset: {type: integer, minimum: 0, description: 'Number of entries to skip for pagination (default: 0)'}
+  list_reference_tables:
+    description: 'List reference tables: name, key labels and number of entries.'
+    cost_class: low
+    result: {rows: items}
+    page_size_argument: limit
+    input_schema:
+      type: object
+      additionalProperties: false
+      properties:
+        fields: {type: string, maxLength: 1000, description: Optional comma-separated list of fields to return.}
+        filter: {type: string, maxLength: 1000, description: Optional AQL-style filter expression.}
+        limit: {type: integer, minimum: 1, maximum: 10000, description: 'Maximum number of tables to return (default: 50, max: 10000)'}
+        offset: {type: integer, minimum: 0, description: 'Number of tables to skip for pagination (default: 0)'}
+        sort: {type: string, maxLength: 1000, description: Optional sort expression.}
+  get_reference_table:
+    description: Read the entries of one reference table by name; page with limit and offset.
+    cost_class: medium
+    result: object
+    page_size_argument: limit
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        fields: {type: string, maxLength: 1000, description: Optional comma-separated list of fields to return}
+        filter: {type: string, maxLength: 1000, description: Optional AQL filter to restrict table entries}
+        limit: {type: integer, minimum: 1, maximum: 10000, default: 50, description: 'Maximum number of entries to return (default: 50)'}
+        name: {type: string, pattern: '^(?!\.{1,2}$)[^/\\?#%]{1,255}$', description: The name of the reference table to retrieve}
+        namespace: {type: string, enum: [SHARED, TENANT], description: 'Optional namespace: SHARED or TENANT (default: SHARED)'}
+        offset: {type: integer, minimum: 0, description: 'Number of entries to skip for pagination (default: 0)'}
+  create_ariel_search:
+    description: 'Start an Ariel search for an AQL query on the events table. The query needs a LIMIT
+      and then a time range, in this order: ... LIMIT 100 LAST 2 HOURS (or START ''...'' STOP ''...'').
+      Returns the search: poll get_ariel_search_status until it is COMPLETED, read rows with get_ariel_search_results,
+      then call delete_ariel_search.'
+    cost_class: high
+    result: object
+    search: create
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: [query_expression]
+      properties:
+        query_expression: {type: string, minLength: 1, maxLength: 4000, description: 'The AQL query to run, with a time range and a LIMIT.'}
+  get_ariel_search_status:
+    description: Read the status of an Ariel search started in this case or hunt. wait_seconds (at
+      most 20) waits for the search to complete.
+    cost_class: low
+    result: object
+    search: status
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: [search_id]
+      properties:
+        search_id: {type: string, pattern: '^[A-Za-z0-9_-]{1,128}$', description: The ID of the Ariel search to retrieve status for}
+        wait_seconds: {type: integer, minimum: 0, maximum: 20, description: 'Optional number of seconds to wait for search completion. If specified, the API will wait up to this many seconds for the search to reach COMPLETED status before returning.'}
+  get_ariel_search_results:
+    description: Read one page of rows of a completed Ariel search started in this case or hunt.
+    cost_class: medium
+    result: {rows: events}
+    search: results
+    page_size_argument: limit
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: [search_id]
+      properties:
+        limit: {type: integer, minimum: 1, maximum: 10000, default: 100, description: Rows in this page (default 100).}
+        search_id: {type: string, pattern: '^[A-Za-z0-9_-]{1,128}$', description: The ID of the completed Ariel search to retrieve results for}
+        start: {type: integer, minimum: 0, default: 0, description: Starting index for pagination (0-based). Use with limit to retrieve a specific range of results.}
+  delete_ariel_search:
+    description: Delete an Ariel search started in this case or hunt once its results are no longer
+      needed.
+    cost_class: low
+    result: object
+    search: delete
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: [search_id]
+      properties:
+        search_id: {type: string, pattern: '^[A-Za-z0-9_-]{1,128}$', description: The ID of the Ariel search to delete}
+
+# Gateway profiles (architecture §8.2, §11.2). An agent manifest names one as its
+# toolset_profile; each profile has its own token, and the gateway gives it exactly these tools,
+# run on its server profile's instance. Agent profiles hold read tools only (AGENTS.md hard
+# rule 2); qradar-note-write and the Action Executor come in Faz 1.
+#
+# guard: aql runs the profile's AQL Guard rules on the query. only_own_searches limits the
+# tool to Ariel searches started through the gateway in the same case or hunt, under the same
+# profile; it is a layer on top of the fork's own ownership check (T-006). The gateway refuses
+# to start if a profile lists an Ariel tool without them. max_rows caps the rows of one result
+# (default: limits.max_rows).
+profiles:
+  qradar-triage-read:
+    server_profile: qradar-read
+    tools:
+      - {id: get_offense, risk: read}
+      - {id: list_offenses, risk: read}
+      - {id: list_offense_types, risk: read}
+      - {id: list_source_addresses, risk: read}
+      - {id: list_local_destination_addresses, risk: read}
+      - {id: list_rules, risk: read}
+      - {id: get_rule, risk: read}
+      - {id: list_assets, risk: read}
+      - {id: list_log_sources, risk: read}
+      - {id: get_log_source, risk: read}
+      - {id: list_log_source_types, risk: read}
+  qradar-investigate-read:
+    server_profile: qradar-read
+    tools:
+      - {id: get_offense, risk: read}
+      - {id: list_offenses, risk: read}
+      - {id: list_offense_types, risk: read}
+      - {id: list_source_addresses, risk: read}
+      - {id: list_local_destination_addresses, risk: read}
+      - {id: list_rules, risk: read}
+      - {id: get_rule, risk: read}
+      - {id: list_assets, risk: read}
+      - {id: list_log_sources, risk: read}
+      - {id: get_log_source, risk: read}
+      - {id: list_log_source_types, risk: read}
+      - {id: create_ariel_search, risk: read, guard: aql}
+      - {id: get_ariel_search_status, risk: read, only_own_searches: true}
+      - {id: get_ariel_search_results, risk: read, max_rows: 500, only_own_searches: true}
+      - {id: delete_ariel_search, risk: read, only_own_searches: true}
+  qradar-verify-read:
+    server_profile: qradar-read
+    tools:
+      - {id: create_ariel_search, risk: read, guard: aql}
+      - {id: get_ariel_search_status, risk: read, only_own_searches: true}
+      - {id: get_ariel_search_results, risk: read, max_rows: 200, only_own_searches: true}
+      - {id: delete_ariel_search, risk: read, only_own_searches: true}
+  qradar-hunt-read:
+    server_profile: qradar-read
+    tools:
+      - {id: create_ariel_search, risk: read, guard: aql}
+      - {id: get_ariel_search_status, risk: read, only_own_searches: true}
+      - {id: get_ariel_search_results, risk: read, max_rows: 1000, only_own_searches: true}
+      - {id: delete_ariel_search, risk: read, only_own_searches: true}
+      - {id: list_reference_sets, risk: read}
+      - {id: get_reference_set, risk: read}
+      - {id: list_reference_maps, risk: read}
+      - {id: get_reference_map, risk: read}
+      - {id: list_reference_tables, risk: read}
+      - {id: get_reference_table, risk: read}
+  # §11.2 also lists custom properties and indexes; the fork has no tools for them yet.
+  qradar-inventory-read:
+    server_profile: qradar-read
+    tools:
+      - {id: list_log_sources, risk: read}
+      - {id: get_log_source, risk: read}
+      - {id: list_log_source_types, risk: read}
+  qradar-tuning-read:
+    server_profile: qradar-read
+    tools:
+      - {id: list_rules, risk: read}
+      - {id: get_rule, risk: read}
+      - {id: create_ariel_search, risk: read, guard: aql}
+      - {id: get_ariel_search_status, risk: read, only_own_searches: true}
+      - {id: get_ariel_search_results, risk: read, max_rows: 500, only_own_searches: true}
+      - {id: delete_ariel_search, risk: read, only_own_searches: true}
+
+# Quota pools (architecture §8.2, §11.3). A call with a case_id runs in the case pool, a call
+# with only a hunt_id in the hunt pool. The pools share nothing, so a full hunt pool never
+# delays a case call. Values are starting points until prod measurements (S-02).
+#   concurrent_searches: Ariel searches open at once; one stays open from create until it is
+#     deleted, reports a final status or is older than search_ttl_seconds.
+#   requests_per_minute: calls to the MCP server in any 60 seconds.
+#   max_wait_seconds: how long a call waits for room before it is denied.
+#   allowed_hours, time_zone: new Ariel searches start only in this local time range.
+quota_pools:
+  case: {concurrent_searches: 3, requests_per_minute: 120, max_wait_seconds: 30, search_ttl_seconds: 900}
+  hunt:
+    concurrent_searches: 1
+    requests_per_minute: 30
+    allowed_hours: "20:00-07:00"
+    time_zone: Europe/Istanbul
+    max_wait_seconds: 60
+    search_ttl_seconds: 3600
+
+limits:
+  # One MCP call, connection included. The gateway never retries a call.
+  call_timeout_seconds: 60
+  # Rows in one result unless the profile's tool entry sets max_rows.
+  max_rows: 200
+  # Rows are cut once their JSON exceeds this; the result is then marked truncated.
+  max_result_bytes: 32768
+
 # Tool input and output schemas: snapshots/ in the fork repository.
 contract_tests: tests/lab/ in the fork repository

@@ -11,6 +11,7 @@ required-version = ">=0.12.22"
 members = [
     "packages/*",
     "services/api",
+    "services/mcp-gateway",
     "services/worker",
     "harness",
 ]
@@ -106,8 +107,6 @@ filterwarnings = ["error"]
 # every hop is checked by the importing package's own contract.
 #
 # harness is not in the table: it may import any package, but no package may import it.
-# services/mcp-gateway (ais0c_mcp_gateway) is added to root_packages and to every contract
-# by T-011.
 
 [tool.importlinter]
 root_packages = [
@@ -122,6 +121,7 @@ root_packages = [
     "ais0c_executor",
     "ais0c_api",
     "ais0c_worker",
+    "ais0c_mcp_gateway",
     "ais0c_harness",
 ]
 include_external_packages = true
@@ -141,6 +141,7 @@ forbidden_modules = [
     "ais0c_executor",
     "ais0c_api",
     "ais0c_worker",
+    "ais0c_mcp_gateway",
     "ais0c_harness",
 ]
 allow_indirect_imports = true
@@ -160,6 +161,7 @@ forbidden_modules = [
     "ais0c_executor",
     "ais0c_api",
     "ais0c_worker",
+    "ais0c_mcp_gateway",
     "ais0c_harness",
 ]
 allow_indirect_imports = true
@@ -179,6 +181,7 @@ forbidden_modules = [
     "ais0c_executor",
     "ais0c_api",
     "ais0c_worker",
+    "ais0c_mcp_gateway",
     "ais0c_harness",
 ]
 allow_indirect_imports = true
@@ -198,6 +201,7 @@ forbidden_modules = [
     "ais0c_executor",
     "ais0c_api",
     "ais0c_worker",
+    "ais0c_mcp_gateway",
     "ais0c_harness",
 ]
 allow_indirect_imports = true
@@ -215,6 +219,7 @@ forbidden_modules = [
     "ais0c_executor",
     "ais0c_api",
     "ais0c_worker",
+    "ais0c_mcp_gateway",
     "ais0c_harness",
 ]
 allow_indirect_imports = true
@@ -233,6 +238,7 @@ forbidden_modules = [
     "ais0c_executor",
     "ais0c_api",
     "ais0c_worker",
+    "ais0c_mcp_gateway",
     "ais0c_harness",
 ]
 allow_indirect_imports = true
@@ -250,6 +256,7 @@ forbidden_modules = [
     "ais0c_workflows",
     "ais0c_api",
     "ais0c_worker",
+    "ais0c_mcp_gateway",
     "ais0c_harness",
 ]
 allow_indirect_imports = true
@@ -263,6 +270,7 @@ forbidden_modules = [
     "ais0c_workflows",
     "ais0c_api",
     "ais0c_worker",
+    "ais0c_mcp_gateway",
     "ais0c_harness",
 ]
 allow_indirect_imports = true
@@ -282,6 +290,7 @@ forbidden_modules = [
     "ais0c_executor",
     "ais0c_api",
     "ais0c_worker",
+    "ais0c_mcp_gateway",
     "ais0c_harness",
 ]
 allow_indirect_imports = true
@@ -300,6 +309,7 @@ forbidden_modules = [
     "ais0c_workflows",
     "ais0c_executor",
     "ais0c_worker",
+    "ais0c_mcp_gateway",
     "ais0c_harness",
 ]
 allow_indirect_imports = true
@@ -318,6 +328,24 @@ forbidden_modules = [
     "ais0c_agents",
     "ais0c_executor",
     "ais0c_api",
+    "ais0c_mcp_gateway",
+    "ais0c_harness",
+]
+allow_indirect_imports = true
+broken_contract_guidance = "Allowed imports: dependency table in docs/impl/repo-structure.md. Changing it is a human decision; do not loosen this contract."
+
+[[tool.importlinter.contracts]]
+name = "services/mcp-gateway imports only contracts, policy, querylang, storage"
+type = "forbidden"
+source_modules = ["ais0c_mcp_gateway"]
+forbidden_modules = [
+    "ais0c_knowledge",
+    "ais0c_agents",
+    "ais0c_activities",
+    "ais0c_workflows",
+    "ais0c_executor",
+    "ais0c_api",
+    "ais0c_worker",
     "ais0c_harness",
 ]
 allow_indirect_imports = true

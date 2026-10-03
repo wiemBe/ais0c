@@ -1,0 +1,34 @@
+[project]
+name = "ais0c-mcp-gateway"
+version = "0.1.0"
+description = "MCP Policy Gateway: the agents' only way to QRadar (architecture §13)."
+requires-python = ">=3.12"
+dependencies = [
+    "ais0c-contracts",
+    "ais0c-policy",
+    "ais0c-storage",
+    # North side: agents send a ToolIntent over HTTP and get a ToolResult back.
+    "fastapi>=0.142.2,<0.143",
+    # South side: the MCP Python SDK client towards the qradar-mcp fork (architecture §13.4).
+    "mcp>=2.3,<3",
+    # HTTP client of the MCP SDK; the gateway configures it (bearer token, timeouts).
+    "httpx2>=2.13.1,<3",
+    # Tool arguments are checked against the registry's JSON Schemas before any call.
+    "jsonschema>=4.26,<5",
+    "pydantic>=2.12,<3",
+    # The connector manifest and the gateway policy are YAML (config/connectors/, config/policies/).
+    "pyyaml>=6.0.3,<7",
+    # Hunt allowed hours are in the SOC's local time; slim images have no time zone database.
+    "tzdata>=2026.4",
+    "uvicorn>=0.54,<0.55",
+]
+
+[dependency-groups]
+dev = [
+    "anyio>=4.15,<5",
+    "testcontainers>=4.15,<5",
+]
+
+[build-system]
+requires = ["uv_build>=0.12.22,<0.13.0"]
+build-backend = "uv_build"
