@@ -8,9 +8,9 @@
 2. An e-mail that `notifications` records as sent under the same idempotency key is not sent
    again (`already_sent`).
 3. The level rule (`alert_needed`): only high and critical, and after a re-evaluation only a
-   level above every level already e-mailed about the case. Those levels come from the case's
-   `email.send` entries in `audit_log`, because `notifications` has no level column.
-   Otherwise the result is `not_needed` and nothing is recorded.
+   level above every level already e-mailed about the case, as its `sent` case alerts in
+   `notifications` record them (`level`). Otherwise the result is `not_needed` and nothing is
+   recorded.
 4. The recipients are the `operators` list (`notification_recipients`). If one of them is
    outside the allowed domains (`allowed_email_domains`), nobody gets the e-mail: it is
    recorded as `rejected` in `notifications` and as `email.reject` in `audit_log`. An empty
@@ -18,9 +18,9 @@
 5. The kill switch is checked before the relay is called and again right before the e-mail
    leaves. With writes off nothing is sent or recorded (`writes_disabled`).
 6. If the relay takes the e-mail, it is recorded as `sent` in `notifications` and as
-   `email.send` in `audit_log`, with its level. If not, it is recorded as `failed`. When a
-   later attempt may succeed, the error is raised after the record is committed, so Temporal
-   retries the activity.
+   `email.send` in `audit_log`. If not, it is recorded as `failed`. Every record carries the
+   alert's level. When a later attempt may succeed, the error is raised after the record is
+   committed, so Temporal retries the activity.
 
 A crash after the relay took the e-mail but before the record was committed leaves no record,
 so the next attempt sends the e-mail again; the copy has the same Message-ID.
@@ -36,7 +36,7 @@ from pydantic import JsonValue
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from ais0c_contracts import EmailMessage, Level
+from ais0c_contracts import EmailKind, EmailMessage, Level
 from ais0c_executor.common import KillSwitch, WritesDisabled, clean_text
 from ais0c_executor.email.addresses import RefusedRecipient, refused_recipients
 from ais0c_executor.email.errors import EmailTransportError
@@ -56,7 +56,7 @@ from ais0c_storage.models import AllowedEmailDomainRow, NotificationRecipientRow
 from ais0c_storage.repositories import (
     append_audit,
     get_notification,
-    list_audit,
+    list_notifications,
     record_notification,
 )
 
@@ -70,8 +70,6 @@ GROUP_OBJECT_TYPE: Final = "offense_group"
 # Who gets alerts (architecture §9: "SOC operatörleri").
 ALERT_RECIPIENTS: Final = RecipientList.OPERATORS
 MAX_ERROR_LENGTH: Final = 500
-# How many of the case's e-mail entries are read for the level rule; a case has a few at most.
-_HISTORY_LIMIT: Final = 1000
 _MAX_AUDIT_ADDRESS_LENGTH: Final = 320
 
 
@@ -189,25 +187,16 @@ async def _sent_levels(session: AsyncSession, request: EmailRequest) -> list[Lev
     per group."""
     if not isinstance(request, CaseAlert):
         return []
-    entries = await list_audit(
-        session,
-        object_type=CASE_OBJECT_TYPE,
-        object_id=request.case_id,
-        action=EMAIL_SEND_ACTION,
-        limit=_HISTORY_LIMIT,
-    )
-    levels: list[Level] = []
-    for entry in entries:
-        level = entry.details.get("level")
-        if entry.details.get("kind") != request.kind or not isinstance(level, str):
-            continue
-        try:
-            levels.append(Level(level))
-        except ValueError:
-            # Not an entry this module wrote. Skipping it can send one e-mail too many, never
-            # one too few.
-            continue
-    return levels
+    rows = await list_notifications(session, case_id=request.case_id)
+    return [
+        row.level
+        for row in rows
+        if row.kind is EmailKind.CASE_ALERT
+        and row.status is NotificationStatus.SENT
+        # Empty only on a row written before the column existed (migration 0004). Skipping it
+        # can send one e-mail too many, never one too few.
+        and row.level is not None
+    ]
 
 
 async def _recipients(session: AsyncSession, list_name: RecipientList) -> list[str]:
@@ -241,6 +230,7 @@ async def _save(
             session,
             message,
             status=status,
+            level=request.level,
             case_id=request.case_id,
             group_id=group_id,
             sent_at=sent_at,
@@ -250,6 +240,7 @@ async def _save(
         update(NotificationRow)
         .where(NotificationRow.idempotency_key == message.idempotency_key)
         .values(
+            level=request.level,
             recipients=list(message.recipients),
             subject=message.subject,
             status=status,

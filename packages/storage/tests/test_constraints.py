@@ -10,7 +10,7 @@ from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 from storage_postgres import Server
 
-from ais0c_contracts import CaseSource
+from ais0c_contracts import CaseSource, Level
 from ais0c_storage.enums import ActorKind, NoteStatus, NotificationStatus
 from ais0c_storage.errors import DuplicateError
 from ais0c_storage.repositories import (
@@ -120,6 +120,7 @@ async def test_same_email_cannot_be_recorded_twice(session: AsyncSession) -> Non
         session,
         message,
         status=NotificationStatus.SENT,
+        level=Level.HIGH,
         case_id=payloads.CASE_ID,
         sent_at=payloads.T1,
     )
@@ -129,6 +130,7 @@ async def test_same_email_cannot_be_recorded_twice(session: AsyncSession) -> Non
             session,
             message,
             status=NotificationStatus.SENT,
+            level=Level.HIGH,
             case_id=payloads.CASE_ID,
             sent_at=payloads.T1,
         )

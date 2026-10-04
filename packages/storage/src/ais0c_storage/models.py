@@ -300,6 +300,9 @@ class NotificationRow(Base):
 
     id: Mapped[uuid.UUID] = _uuid_pk()
     kind: Mapped[EmailKind] = mapped_column(EnumText(EmailKind))
+    # The alert's notify level; empty for a hunt report. A re-evaluated case is e-mailed again
+    # only above the levels already sent (architecture §9).
+    level: Mapped[Level | None] = mapped_column(EnumText(Level))
     case_id: Mapped[str | None] = mapped_column(index=True)
     hunt_id: Mapped[str | None]
     group_id: Mapped[str | None]

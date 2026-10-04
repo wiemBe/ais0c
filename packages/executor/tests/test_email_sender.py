@@ -22,9 +22,9 @@ from email_payloads import (
     operators_in_example_com,
     switch_writes,
 )
-from sqlalchemy import delete
+from sqlalchemy import delete, text
 
-from ais0c_contracts import EmailKind
+from ais0c_contracts import EmailKind, Level
 from ais0c_executor.email import (
     CaseAlert,
     EmailOutcome,
@@ -37,6 +37,7 @@ from ais0c_executor.email import (
 )
 from ais0c_storage import ActorKind, NotificationStatus
 from ais0c_storage.models import NotificationRecipientRow
+from ais0c_storage.repositories import append_audit, record_notification
 
 pytestmark = pytest.mark.anyio
 
@@ -78,7 +79,7 @@ async def test_a_case_alert_is_sent_and_recorded(ready: Sessions) -> None:
         None,
         None,
     )
-    assert (row.status, row.sent_at) == (NotificationStatus.SENT, SENT_AT)
+    assert (row.status, row.sent_at, row.level) == (NotificationStatus.SENT, SENT_AT, Level.HIGH)
     assert (row.recipients, row.subject) == (list(OPERATORS), expected.subject)
     [entry] = await email_audit(ready)
     assert (entry.actor_kind, entry.actor_id, entry.action) == (
@@ -200,7 +201,7 @@ async def test_one_recipient_outside_the_allowed_domains_stops_the_whole_email(
     assert transport.sent == []
     row = await notification(sessions, KEY)
     assert row is not None
-    assert (row.status, row.sent_at) == (NotificationStatus.REJECTED, None)
+    assert (row.status, row.sent_at, row.level) == (NotificationStatus.REJECTED, None, Level.HIGH)
     assert row.recipients == ["soc-1@example.com", "soc-2@example.com", "soc@example.net"]
     [entry] = await email_audit(sessions)
     assert (entry.action, entry.object_type, entry.object_id) == (
@@ -339,10 +340,69 @@ async def test_a_re_evaluation_is_emailed_only_when_its_level_goes_up(ready: Ses
         "[AI-SOC] YÜKSEK · AI kar",
         "[AI-SOC] KRİTİK · AI kar",
     ]
-    assert [row.idempotency_key for row in await notifications(ready)] == [
-        "case_alert:case-12345:1",
-        "case_alert:case-12345:3",
+    assert [(row.idempotency_key, row.level) for row in await notifications(ready)] == [
+        ("case_alert:case-12345:1", Level.HIGH),
+        ("case_alert:case-12345:3", Level.CRITICAL),
     ]
+
+
+async def test_the_earlier_levels_are_the_ones_notifications_records(ready: Sessions) -> None:
+    """Only a `sent` case alert of the case counts, by its `level`. A rejected alert does not,
+    and neither does an audit entry without its `notifications` row."""
+    async with ready.begin() as session:
+        await record_notification(
+            session,
+            alert_message(evaluation(1, "critical"), OPERATORS),
+            status=NotificationStatus.REJECTED,
+            level=Level.CRITICAL,
+            case_id="case-12345",
+        )
+        await append_audit(
+            session,
+            actor_kind=ActorKind.SYSTEM,
+            actor_id="action-executor",
+            action="email.send",
+            object_type="case",
+            object_id="case-12345",
+            details={"kind": "case_alert", "level": "critical"},
+        )
+    transport = FakeTransport()
+
+    second = await sender(ready, transport).send_alert(evaluation(2, "high"))
+
+    async with ready.begin() as session:
+        await record_notification(
+            session,
+            alert_message(evaluation(3, "critical"), OPERATORS),
+            status=NotificationStatus.SENT,
+            level=Level.CRITICAL,
+            case_id="case-12345",
+            sent_at=SENT_AT,
+        )
+    fourth = await sender(ready, transport).send_alert(evaluation(4, "critical"))
+
+    assert (second.result, fourth.result) == (SENT, NOT_NEEDED)
+    assert len(transport.sent) == 1
+
+
+async def test_a_sent_alert_recorded_before_the_level_column_does_not_block(
+    ready: Sessions,
+) -> None:
+    """A row from before migration 0003 has no level; skipping it can send one e-mail too many,
+    never one too few."""
+    async with ready.begin() as session:
+        await session.execute(
+            text(
+                "INSERT INTO notifications (id, kind, case_id, recipients, subject,"
+                " idempotency_key, status, sent_at) VALUES (gen_random_uuid(), 'case_alert',"
+                " 'case-12345', ARRAY['soc-1@example.com'], 'old', 'case_alert:case-12345:1',"
+                " 'sent', now())"
+            )
+        )
+
+    outcome = await sender(ready, FakeTransport()).send_alert(evaluation(2, "high"))
+
+    assert outcome.result is SENT
 
 
 async def test_an_evaluation_below_high_is_not_emailed(ready: Sessions) -> None:
@@ -394,10 +454,11 @@ async def test_a_group_is_emailed_once(ready: Sessions) -> None:
     assert first.kind is EmailKind.GROUP_ALERT
     assert len(transport.sent) == 1
     [row] = await notifications(ready)
-    assert (row.kind, row.case_id, row.group_id) == (
+    assert (row.kind, row.case_id, row.group_id, row.level) == (
         EmailKind.GROUP_ALERT,
         f"group-{GROUP_ID}",
         GROUP_ID,
+        Level.HIGH,
     )
     [entry] = await email_audit(ready)
     assert (entry.object_type, entry.object_id) == ("offense_group", GROUP_ID)

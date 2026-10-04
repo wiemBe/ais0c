@@ -261,7 +261,9 @@ async def test_a_retried_activity_sends_one_email(
     assert outcome.result is EmailResult.ALREADY_SENT
     assert len(relay.sent) == 1
     rows = await recorded(sessions)
-    assert [(row.status, row.sent_at) for row in rows] == [(NotificationStatus.SENT, NOW)]
+    assert [(row.status, row.sent_at, row.level) for row in rows] == [
+        (NotificationStatus.SENT, NOW, Level.HIGH)
+    ]
 
 
 async def test_a_relay_failure_is_retried_until_the_email_goes_out(

@@ -5,7 +5,7 @@ import storage_payloads as payloads
 from sqlalchemy.ext.asyncio import AsyncSession
 from storage_payloads import CASE_ID, OFFENSE_ID, T0, T1
 
-from ais0c_contracts import CaseSource, EmailKind
+from ais0c_contracts import CaseSource, EmailKind, Level
 from ais0c_storage.enums import NoteStatus, NotificationStatus
 from ais0c_storage.errors import NotFoundError
 from ais0c_storage.repositories import (
@@ -104,10 +104,11 @@ async def test_a_failed_email_can_be_sent_on_retry(session: AsyncSession) -> Non
     message = payloads.email_message(idempotency_key="case-12345:1")
 
     failed = await record_notification(
-        session, message, status=NotificationStatus.FAILED, case_id=CASE_ID
+        session, message, status=NotificationStatus.FAILED, level=Level.HIGH, case_id=CASE_ID
     )
-    assert (failed.kind, failed.recipients, failed.subject, failed.sent_at) == (
+    assert (failed.kind, failed.level, failed.recipients, failed.subject, failed.sent_at) == (
         EmailKind.CASE_ALERT,
+        Level.HIGH,
         ["soc-operators@example.com"],
         message.subject,
         None,
@@ -135,16 +136,65 @@ async def test_email_record_rules(session: AsyncSession) -> None:
         )
     with pytest.raises(ValueError, match="sent_at"):
         await record_notification(
-            session, payloads.email_message(), status=NotificationStatus.SENT, case_id=CASE_ID
+            session,
+            payloads.email_message(),
+            status=NotificationStatus.SENT,
+            level=Level.HIGH,
+            case_id=CASE_ID,
         )
     with pytest.raises(ValueError, match="sent_at"):
         await record_notification(
             session,
             payloads.email_message(),
             status=NotificationStatus.REJECTED,
+            level=Level.HIGH,
             case_id=CASE_ID,
             sent_at=T1,
         )
+
+
+@pytest.mark.parametrize(
+    ("kind", "level"),
+    [("case_alert", None), ("group_alert", None), ("hunt_report", Level.HIGH)],
+    ids=["case-alert-without-level", "group-alert-without-level", "hunt-report-with-level"],
+)
+async def test_only_an_alert_has_a_level_and_every_alert_has_one(
+    session: AsyncSession, kind: str, level: Level | None
+) -> None:
+    with pytest.raises(ValueError, match="notify level"):
+        await record_notification(
+            session,
+            payloads.email_message(kind=kind),
+            status=NotificationStatus.FAILED,
+            level=level,
+            case_id=CASE_ID,
+            group_id="G-1",
+            hunt_id="hunt-1",
+        )
+
+
+async def test_an_alert_keeps_its_level_and_a_hunt_report_has_none(
+    session: AsyncSession,
+) -> None:
+    critical = await record_notification(
+        session,
+        payloads.email_message(idempotency_key="case-12345:3"),
+        status=NotificationStatus.SENT,
+        level=Level.CRITICAL,
+        case_id=CASE_ID,
+        sent_at=T1,
+    )
+    report = await record_notification(
+        session,
+        payloads.email_message(idempotency_key="hunt-1", kind="hunt_report"),
+        status=NotificationStatus.SENT,
+        hunt_id="hunt-1",
+        sent_at=T1,
+    )
+
+    stored = await get_notification(session, "case-12345:3")
+    assert stored is not None
+    assert (critical.level, stored.level, report.level) == (Level.CRITICAL, Level.CRITICAL, None)
 
 
 async def test_list_emails_of_a_case_a_group_or_a_hunt(session: AsyncSession) -> None:
@@ -152,6 +202,7 @@ async def test_list_emails_of_a_case_a_group_or_a_hunt(session: AsyncSession) ->
         session,
         payloads.email_message(idempotency_key="case-12345:1"),
         status=NotificationStatus.SENT,
+        level=Level.HIGH,
         case_id=CASE_ID,
         sent_at=T0,
     )
@@ -159,12 +210,14 @@ async def test_list_emails_of_a_case_a_group_or_a_hunt(session: AsyncSession) ->
         session,
         payloads.email_message(idempotency_key="case-12345:2"),
         status=NotificationStatus.REJECTED,
+        level=Level.CRITICAL,
         case_id=CASE_ID,
     )
     await record_notification(
         session,
         payloads.email_message(idempotency_key="group-G-1", kind="group_alert"),
         status=NotificationStatus.SENT,
+        level=Level.HIGH,
         group_id="G-1",
         sent_at=T1,
     )

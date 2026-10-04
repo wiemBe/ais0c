@@ -1,6 +1,6 @@
 """`alembic upgrade head` and `alembic downgrade base` on an empty database (T-004 criterion
-1), revision 0002 on a database that holds runs (T-016 criterion 2) and revision 0003 on
-one that holds data (T-017 criterion 1).
+1), revision 0002 on a database that holds runs (T-016 criterion 2), and revisions 0003
+(T-017 criterion 1) and 0004 (T-020) on one that holds data.
 
 The tests run the real `alembic` command in packages/storage, so alembic.ini, env.py and the
 AIS0C_DATABASE_URL lookup are covered too.
@@ -61,7 +61,7 @@ def test_upgrade_head_then_downgrade_base(server: Server, empty_database: str) -
     upgraded = alembic("upgrade", "head", url=url)
     assert upgraded.returncode == 0, upgraded.stderr
     current = alembic("current", url=url)
-    assert "0003 (head)" in current.stdout
+    assert "0004 (head)" in current.stdout
     objects = public_objects(url)
     assert set(Base.metadata.tables) <= objects["relations"]
     assert objects["functions"] == {"audit_log_append_only"}
@@ -182,6 +182,44 @@ def test_revision_0003_leaves_writes_off(server: Server, empty_database: str) ->
         with engine.connect() as connection:
             assert "platform_flags" not in inspect(connection).get_table_names()
             assert connection.scalar(text("SELECT count(*) FROM audit_log")) == 1
+    finally:
+        engine.dispose()
+
+
+def test_revision_0004_adds_the_level_and_keeps_the_emails(
+    server: Server, empty_database: str
+) -> None:
+    """0004 adds `notifications.level`; an e-mail recorded before it keeps an empty level, and
+    the downgrade drops the column and keeps the e-mail."""
+    url = server.app_url(empty_database)
+    first = alembic("upgrade", "0003", url=url)
+    assert first.returncode == 0, first.stderr
+    engine = create_sync_engine(url)
+    try:
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "INSERT INTO notifications (id, kind, case_id, recipients, subject,"
+                    " idempotency_key, status) VALUES (gen_random_uuid(), 'case_alert',"
+                    " 'case-12345', ARRAY['soc-operators@example.com'], 'subject',"
+                    " 'case_alert:case-12345:1', 'failed')"
+                )
+            )
+
+        upgraded = alembic("upgrade", "head", url=url)
+        assert upgraded.returncode == 0, upgraded.stderr
+        with engine.connect() as connection:
+            assert connection.scalar(text("SELECT count(*) FROM notifications")) == 1
+            assert connection.scalar(text("SELECT level FROM notifications")) is None
+
+        downgraded = alembic("downgrade", "0003", url=url)
+        assert downgraded.returncode == 0, downgraded.stderr
+        with engine.connect() as connection:
+            columns = {
+                column["name"] for column in inspect(connection).get_columns("notifications")
+            }
+            assert "level" not in columns
+            assert connection.scalar(text("SELECT count(*) FROM notifications")) == 1
     finally:
         engine.dispose()
 

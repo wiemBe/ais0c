@@ -41,9 +41,9 @@ from ais0c_executor.email import (
     render_body,
 )
 from ais0c_executor.email.smtp import message_id
-from ais0c_storage import ActorKind, PlatformFlag, RecipientList
+from ais0c_storage import ActorKind, NotificationStatus, PlatformFlag, RecipientList
 from ais0c_storage.models import AllowedEmailDomainRow, NotificationRecipientRow
-from ais0c_storage.repositories import set_platform_flag
+from ais0c_storage.repositories import get_notification, set_platform_flag
 
 pytestmark = [
     pytest.mark.anyio,
@@ -173,6 +173,10 @@ async def test_an_alert_reaches_mailpit_as_built(
     again = await ActivityEnvironment().run(activities.send_email, request)
 
     assert (first.result, again.result) == (EmailResult.SENT, EmailResult.ALREADY_SENT)
+    async with writable() as session:
+        row = await get_notification(session, expected.idempotency_key)
+    assert row is not None
+    assert (row.status, row.level) == (NotificationStatus.SENT, Level.CRITICAL)
     sent_id = message_id(expected.idempotency_key, SENDER).strip("<>")
     [found] = search(f'message-id:"{sent_id}"')
     message = mailpit(f"/api/v1/message/{found['ID']}")

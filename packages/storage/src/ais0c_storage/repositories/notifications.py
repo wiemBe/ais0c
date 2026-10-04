@@ -1,6 +1,7 @@
 """`notifications`: e-mails the executor sent or refused (architecture §9, D-22).
 
-`idempotency_key` is unique, so the same e-mail cannot be recorded twice.
+`idempotency_key` is unique, so the same e-mail cannot be recorded twice. `level` is an alert's
+notify level: a re-evaluated case is e-mailed again only above the levels already sent.
 """
 
 from datetime import datetime
@@ -8,7 +9,7 @@ from datetime import datetime
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ais0c_contracts import EmailKind, EmailMessage
+from ais0c_contracts import EmailKind, EmailMessage, Level
 from ais0c_storage.columns import revalidate
 from ais0c_storage.enums import NotificationStatus
 from ais0c_storage.models import NotificationRow
@@ -25,6 +26,7 @@ async def record_notification(
     message: EmailMessage,
     *,
     status: NotificationStatus,
+    level: Level | None = None,
     case_id: str | None = None,
     hunt_id: str | None = None,
     group_id: str | None = None,
@@ -33,8 +35,8 @@ async def record_notification(
     """Record the outcome of sending `message`.
 
     The ID matching the kind is required: `case_id` for a case alert, `group_id` for a group
-    alert, `hunt_id` for a hunt report. Raises `DuplicateError` if the idempotency key is
-    recorded.
+    alert, `hunt_id` for a hunt report. So is `level` for a case or group alert; a hunt report
+    has none. Raises `DuplicateError` if the idempotency key is recorded.
     """
     message = revalidate(EmailMessage, message)
     subject_ids = {
@@ -44,9 +46,12 @@ async def record_notification(
     }
     if subject_ids[message.kind] is None:
         raise ValueError(f"a {message.kind.value} needs the ID of what it reports on")
+    if (level is None) != (message.kind is EmailKind.HUNT_REPORT):
+        raise ValueError("a case or group alert needs its notify level, and only an alert has one")
     _check_sent_at(status, sent_at)
     values = dict(
         kind=message.kind,
+        level=level,
         case_id=case_id,
         hunt_id=hunt_id,
         group_id=group_id,

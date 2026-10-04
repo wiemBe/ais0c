@@ -212,6 +212,7 @@ DOC: dict[str, Table] = {
     "notifications": table(
         "id uuid",
         "kind text",
+        "level text?",
         "case_id text?",
         "hunt_id text?",
         "group_id text?",
