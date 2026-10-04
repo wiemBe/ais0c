@@ -153,12 +153,14 @@ def catalog_rule() -> Payload:
         "mode": "analyze",
         "min_level": "medium",
         "context_note": "Fires often from the vulnerability scanners on Tuesday nights.",
+        "attack_techniques": ["T1046", "T1595.002"],
     }
 
 
 def catalog_log_source() -> Payload:
     return {
         "log_source_id": 112,
+        "type_name": "Cisco ASA",
         "description": "DMZ firewall",
         "criticality": "high",
         "context_note": "Owned by the network team.",

@@ -1,6 +1,9 @@
 """Acceptance criterion 4: candidate_skills is deterministic, looks at the offense's rule IDs,
 log source types and ATT&CK techniques, and returns only approved, unexpired skills that allow
-the agent's role, as SkillRefs in a fixed order."""
+the agent's role, as SkillRefs in a fixed order.
+
+The log source types and techniques come from the offense's Analysis Catalog entries in its
+EnrichmentContext (decision T-26)."""
 
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -8,7 +11,7 @@ from typing import Any
 
 import pytest
 
-from ais0c_contracts import SkillRef
+from ais0c_contracts import EnrichmentContext, SkillRef
 from ais0c_knowledge.skills import (
     AgentRole,
     SkillRegistry,
@@ -17,12 +20,28 @@ from ais0c_knowledge.skills import (
     load_skills,
 )
 
-from .skill_helpers import FORTIGATE, NOW, WINDOWS_SECURITY, manifest_data, offense, write_skill
+from .skill_helpers import (
+    FORTIGATE,
+    NOW,
+    WINDOWS_SECURITY,
+    enrichment,
+    manifest_data,
+    offense,
+    write_skill,
+)
 
+# The by-rule skill's trigger.
 RULE = 100001
+# A rule the catalog maps to the by-technique skill's technique, and one mapped to another.
+SPRAY_RULE = 100002
+OTHER_RULE = 100003
+# A FortiGate (the by-type skill's trigger) and a Windows log source.
 LOG_SOURCE = 412
 OTHER_LOG_SOURCE = 413
-TYPES = {LOG_SOURCE: FORTIGATE, OTHER_LOG_SOURCE: WINDOWS_SECURITY}
+CATALOG = enrichment(
+    log_source_types={LOG_SOURCE: FORTIGATE, OTHER_LOG_SOURCE: WINDOWS_SECURITY},
+    rule_techniques={SPRAY_RULE: ["T1110.003", "T1078"], OTHER_RULE: ["T1003.006"]},
+)
 
 
 def triggers(
@@ -56,16 +75,15 @@ def candidates(
     *,
     rule_ids: list[int] | None = None,
     log_source_ids: list[int] | None = None,
-    techniques: list[str] | None = None,
+    catalog: EnrichmentContext = CATALOG,
     role: AgentRole = "investigation",
     now: datetime = NOW,
 ) -> list[str]:
     refs = candidate_skills(
         registry,
         offense(rule_ids=rule_ids, log_source_ids=log_source_ids),
+        catalog,
         agent_role=role,
-        log_source_types=TYPES,
-        attack_techniques=techniques or [],
         now=now,
     )
     return [ref.skill_id for ref in refs]
@@ -82,36 +100,46 @@ def test_a_log_source_type_triggers_a_skill(registry: SkillRegistry) -> None:
     assert candidates(registry, log_source_ids=[LOG_SOURCE]) == ["by-type"]
 
 
-def test_an_attack_technique_triggers_a_skill(registry: SkillRegistry) -> None:
-    assert candidates(registry, techniques=["T1078", "T1110.003"]) == ["by-technique"]
+def test_an_attack_technique_of_a_rule_triggers_a_skill(registry: SkillRegistry) -> None:
+    assert candidates(registry, rule_ids=[SPRAY_RULE]) == ["by-technique"]
 
 
 def test_no_match_gives_an_empty_list(registry: SkillRegistry) -> None:
     assert candidates(registry) == []
-    assert candidates(registry, rule_ids=[999], log_source_ids=[OTHER_LOG_SOURCE]) == []
+    assert candidates(registry, rule_ids=[OTHER_RULE], log_source_ids=[OTHER_LOG_SOURCE]) == []
 
 
 def test_an_empty_registry_gives_an_empty_list() -> None:
-    assert candidates(SkillRegistry([]), rule_ids=[RULE], techniques=["T1110.003"]) == []
+    assert candidates(SkillRegistry([]), rule_ids=[RULE, SPRAY_RULE]) == []
 
 
-def test_techniques_are_compared_exactly(registry: SkillRegistry) -> None:
-    assert candidates(registry, techniques=["T1110"]) == []
-    assert candidates(registry, techniques=["T1110.001"]) == []
-    assert candidates(registry, techniques=["t1110.003"]) == []
+@pytest.mark.parametrize("technique", ["T1110", "T1110.001", "T1110.004"])
+def test_techniques_are_compared_exactly(registry: SkillRegistry, technique: str) -> None:
+    # The by-technique skill triggers on T1110.003 only: neither its parent nor a sibling.
+    catalog = enrichment(rule_techniques={OTHER_RULE: [technique]})
+    assert candidates(registry, rule_ids=[OTHER_RULE], catalog=catalog) == []
 
 
-def test_only_the_offenses_own_log_sources_count(registry: SkillRegistry) -> None:
-    # TYPES knows log source 412 is a FortiGate, but this offense came from 413 only.
-    assert candidates(registry, log_source_ids=[OTHER_LOG_SOURCE]) == []
-    # A log source the catalog has no type for matches nothing.
-    assert candidates(registry, log_source_ids=[999]) == []
+def test_only_the_offenses_own_catalog_entries_count(registry: SkillRegistry) -> None:
+    # The catalog knows log source 412 is a FortiGate and that rule 100002 is spraying, but this
+    # offense has neither.
+    assert candidates(registry, rule_ids=[OTHER_RULE], log_source_ids=[OTHER_LOG_SOURCE]) == []
+    # The offense's own log source and rule, without catalog entries, match nothing either.
+    assert candidates(registry, rule_ids=[999], log_source_ids=[999]) == []
+
+
+def test_catalog_entries_without_a_type_or_techniques_match_nothing(
+    registry: SkillRegistry,
+) -> None:
+    catalog = enrichment(log_source_types={LOG_SOURCE: None}, rule_techniques={SPRAY_RULE: None})
+    assert (
+        candidates(registry, rule_ids=[SPRAY_RULE], log_source_ids=[LOG_SOURCE], catalog=catalog)
+        == []
+    )
 
 
 def test_every_matching_skill_is_listed_in_id_order(registry: SkillRegistry) -> None:
-    listed = candidates(
-        registry, rule_ids=[RULE], log_source_ids=[LOG_SOURCE], techniques=["T1110.003"]
-    )
+    listed = candidates(registry, rule_ids=[RULE, SPRAY_RULE], log_source_ids=[LOG_SOURCE])
     assert listed == ["by-rule", "by-technique", "by-type"]
 
 
@@ -125,22 +153,13 @@ def test_the_order_does_not_depend_on_the_registry_order(tmp_path: Path) -> None
 
 
 def test_the_same_arguments_give_the_same_list(registry: SkillRegistry) -> None:
-    arguments: dict[str, Any] = {
-        "rule_ids": [RULE],
-        "log_source_ids": [LOG_SOURCE],
-        "techniques": ["T1110.003"],
-    }
+    arguments: dict[str, Any] = {"rule_ids": [RULE, SPRAY_RULE], "log_source_ids": [LOG_SOURCE]}
     assert candidates(registry, **arguments) == candidates(registry, **arguments)
 
 
 def test_candidates_are_skill_refs_with_the_content_hash(registry: SkillRegistry) -> None:
     [ref] = candidate_skills(
-        registry,
-        offense(rule_ids=[RULE]),
-        agent_role="investigation",
-        log_source_types={},
-        attack_techniques=(),
-        now=NOW,
+        registry, offense(rule_ids=[RULE]), enrichment(), agent_role="investigation", now=NOW
     )
     assert isinstance(ref, SkillRef)
     skill = registry.get("by-rule", "1.0.0")
@@ -197,12 +216,7 @@ def write_version(root: Path, version: str, *, approve: bool = True, **changes: 
 def offered_versions(root: Path, *, role: AgentRole = "investigation") -> list[str]:
     registry = load_skills(root, mode="dev")
     refs = candidate_skills(
-        registry,
-        offense(rule_ids=[RULE]),
-        agent_role=role,
-        log_source_types={},
-        attack_techniques=[],
-        now=NOW,
+        registry, offense(rule_ids=[RULE]), enrichment(), agent_role=role, now=NOW
     )
     return [f"{ref.skill_id} {ref.version}" for ref in refs]
 

@@ -20,6 +20,9 @@ EvidenceId = Annotated[str, StringConstraints(pattern=r"^ev_\S+$")]
 # An agent run (`agent_runs.run_id`); set by the platform, never by a model.
 RunId = Annotated[str, StringConstraints(min_length=1, max_length=RUN_ID_MAX_LENGTH)]
 
+# An ATT&CK technique or sub-technique ID, e.g. T1003 or T1003.006 (v0.3, T-26).
+AttackTechnique = Annotated[str, StringConstraints(pattern=r"^T[0-9]{4}(\.[0-9]{3})?$")]
+
 
 def _to_utc(value: datetime) -> datetime:
     return value.astimezone(UTC)

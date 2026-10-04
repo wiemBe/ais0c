@@ -183,7 +183,9 @@ def test_provider_check_passes_without_provider_names(scratch_repo: Path) -> Non
     assert result.returncode == 0, result.stdout + result.stderr
 
 
-@pytest.mark.parametrize("directory", ["packages", "services", "apps", "prompts", "harness"])
+@pytest.mark.parametrize(
+    "directory", ["packages", "services", "apps", "prompts", "harness", "skills"]
+)
 def test_provider_check_rejects_every_provider_name(scratch_repo: Path, directory: str) -> None:
     names = provider_names()
     for index, name in enumerate(names):

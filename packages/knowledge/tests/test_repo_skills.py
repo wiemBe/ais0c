@@ -8,7 +8,7 @@ import pytest
 
 from ais0c_knowledge.skills import Skill, candidate_skills, load_skills
 
-from .skill_helpers import FORTIGATE, NOW, SKILLS_DIR, WINDOWS_SECURITY, offense
+from .skill_helpers import FORTIGATE, NOW, SKILLS_DIR, WINDOWS_SECURITY, enrichment, offense
 
 FIRST_SKILLS = ("password-spraying", "vpn-new-country", "windows-dcsync")
 # The technique each skill is about, and the event its required telemetry must name.
@@ -80,19 +80,25 @@ def test_instructions_are_english(skills: dict[str, Skill], skill_id: str) -> No
 
 
 @pytest.mark.parametrize("skill_id", FIRST_SKILLS)
-def test_rule_ids_are_left_for_the_target_qradar(skills: dict[str, Skill], skill_id: str) -> None:
-    # Rule IDs differ between QRadar installations; they are added before approval.
+def test_rule_ids_are_left_for_the_production_qradar(
+    skills: dict[str, Skill], skill_id: str
+) -> None:
+    # Rule IDs differ between QRadar installations: an approved skill carries the production
+    # QRadar's, and the lab uses the technique trigger (T-26).
     assert skills[skill_id].manifest.triggers.rule_ids == frozenset()
 
 
 def test_drafts_are_inert_even_when_an_offense_matches(skills: dict[str, Skill]) -> None:
     registry = load_skills(SKILLS_DIR, mode="dev")
+    catalog = enrichment(
+        log_source_types={1: WINDOWS_SECURITY, 2: FORTIGATE},
+        rule_techniques={100001: [technique for technique, _, _ in EXPECTED.values()]},
+    )
     refs = candidate_skills(
         registry,
-        offense(log_source_ids=[1]),
+        offense(rule_ids=[100001], log_source_ids=[1, 2]),
+        catalog,
         agent_role="investigation",
-        log_source_types={1: WINDOWS_SECURITY},
-        attack_techniques=[technique for technique, _, _ in EXPECTED.values()],
         now=NOW,
     )
     assert refs == []

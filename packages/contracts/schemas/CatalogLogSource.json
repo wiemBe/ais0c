@@ -54,6 +54,19 @@
     "log_source_id": {
       "title": "Log Source Id",
       "type": "integer"
+    },
+    "type_name": {
+      "anyOf": [
+        {
+          "maxLength": 255,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Type Name"
     }
   },
   "required": [

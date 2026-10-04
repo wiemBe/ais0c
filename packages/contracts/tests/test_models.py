@@ -119,9 +119,16 @@ DOC_FIELDS: dict[type[ContractModel], dict[str, bool]] = {
         "usernames": REQ,
     },
     CatalogContext: {"rules": REQ, "log_sources": REQ},
-    CatalogRule: {"rule_id": REQ, "mode": REQ, "min_level": OPT, "context_note": OPT},
+    CatalogRule: {
+        "rule_id": REQ,
+        "mode": REQ,
+        "min_level": OPT,
+        "context_note": OPT,
+        "attack_techniques": OPT,
+    },
     CatalogLogSource: {
         "log_source_id": REQ,
+        "type_name": OPT,
         "description": OPT,
         "criticality": OPT,
         "context_note": OPT,

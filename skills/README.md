@@ -44,14 +44,18 @@ wherever it appears.
 
 ## Triggers and the router
 
-The router (`candidate_skills`) offers a skill for an offense when any one trigger matches:
+The router, `candidate_skills(registry, offense, enrichment, agent_role=..., now=...)`, offers a
+skill for an offense when any one trigger matches (decision T-26):
 
-- `rule_ids`: one of the offense's rules. Rule IDs differ between QRadar installations, so they
-  are filled in for the target QRadar before approval.
-- `log_source_types`: the type of one of the offense's log sources. Such a trigger matches every
-  offense from that type, so it suits only skills about one product's alerts.
-- `attack_techniques`: one of the ATT&CK techniques the offense is tagged with, compared
-  exactly: `T1110` does not match `T1110.003`.
+- `rule_ids`: one of the offense's rules. Rule IDs differ between QRadar installations, so an
+  approved skill carries the production QRadar's rule IDs only. Lab and harness runs use the
+  technique trigger, or a test registry in a temporary directory.
+- `log_source_types`: the type of one of the offense's log sources, as the Analysis Catalog has
+  it (`type_name`, synced from QRadar). Such a trigger matches every offense from that type, so
+  it suits only skills about one product's alerts.
+- `attack_techniques`: one of the ATT&CK techniques the catalog maps to the offense's rules
+  (`attack_techniques`, filled in by operators). They are compared exactly: `T1110` does not
+  match `T1110.003`.
 
 Only the latest approved version of a skill is offered, and only when it has not expired and its
 `allowed_agent_roles` include the agent's role. Drafts are never offered. The candidates come

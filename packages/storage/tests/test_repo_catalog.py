@@ -135,6 +135,72 @@ async def test_admin_edit_defines_a_rule(session: AsyncSession) -> None:
         await define_rule(session, 404, CatalogMode.ANALYZE)
 
 
+async def test_admin_edit_maps_attack_techniques(session: AsyncSession) -> None:
+    await sync_catalog_rules(session, [SyncedRule(1, "DCSync")], synced_by=SYNC, synced_at=T0)
+    new = await get_catalog_rule(session, 1)
+    assert new is not None
+    assert new.attack_techniques == []
+    assert to_catalog_rule(new).attack_techniques is None
+
+    rule = await update_catalog_rule(
+        session,
+        1,
+        mode=CatalogMode.ANALYZE,
+        min_level=None,
+        has_automated_action=False,
+        context_note=None,
+        attack_techniques=["T1003.006", "T1003", "T1003.006"],
+        updated_by="admin01",
+        updated_at=T1,
+    )
+    # Sorted, each once.
+    assert rule.attack_techniques == ["T1003", "T1003.006"]
+    assert to_catalog_rule(rule).attack_techniques == ["T1003", "T1003.006"]
+
+    # The sync renames the rule and leaves the techniques alone.
+    later = T1 + timedelta(days=1)
+    await sync_catalog_rules(
+        session, [SyncedRule(1, "DCSync, renamed")], synced_by=SYNC, synced_at=later
+    )
+    renamed = await get_catalog_rule(session, 1)
+    assert renamed is not None
+    assert (renamed.rule_name, renamed.attack_techniques) == (
+        "DCSync, renamed",
+        ["T1003", "T1003.006"],
+    )
+
+    # An edit replaces every operator field: without techniques, the rule has none.
+    cleared = await define_rule(session, 1, CatalogMode.ANALYZE)
+    assert cleared.attack_techniques == []
+
+
+@pytest.mark.parametrize(
+    "techniques",
+    [["t1003"], ["T1003.6"], ["TA0006"], ["T1003 "], [""], [f"T{1000 + n}" for n in range(21)]],
+    ids=["lower case", "short sub-technique", "tactic", "space", "empty", "21 techniques"],
+)
+async def test_admin_edit_refuses_malformed_techniques(
+    session: AsyncSession, techniques: list[str]
+) -> None:
+    await sync_catalog_rules(session, [SyncedRule(1, "DCSync")], synced_by=SYNC, synced_at=T0)
+
+    with pytest.raises(ValidationError):
+        await update_catalog_rule(
+            session,
+            1,
+            mode=CatalogMode.ANALYZE,
+            min_level=None,
+            has_automated_action=False,
+            context_note=None,
+            attack_techniques=techniques,
+            updated_by="admin01",
+            updated_at=T1,
+        )
+    rule = await get_catalog_rule(session, 1)
+    assert rule is not None
+    assert (rule.defined, rule.attack_techniques) == (False, [])
+
+
 async def test_ai_draft_is_used_only_after_acceptance(session: AsyncSession) -> None:
     await sync_catalog_rules(session, [SyncedRule(1, "Rule")], synced_by=SYNC, synced_at=T0)
 
@@ -213,6 +279,7 @@ async def test_log_source_sync_edit_and_listing(session: AsyncSession) -> None:
     assert (edited.defined, edited.in_scope, edited.owner) == (True, False, "identity team")
     assert to_catalog_log_source(edited) == CatalogLogSource(
         log_source_id=113,
+        type_name="Microsoft Windows Security Event Log",
         description="Domain controller",
         criticality=Level.CRITICAL,
         context_note="Replication traffic from DC-02 is expected.",

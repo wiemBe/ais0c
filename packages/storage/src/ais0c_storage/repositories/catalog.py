@@ -136,12 +136,25 @@ async def update_catalog_rule(
     min_level: Level | None,
     has_automated_action: bool,
     context_note: Summary | None,
+    attack_techniques: Collection[str] = (),
     updated_by: str,
     updated_at: datetime,
 ) -> CatalogRuleRow:
-    """An admin's edit of a rule (`PUT /catalog/rules/{rule_id}`); the rule becomes defined."""
-    # Raises ValidationError if a field that reaches prompts breaks the contract.
-    CatalogRule(rule_id=rule_id, mode=mode, min_level=min_level, context_note=context_note)
+    """An admin's edit of a rule (`PUT /catalog/rules/{rule_id}`); the rule becomes defined.
+
+    Like the other operator fields, `attack_techniques` replaces what the rule had; they are
+    stored sorted, each once.
+    """
+    techniques = sorted(set(attack_techniques))
+    # Raises ValidationError if a field that reaches prompts or the skill router breaks the
+    # contract.
+    CatalogRule(
+        rule_id=rule_id,
+        mode=mode,
+        min_level=min_level,
+        context_note=context_note,
+        attack_techniques=techniques,
+    )
     statement = (
         update(CatalogRuleRow)
         .where(CatalogRuleRow.rule_id == rule_id)
@@ -151,6 +164,7 @@ async def update_catalog_rule(
             min_level=min_level,
             has_automated_action=has_automated_action,
             context_note=context_note,
+            attack_techniques=techniques,
             updated_by=updated_by,
             updated_at=updated_at,
         )
@@ -194,7 +208,11 @@ async def accept_catalog_rule_draft(
 def to_catalog_rule(row: CatalogRuleRow) -> CatalogRule:
     """The part of a rule that goes into `CatalogContext`."""
     return CatalogRule(
-        rule_id=row.rule_id, mode=row.mode, min_level=row.min_level, context_note=row.context_note
+        rule_id=row.rule_id,
+        mode=row.mode,
+        min_level=row.min_level,
+        context_note=row.context_note,
+        attack_techniques=list(row.attack_techniques) or None,
     )
 
 
@@ -340,6 +358,7 @@ def to_catalog_log_source(row: CatalogLogSourceRow) -> CatalogLogSource:
     """The part of a log source that goes into `CatalogContext`."""
     return CatalogLogSource(
         log_source_id=row.log_source_id,
+        type_name=row.type_name,
         description=row.description,
         criticality=row.criticality,
         context_note=row.context_note,

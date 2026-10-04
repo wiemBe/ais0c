@@ -24,7 +24,7 @@ from pydantic import (
 )
 
 import ais0c_contracts
-from ais0c_contracts import AgentResult
+from ais0c_contracts import AgentResult, AttackTechnique
 from ais0c_knowledge.skills.errors import SkillError, SkillPermissionError
 
 # Lowercase words joined by hyphens, e.g. windows-dcsync; skill, evidence and suite names.
@@ -33,8 +33,6 @@ Slug = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9]*(-[a-z0-9]+)*$"
 SemVer = Annotated[str, StringConstraints(pattern=r"^(0|[1-9][0-9]*)(\.(0|[1-9][0-9]*)){2}$")]
 # `sha256:` and 64 lowercase hex digits, as SkillRef.content_hash.
 ContentHash = Annotated[str, StringConstraints(pattern=r"^sha256:[0-9a-f]{64}$")]
-# An ATT&CK technique or sub-technique ID, e.g. T1003 or T1003.006.
-AttackTechnique = Annotated[str, StringConstraints(pattern=r"^T[0-9]{4}(\.[0-9]{3})?$")]
 # One line of text without leading or trailing spaces.
 _ONE_LINE = r"^\S(.*\S)?$"
 # A QRadar log source type name, e.g. "Microsoft Windows Security Event Log".
@@ -82,7 +80,8 @@ class SkillTriggers(_ManifestModel):
     # QRadar rule IDs differ between QRadar installations.
     rule_ids: Annotated[frozenset[PositiveInt], Field(max_length=100)]
     log_source_types: Annotated[frozenset[LogSourceType], Field(max_length=100)]
-    # Matched exactly: T1003 does not match T1003.006, nor the other way round.
+    # ATT&CK technique IDs, as the catalog maps them to rules (T-26). Matched exactly: T1003
+    # does not match T1003.006, nor the other way round.
     attack_techniques: Annotated[frozenset[AttackTechnique], Field(max_length=100)]
 
     @model_validator(mode="after")

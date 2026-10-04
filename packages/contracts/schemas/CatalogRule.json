@@ -22,6 +22,23 @@
   },
   "additionalProperties": false,
   "properties": {
+    "attack_techniques": {
+      "anyOf": [
+        {
+          "items": {
+            "pattern": "^T[0-9]{4}(\\.[0-9]{3})?$",
+            "type": "string"
+          },
+          "maxItems": 20,
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Attack Techniques"
+    },
     "context_note": {
       "anyOf": [
         {

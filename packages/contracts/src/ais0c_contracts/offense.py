@@ -4,7 +4,13 @@ from typing import Annotated
 
 from pydantic import Field, StringConstraints
 
-from ais0c_contracts.common import ContractModel, ShortText, Summary, UtcDatetime
+from ais0c_contracts.common import (
+    AttackTechnique,
+    ContractModel,
+    ShortText,
+    Summary,
+    UtcDatetime,
+)
 from ais0c_contracts.enums import CatalogMode, Confidence, Level
 
 
@@ -38,10 +44,16 @@ class CatalogRule(ContractModel):
     mode: CatalogMode
     min_level: Level | None = None
     context_note: Summary | None = None
+    # Mapped to the rule by an operator; None when there are none. The skill router reads
+    # them (v0.3, T-26).
+    attack_techniques: Annotated[list[AttackTechnique], Field(max_length=20)] | None = None
 
 
 class CatalogLogSource(ContractModel):
     log_source_id: int
+    # QRadar's name for the log source type, synced from QRadar, e.g. "Microsoft Windows
+    # Security Event Log"; the skill router reads it (v0.3, T-26).
+    type_name: Annotated[str, StringConstraints(max_length=255)] | None = None
     description: ShortText | None = None
     criticality: Level | None = None
     context_note: Summary | None = None

@@ -71,14 +71,15 @@ jobs:
 
       # Model provider names may appear only under config/litellm/ and config/models/, which are
       # not scanned. The exceptions are the LiteLLM client module and the agents package's
-      # pyproject.toml, which names the client's dependency. Rule: docs/impl/repo-structure.md
+      # pyproject.toml, which names the client's dependency. skills/ is scanned because skill
+      # instructions become prompt text (decision T-26). Rule: docs/impl/repo-structure.md
       # ("Ek yasaklar") and AGENTS.md hard rule 3.
       - name: Provider name check
         id: provider-names
         env:
           PROVIDER_NAMES: openai|openrouter|deepseek|anthropic|qwen|glm|zhipu
         run: |
-          pathspec=(packages services apps prompts harness ':(exclude)packages/agents/src/ais0c_agents/llm.py' ':(exclude)packages/agents/pyproject.toml')
+          pathspec=(packages services apps prompts harness skills ':(exclude)packages/agents/src/ais0c_agents/llm.py' ':(exclude)packages/agents/pyproject.toml')
           found=0
 
           # File contents. git grep exits with 0 on a match, 1 on no match and >1 on error.

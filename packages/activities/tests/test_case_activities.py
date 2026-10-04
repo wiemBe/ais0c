@@ -3,7 +3,7 @@
 from datetime import timedelta
 
 import pytest
-from activity_db import case, catalog_rule, critical_asset, seen
+from activity_db import case, catalog_log_source, catalog_rule, critical_asset, seen
 from activity_payloads import T0, offense, triage_result
 from temporalio.exceptions import ApplicationError
 from temporalio.testing import ActivityEnvironment
@@ -180,6 +180,21 @@ async def test_enrichment_reads_the_catalog_and_the_critical_assets(
     ]
     assert (enrichment.ioc_hits, enrichment.entity_resolutions) == ([], [])
     assert enrichment.floor_level is Level.CRITICAL
+
+
+async def test_enrichment_carries_what_the_skill_router_reads(
+    sessions: SessionFactory, activities: CaseActivities
+) -> None:
+    """The rules' ATT&CK techniques and the log sources' types (decision T-26)."""
+    await catalog_rule(sessions, 100201, attack_techniques=["T1110.003", "T1110"])
+    await catalog_log_source(sessions, 112, "Microsoft Windows Security Event Log")
+
+    enrichment = await ActivityEnvironment().run(activities.enrich_offense, offense(7))
+
+    assert [rule.attack_techniques for rule in enrichment.catalog.rules] == [["T1110", "T1110.003"]]
+    assert [source.type_name for source in enrichment.catalog.log_sources] == [
+        "Microsoft Windows Security Event Log"
+    ]
 
 
 async def test_fetching_an_unknown_offense_fails_without_retries(

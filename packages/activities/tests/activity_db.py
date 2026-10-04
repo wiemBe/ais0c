@@ -1,5 +1,7 @@
 """Database set-up and reads for the activity tests, through the storage repositories."""
 
+from collections.abc import Sequence
+
 from activity_payloads import T0
 
 from ais0c_activities import SessionFactory
@@ -7,6 +9,7 @@ from ais0c_contracts import CaseSource, CatalogMode, Level
 from ais0c_storage.enums import CaseStatus, CriticalAssetKind, OffenseStatus
 from ais0c_storage.models import CaseRow, OffenseGroupRow, OffenseSeenRow
 from ais0c_storage.repositories import (
+    SyncedLogSource,
     SyncedRule,
     add_critical_asset,
     create_case,
@@ -14,6 +17,7 @@ from ais0c_storage.repositories import (
     get_offense_group,
     get_offense_seen,
     set_case_status,
+    sync_catalog_log_sources,
     sync_catalog_rules,
     update_catalog_rule,
     update_offense_seen,
@@ -26,6 +30,7 @@ async def catalog_rule(
     *,
     mode: CatalogMode = CatalogMode.ANALYZE,
     min_level: Level | None = None,
+    attack_techniques: Sequence[str] = (),
 ) -> None:
     """An operator-defined catalog entry; `skip` rules are the ones with automated actions."""
     async with sessions.begin() as session:
@@ -38,9 +43,17 @@ async def catalog_rule(
             min_level=min_level,
             has_automated_action=mode is CatalogMode.SKIP,
             context_note=None,
+            attack_techniques=attack_techniques,
             updated_by="admin",
             updated_at=T0,
         )
+
+
+async def catalog_log_source(sessions: SessionFactory, log_source_id: int, type_name: str) -> None:
+    """A log source as the QRadar sync adds it."""
+    async with sessions.begin() as session:
+        source = SyncedLogSource(log_source_id, f"Log source {log_source_id}", type_name)
+        await sync_catalog_log_sources(session, [source], synced_by="sync", synced_at=T0)
 
 
 async def critical_asset(

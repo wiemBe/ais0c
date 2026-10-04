@@ -1,13 +1,21 @@
 """Skill directories for the tests. Everything is synthetic: made-up rule and log source IDs,
 team names and offense data."""
 
+from collections.abc import Mapping, Sequence
 from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any, Final
 
 import yaml
 
-from ais0c_contracts import OffenseSnapshot
+from ais0c_contracts import (
+    CatalogContext,
+    CatalogLogSource,
+    CatalogMode,
+    CatalogRule,
+    EnrichmentContext,
+    OffenseSnapshot,
+)
 from ais0c_knowledge.skills import content_hash
 
 REPO_ROOT: Final = Path(__file__).resolve().parents[3]
@@ -112,4 +120,31 @@ def offense(
         source_ips=["198.51.100.23"],
         destination_ips=["192.0.2.10"],
         usernames=["test.user1"],
+    )
+
+
+def enrichment(
+    *,
+    log_source_types: Mapping[int, str | None] | None = None,
+    rule_techniques: Mapping[int, Sequence[str] | None] | None = None,
+) -> EnrichmentContext:
+    """An enrichment whose catalog has these log source types and rule techniques."""
+    return EnrichmentContext(
+        catalog=CatalogContext(
+            rules=[
+                CatalogRule(
+                    rule_id=rule_id,
+                    mode=CatalogMode.ANALYZE,
+                    attack_techniques=None if techniques is None else list(techniques),
+                )
+                for rule_id, techniques in (rule_techniques or {}).items()
+            ],
+            log_sources=[
+                CatalogLogSource(log_source_id=log_source_id, type_name=type_name)
+                for log_source_id, type_name in (log_source_types or {}).items()
+            ],
+        ),
+        critical_asset_hits=[],
+        ioc_hits=[],
+        entity_resolutions=[],
     )

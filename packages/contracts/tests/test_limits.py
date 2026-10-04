@@ -71,6 +71,7 @@ TEXT_LIMITS: list[tuple[type[ContractModel], str, int, Callable[[str], object]]]
     (UrgentEvent, "aql", 2000, _single),
     (OffenseSnapshot, "description", 500, _single),
     (CatalogRule, "context_note", SUMMARY, _single),
+    (CatalogLogSource, "type_name", 255, _single),
     (CatalogLogSource, "description", SHORT, _single),
     (CatalogLogSource, "context_note", SUMMARY, _single),
     (AgentTask, "objective", SHORT, _single),
@@ -119,6 +120,10 @@ def _texts(count: int) -> list[object]:
     return [f"item {index}" for index in range(count)]
 
 
+def _techniques(count: int) -> list[object]:
+    return [f"T{1000 + index}" for index in range(count)]
+
+
 # (model, field, min items, max items or None, item list factory)
 LIST_LIMITS: list[
     tuple[type[ContractModel], str, int, int | None, Callable[[int], list[object]]]
@@ -153,6 +158,7 @@ LIST_LIMITS: list[
     (OffenseSnapshot, "source_ips", 0, 50, _texts),
     (OffenseSnapshot, "destination_ips", 0, 50, _texts),
     (OffenseSnapshot, "usernames", 0, 50, _texts),
+    (CatalogRule, "attack_techniques", 0, 20, _techniques),
     (Claim, "evidence_ids", 1, None, lambda count: [f"ev_{n}" for n in range(count)]),
 ]
 
@@ -274,6 +280,36 @@ def test_skill_content_hash_accepts_sha256_hex(content_hash: str) -> None:
 def test_skill_content_hash_rejects_anything_else(content_hash: str) -> None:
     with pytest.raises(ValidationError) as excinfo:
         SkillRef.model_validate(payloads.skill_ref() | {"content_hash": content_hash})
+    assert [error["type"] for error in excinfo.value.errors()] == ["string_pattern_mismatch"]
+
+
+@pytest.mark.parametrize("technique", ["T1003", "T1003.006", "T0001", "T9999.999"])
+def test_attack_technique_accepts_technique_and_sub_technique_ids(technique: str) -> None:
+    CatalogRule.model_validate(payloads.catalog_rule() | {"attack_techniques": [technique]})
+
+
+@pytest.mark.parametrize(
+    "technique",
+    [
+        "",
+        "T",
+        "t1003",
+        "T103",
+        "T10030",
+        "T1003.6",
+        "T1003.0060",
+        "T1003.",
+        "TA0006",  # a tactic
+        "1003",
+        " T1003",
+        "T1003 ",
+        "T1003.006\n",
+        "T1003,T1078",
+    ],
+)
+def test_attack_technique_rejects_anything_else(technique: str) -> None:
+    with pytest.raises(ValidationError) as excinfo:
+        CatalogRule.model_validate(payloads.catalog_rule() | {"attack_techniques": [technique]})
     assert [error["type"] for error in excinfo.value.errors()] == ["string_pattern_mismatch"]
 
 

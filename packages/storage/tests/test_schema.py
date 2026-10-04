@@ -234,6 +234,7 @@ DOC: dict[str, Table] = {
         "has_automated_action bool",
         "context_note text?",
         "ai_draft_note text?",
+        "attack_techniques text[]",
         "updated_by text",
         "updated_at timestamptz",
         pk=("rule_id",),

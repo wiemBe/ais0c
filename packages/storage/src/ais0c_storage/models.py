@@ -332,6 +332,9 @@ class CatalogRuleRow(Base):
     context_note: Mapped[str | None]
     # Suggested by the AI; not used until an operator accepts it.
     ai_draft_note: Mapped[str | None]
+    # ATT&CK technique IDs an operator mapped to the rule; the sync never changes them. The
+    # skill router reads them (T-26, migration 0005).
+    attack_techniques: Mapped[list[str]] = mapped_column(ARRAY(Text), server_default=text("'{}'"))
     updated_by: Mapped[str]
     updated_at: Mapped[datetime]
 
