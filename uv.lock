@@ -147,6 +147,7 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "anyio" },
+    { name = "cryptography" },
     { name = "testcontainers" },
 ]
 
@@ -164,6 +165,7 @@ requires-dist = [
 [package.metadata.requires-dev]
 dev = [
     { name = "anyio", specifier = ">=4.15,<5" },
+    { name = "cryptography", specifier = ">=50.0.2,<51" },
     { name = "testcontainers", specifier = ">=4.15,<5" },
 ]
 

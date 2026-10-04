@@ -1,0 +1,24 @@
+{#- The e-mail of a group of offenses in storm state whose notify level is high or critical, one
+    per group (architecture §9, "Offense gruplama ve fırtına koruması"). Every field is one
+    cleaned line built by ais0c_executor.email.render; raw log text never comes in. -#}
+{% import "parts/labels.txt" as labels %}
+{% from "parts/events.txt" import events %}
+AI-SOC: bildirim seviyesi {{ labels.level(fields.level) }} olan bir offense fırtınası var.
+
+Grup: {{ fields.group_id }} · {{ fields.offense_count }} offense · {{ fields.title }}
+Grup değerlendirmesi: #{{ fields.evaluation_no }} · {{ fields.evaluated_at }}
+Karar: {{ labels.verdict(fields.verdict) }} · Güven: {{ labels.confidence(fields.confidence) }} · Bildirim seviyesi: {{ labels.level(fields.level) }}
+{% if fields.verdict == "fp" %}
+AI bu grubu yanlış pozitif olarak değerlendirdi, ancak bildirim seviyesi {{ labels.level(fields.level) }} olduğu için operatörün bakması gerekir.
+{% endif %}
+Gruptaki offense'ler tek tek değil, grup olarak değerlendirildi. Gruba sonradan eklenen offense'lerin QRadar notunda bu karar yer alır; bu grup için yeniden e-posta gönderilmez.
+
+Özet: {{ fields.summary }}
+
+{{ events(fields) | trim }}
+
+Önerilen adımlar: {{ fields.actions }}
+
+Ayrıntılı rapor: {{ fields.case_url }}
+
+{% include "parts/footer.txt" %}

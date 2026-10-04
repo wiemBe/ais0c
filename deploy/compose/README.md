@@ -1,6 +1,6 @@
 # Geliştirme ortamı (Docker Compose)
 
-Temporal, PostgreSQL + pgvector, LiteLLM ve OpenTelemetry collector'ı tek komutla ayağa kaldırır ([T-003](../../docs/impl/tasks/T-003-dev-compose.md), mimari §4 ve §25). Yalnızca dev ve lab içindir; prod compose dosyası Faz 1'de yazılır.
+Temporal, PostgreSQL + pgvector, LiteLLM, OpenTelemetry collector ve Mailpit e-posta yakalayıcısını tek komutla ayağa kaldırır ([T-003](../../docs/impl/tasks/T-003-dev-compose.md), mimari §4 ve §25). Yalnızca dev ve lab içindir; prod compose dosyası Faz 1'de yazılır.
 
 ## Servisler
 
@@ -13,6 +13,7 @@ Temporal, PostgreSQL + pgvector, LiteLLM ve OpenTelemetry collector'ı tek komut
 | `temporal-ui` | Temporal UI 2.54.1 | http://127.0.0.1:8080 | Workflow arayüzü |
 | `litellm` | LiteLLM 1.103.2 | `127.0.0.1:4000` | Model gateway, [`litellm.dev.yaml`](../../config/litellm/litellm.dev.yaml) ile |
 | `otel-collector` | OTel collector contrib 0.161.0 | `127.0.0.1:4317` (gRPC), `127.0.0.1:4318` (HTTP) | OTLP alır, yalnızca debug exporter'a yazar |
+| `mailpit` | Mailpit 1.31.4 | `127.0.0.1:1025` (SMTP), http://127.0.0.1:8025 (arayüz ve API) | Executor'ın gönderdiği e-postaları yakalar, hiçbir yere iletmez ([T-020](../../docs/impl/tasks/T-020-executor-eposta.md)) |
 
 QRadar'a giden servisler (`mcp-gateway`, `qradar-mcp-read`, `qradar-mcp-note`) `qradar` compose profilindedir ve yalnızca istenince başlar: [QRadar ve gateway](#qradar-ve-gateway-qradar-profili).
 
@@ -46,6 +47,7 @@ Komutlar repo kökünden çalıştırılır.
 - **Postgres:** `postgresql://ais0c:<AIS0C_DB_PASSWORD>@127.0.0.1:5432/ais0c`
 - **LiteLLM:** OpenAI uyumlu API, `http://127.0.0.1:4000/v1`, başlık `Authorization: Bearer <LITELLM_MASTER_KEY>`. Model adı olarak yalnızca alias'lar kullanılır: `soc-fast`, `soc-reasoning`, `soc-verifier`, `soc-report`. Alias'ların hangi modele gittiği [`config/litellm/`](../../config/litellm/), yetenekleri [`config/models/`](../../config/models/) içindedir.
 - **OTLP:** `http://127.0.0.1:4318` (HTTP) veya `127.0.0.1:4317` (gRPC). Gelen veriyi görmek için `docker compose -f deploy/compose/docker-compose.dev.yaml logs -f otel-collector`.
+- **E-posta:** Executor'ı Mailpit'e yönlendir: `AIS0C_SMTP_HOST=127.0.0.1`, `AIS0C_SMTP_PORT=1025`, `AIS0C_SMTP_TLS=none`, `AIS0C_SMTP_FROM=ai-soc@example.com` (değişkenlerin tamamı: `ais0c_activities.email.load_smtp_settings`). Gelen e-postalar http://127.0.0.1:8025 adresinde görünür. Mailpit e-postaları `/tmp` altındaki geçici bir veritabanında tutar; konteyner durunca silinirler.
 
 ## QRadar ve gateway (`qradar` profili)
 
@@ -152,6 +154,12 @@ Anahtarı yığın çalışırken eklediysen önce LiteLLM'i yeniden oluştur: `
 
   `qradar` profiliyle başlatılmış yığında `COMPOSE_PROFILES=qradar` de ver; gateway ve MCP instance'larının sağlıklı olması da beklenir. Profilin konteynerleri çalışıyorsa bu değişken olmadan da sağlıklı olmaları gerekir.
 - `qradar` profilinin statik testleri `services/mcp-gateway/tests/test_deploy.py`'dedir: gateway imajı ve servisi, fork imajının etiketi, token'ların secret dosyalarından okunması, ağ yalıtımı, her secret'ın yalnızca gereken serviste olması, lab override'ı ve `make_secrets.py`.
+- E-posta testi yalnızca Mailpit'i kullanır; veritabanını testler kendisi açar (Docker gerekir). Bir uyarı e-postasını gönderir, Mailpit'te konusunu, alıcılarını, başlıklarını ve gövdesini doğrular, sonra test e-postalarını siler:
+
+  ```bash
+  docker compose -f deploy/compose/docker-compose.dev.yaml up -d --wait mailpit
+  AIS0C_DEV_STACK=1 uv run pytest packages/activities/tests/test_email_dev_stack.py
+  ```
 
 ## Durdurma ve sıfırlama
 

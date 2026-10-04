@@ -1,0 +1,3 @@
+{#- One urgent event on one line: the identifiers that find it in QRadar and why it matters. Its
+    checklist, AQL and evidence never go into an e-mail. -#}
+{{ rank }}. {{ time }} · {{ log_source }} · {{ event_name }}{% if qid is not none %} (QID {{ qid }}){% endif %}{% if source is not none or destination is not none %} · {{ source or "-" }} → {{ destination or "-" }}{% endif %}{% if username is not none %} · kullanıcı: {{ username }}{% endif %} · neden: {{ reason }}

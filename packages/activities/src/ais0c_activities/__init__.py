@@ -2,8 +2,9 @@
 
 No workflow logic. Activities are registered under the names in `ais0c_activities.names`, which
 the workflows use to call them. The Triage agent's model and tool activities come from Pydantic
-AI's TemporalDurability (`TriageRuntime`). The Action Executor's note activity
-(`NoteActivities`) is not on the case queue; no workflow calls it before T-026.
+AI's TemporalDurability (`TriageRuntime`). The Action Executor's note and e-mail activities
+(`NoteActivities`, `EmailActivities`) are not on the case queue; no workflow calls them before
+T-026.
 """
 
 from collections.abc import Callable
@@ -12,6 +13,13 @@ from temporalio.client import Client
 
 from ais0c_activities.case import CaseActivities, sla_deadline
 from ais0c_activities.db import SessionFactory
+from ais0c_activities.email import (
+    SEND_EMAIL,
+    EmailActivities,
+    EmailRuntime,
+    load_email_runtime,
+    load_smtp_settings,
+)
 from ais0c_activities.enrichment import (
     IocMatcher,
     NoIocMatcher,
@@ -103,12 +111,15 @@ __all__ = [
     "INTAKE_CONTEXT",
     "NOTE_PROFILE",
     "RATE_WINDOW",
+    "SEND_EMAIL",
     "SOURCE_AGENT_ID",
     "WRITE_OFFENSE_NOTE",
     "CaseActivities",
     "CaseLauncher",
     "CaseRuntime",
     "CaseSettings",
+    "EmailActivities",
+    "EmailRuntime",
     "FakeOffenseSource",
     "GatewayOffenseNotes",
     "GatewayOffenseSource",
@@ -144,8 +155,10 @@ __all__ = [
     "decide_grouping",
     "floor_level",
     "load_case_runtime",
+    "load_email_runtime",
     "load_model_releases",
     "load_note_runtime",
+    "load_smtp_settings",
     "match_critical_assets",
     "model_release_changes",
     "parse_model_releases",

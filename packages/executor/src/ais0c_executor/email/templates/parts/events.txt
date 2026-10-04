@@ -1,0 +1,11 @@
+{#- The urgent events of an alert, one per line: the fields `event_1` to `event_5`. -#}
+{% macro events(fields) -%}
+{% if "event_1" in fields %}
+Acil bakılması gereken event'ler:
+{% for n in range(1, 6) if ("event_" ~ n) in fields %}
+ {{ fields["event_" ~ n] }}
+{% endfor %}
+{% else %}
+Acil bakılması gereken event'ler: yok
+{% endif %}
+{%- endmacro %}

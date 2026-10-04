@@ -5,7 +5,8 @@ same pinned image, and a non-superuser application role that owns its database. 
 migrated once into a template database; every test gets its own copy.
 
 This directory is not a package (see packages/storage/tests/conftest.py). The test modules
-import `note_payloads` and `storage_postgres` by name, so both directories go on sys.path.
+import `note_payloads`, `email_payloads`, `smtp_server` and `storage_postgres` by name, so both
+directories go on sys.path.
 """
 
 import secrets

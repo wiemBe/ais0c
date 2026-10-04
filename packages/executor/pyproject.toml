@@ -10,12 +10,13 @@ dependencies = [
     # Template engine with a sandbox and strict undefined values. Already in the lock through
     # pysigma; the HTML of the hunt PDFs (WeasyPrint) will need a template engine too.
     "jinja2>=3.1.6,<4",
-    # The note requests and outcomes are models, checked again before a note is built; same
-    # range as ais0c-contracts.
+    # The note and e-mail requests, outcomes and SMTP settings are models, checked again
+    # before a note or e-mail is built; same range as ais0c-contracts.
     "pydantic>=2.12,<3",
     # The session factory the kill switch reads the flag through; same range as ais0c-storage.
     "sqlalchemy[asyncio]>=2.1.2,<2.2",
-    # Note times are in Europe/Istanbul time, and slim images have no time zone database.
+    # Note and e-mail times are in Europe/Istanbul time, and slim images have no time zone
+    # database.
     # Already in the lock through ais0c-mcp-gateway, with the same range.
     "tzdata>=2026.4",
 ]
@@ -23,6 +24,9 @@ dependencies = [
 [dependency-groups]
 dev = [
     "anyio>=4.15,<5",
+    # A throwaway CA and server certificate, so the SMTP tests run STARTTLS and implicit TLS
+    # against a real handshake. Already in the lock through pyjwt[crypto].
+    "cryptography>=50.0.2,<51",
     "testcontainers>=4.15,<5",
 ]
 

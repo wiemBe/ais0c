@@ -1,0 +1,3 @@
+{#- The recommended actions on one line. -#}
+{% import "parts/labels.txt" as labels %}
+{% for action in actions %}{{ labels.action(action) }}{% if not loop.last %}, {% endif %}{% else %}yok{% endfor %}

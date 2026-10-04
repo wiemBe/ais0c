@@ -1,5 +1,6 @@
-# Development stack: Temporal, PostgreSQL + pgvector, LiteLLM and the OpenTelemetry collector
-# (docs/architecture.md §4, §25; T-11). How to run it: deploy/compose/README.md.
+# Development stack: Temporal, PostgreSQL + pgvector, LiteLLM, the OpenTelemetry collector and
+# the Mailpit e-mail catcher (docs/architecture.md §4, §25; T-11). How to run it:
+# deploy/compose/README.md.
 #
 #   docker compose -f deploy/compose/docker-compose.dev.yaml up -d --wait
 #
@@ -181,6 +182,35 @@ services:
       - "127.0.0.1:4318:4318" # OTLP HTTP
     healthcheck:
       test: ["CMD", "/probe/bin/busybox", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:13133/"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 5s
+
+  # Catches the executor's alert e-mails (T-020): it takes every e-mail sent to 127.0.0.1:1025
+  # (SMTP, no TLS: AIS0C_SMTP_TLS=none) and shows it at http://127.0.0.1:8025, in its web UI and
+  # its API. It sends nothing on.
+  mailpit:
+    image: docker.io/axllent/mailpit:v1.31.4@sha256:b68349e3a014b90c5610bfb26b2ae36f3892d7b8cf25ee140c6c71c98d2fcf48
+    environment:
+      # No update check over the internet, no reverse DNS lookup of SMTP clients.
+      MP_DISABLE_VERSION_CHECK: "true"
+      MP_SMTP_DISABLE_RDNS: "true"
+      # The web UI and the API answer only to these Host headers (DNS rebinding).
+      MP_ALLOWED_HOSTS: "127.0.0.1:8025,localhost:8025"
+    ports:
+      - "127.0.0.1:1025:1025" # SMTP
+      - "127.0.0.1:8025:8025" # web UI and API
+    # The image runs as root by default; Mailpit needs neither root nor a writable image. The
+    # e-mails live in a temporary database in /tmp and are gone when the container stops.
+    user: "65534:65534"
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    healthcheck:
+      test: ["CMD", "/mailpit", "readyz"]
       interval: 5s
       timeout: 5s
       retries: 12
