@@ -26,6 +26,9 @@ dependencies = [
 [dependency-groups]
 dev = [
     "anyio>=4.15,<5",
+    # The note tests answer the gateway client through its mock transport; same range as
+    # ais0c-agents.
+    "httpx2>=2.13.1,<3",
     "testcontainers>=4.15,<5",
 ]
 

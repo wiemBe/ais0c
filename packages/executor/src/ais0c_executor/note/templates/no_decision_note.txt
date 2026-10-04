@@ -1,0 +1,6 @@
+{#- The note of an evaluation that ended without an AI decision (architecture §9, "Ajan SLA'sı"),
+    so the operator does not take the offense for one the AI has looked at. -#}
+{% from "parts/header.txt" import header %}
+{{ header(evaluation_no, evaluated_at, run_marker) }}
+AI değerlendirmesi yapılamadı: bu offense'e AI bakmadı, operatörün incelemesi gerekir.
+Ayrıntılı rapor: {{ case_url }}

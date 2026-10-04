@@ -1,0 +1,10 @@
+{#- Turkish labels of the contract values a note shows. A value without a label is an error. -#}
+{% macro verdict(value) -%}
+{{ {"tp": "Gerçek pozitif (TP)", "fp": "Yanlış pozitif (FP)", "suspicious": "Şüpheli"}[value] }}
+{%- endmacro %}
+{% macro confidence(value) -%}
+{{ {"low": "düşük", "medium": "orta", "high": "yüksek"}[value] }}
+{%- endmacro %}
+{% macro gap_reason(value) -%}
+{{ {"no_data": "veri yok", "not_parsed": "ayrıştırılmamış", "not_visible": "görünmüyor", "query_failed": "sorgu başarısız", "budget_exhausted": "bütçe yetmedi"}[value] }}
+{%- endmacro %}

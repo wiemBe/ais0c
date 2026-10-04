@@ -1,0 +1,23 @@
+{#- The note of an evaluation's decision (architecture §9, "QRadar offense notu"). Every value is
+    one cleaned line; ais0c_executor.note.render cuts them so the note fits. -#}
+{% from "parts/header.txt" import header %}
+{% import "parts/labels.txt" as labels %}
+{{ header(evaluation_no, evaluated_at, run_marker) }}
+Karar: {{ labels.verdict(verdict) }} · Güven: {{ labels.confidence(confidence) }} · Bildirim seviyesi: {{ notify_level }}
+Özet: {{ summary }}
+{% if events or omitted %}
+Acil bakılması gereken event'ler:
+{% for event in events %}
+ {{ event.rank }}. {{ event.time }} · {{ event.log_source }} · {{ event.event_name }}{% if event.qid is not none %} (QID {{ event.qid }}){% endif %}{% if event.source is not none or event.destination is not none %} · {{ event.source or "-" }} → {{ event.destination or "-" }}{% endif %}{% if event.username is not none %} · kullanıcı: {{ event.username }}{% endif %} · neden: {{ event.reason }}
+{% endfor %}
+{% if omitted %}
+ (+{{ omitted }} event daha ayrıntılı raporda)
+{% endif %}
+{% else %}
+Acil bakılması gereken event'ler: yok
+{% endif %}
+Önerilen adımlar: {{ actions | join(", ") if actions else "yok" }}
+{% if data_gaps %}
+Veri eksikleri: {% for gap in data_gaps %}{{ gap.source }} ({{ labels.gap_reason(gap.reason) }}, {{ gap.start }}–{{ gap.end }}){% if not loop.last %}; {% endif %}{% endfor %}{% if more_gaps %} (+{{ more_gaps }} daha){% endif +%}
+{% endif %}
+Ayrıntılı rapor: {{ case_url }}

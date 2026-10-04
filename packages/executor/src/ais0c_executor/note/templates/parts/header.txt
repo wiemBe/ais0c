@@ -1,0 +1,4 @@
+{#- The first line of every note. The writer finds a note it already wrote by `run:` at its end. -#}
+{% macro header(evaluation_no, evaluated_at, run_marker) -%}
+[AI-SOC] Değerlendirme #{{ evaluation_no }} · {{ evaluated_at }} · run:{{ run_marker }}
+{%- endmacro %}

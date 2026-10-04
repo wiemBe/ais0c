@@ -1,0 +1,6 @@
+{#- The short note of an offense added to a group: it carries the group's decision
+    (architecture §9, "Offense gruplama ve fırtına koruması"). -#}
+{% from "parts/header.txt" import header %}
+{% import "parts/labels.txt" as labels %}
+{{ header(evaluation_no, evaluated_at, run_marker) }}
+Grup {{ group_id }} içinde değerlendirildi: {{ labels.verdict(verdict) }}, ayrıntı: {{ case_url }}

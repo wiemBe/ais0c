@@ -5,27 +5,28 @@ The gateway records every call in `tool_calls` under the agent run its ToolInten
 caller's profile, agent and case or hunt; otherwise the call is refused.
 
 An agent gets the plain gateway client: its tool functions take the run ID from the run's deps
-(`ais0c_agents.RunDeps`). `system_run` is for platform code that reads QRadar without an agent,
-such as the offense source. It records a short run of a pseudo agent (D-33), puts the run's ID
-in the intents of the calls made inside and closes it. The run has no prompt or model; those
-columns hold `none`.
+(`ais0c_agents.RunDeps`). `system_run` is for platform code that calls QRadar without an agent,
+such as the offense source and the Action Executor's notes. It records a short run of a pseudo
+agent (D-33), puts the run's ID in the intents of the calls made inside and closes it. The run
+has no prompt or model; those columns hold `none`.
 """
 
 import logging
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Callable, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Final
+from typing import Final, Protocol
 
 from pydantic import JsonValue
 from temporalio import activity
 
 from ais0c_activities.db import SessionFactory
-from ais0c_agents import GatewayClient, ToolsetProfile, ToolSpec
+from ais0c_agents import GatewayClient
 from ais0c_contracts import (
     AgentTask,
     Budget,
+    CostClass,
     RunStatus,
     TimeWindow,
     ToolIntent,
@@ -50,12 +51,37 @@ class SystemRunError(RuntimeError):
     """A tool call of a system run did not return `ok`."""
 
 
+class GatewayTool(Protocol):
+    """What a system run needs to know of a tool to call it."""
+
+    @property
+    def id(self) -> str: ...
+
+    @property
+    def schema_version(self) -> str: ...
+
+    @property
+    def cost_class(self) -> CostClass: ...
+
+
+class GatewayProfile(Protocol):
+    """The gateway profile a system run calls, as the gateway lists it (`GET /v1/tools`):
+    `ais0c_agents.ToolsetProfile` for a read profile, `ais0c_activities.note.NoteToolset` for
+    the Action Executor's."""
+
+    @property
+    def name(self) -> str: ...
+
+    @property
+    def tools(self) -> Sequence[GatewayTool]: ...
+
+
 @dataclass
 class SystemRun:
     """Calls of one system run; every call carries the run's ID, context and time window."""
 
     gateway: GatewayClient
-    profile: ToolsetProfile
+    profile: GatewayProfile
     run_id: str
     task: AgentTask
     calls: int = 0
@@ -69,6 +95,27 @@ class SystemRun:
         expected_evidence: str,
     ) -> ToolResult:
         """One gateway call; a result other than `ok` raises SystemRunError."""
+        result = await self.send(
+            tool_id, arguments, reason=reason, expected_evidence=expected_evidence
+        )
+        if result.status is not ToolStatus.OK:
+            raise SystemRunError(f"{tool_id}: {result.status.value}: {result.deny_reason or ''}")
+        if result.truncated:
+            _log.warning("%s returned a truncated result in run %s", tool_id, self.run_id)
+        return result
+
+    async def send(
+        self,
+        tool_id: str,
+        arguments: dict[str, JsonValue],
+        *,
+        reason: str,
+        expected_evidence: str,
+    ) -> ToolResult:
+        """One gateway call; the result as the gateway gave it, `denied` and `error` included.
+
+        The client's GatewayError propagates.
+        """
         spec = self._spec(tool_id)
         intent = ToolIntent(
             run_id=self.run_id,
@@ -85,14 +132,9 @@ class SystemRun:
             cost_class=spec.cost_class,
         )
         self.calls += 1
-        result = await self.gateway.call(intent)
-        if result.status is not ToolStatus.OK:
-            raise SystemRunError(f"{tool_id}: {result.status.value}: {result.deny_reason or ''}")
-        if result.truncated:
-            _log.warning("%s returned a truncated result in run %s", tool_id, self.run_id)
-        return result
+        return await self.gateway.call(intent)
 
-    def _spec(self, tool_id: str) -> ToolSpec:
+    def _spec(self, tool_id: str) -> GatewayTool:
         for spec in self.profile.tools:
             if spec.id == tool_id:
                 return spec
@@ -104,7 +146,7 @@ async def system_run(
     *,
     sessions: SessionFactory,
     gateway: GatewayClient,
-    profile: ToolsetProfile,
+    profile: GatewayProfile,
     agent_id: str,
     case_id: str,
     objective: str,

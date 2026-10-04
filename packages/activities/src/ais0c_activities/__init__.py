@@ -2,7 +2,8 @@
 
 No workflow logic. Activities are registered under the names in `ais0c_activities.names`, which
 the workflows use to call them. The Triage agent's model and tool activities come from Pydantic
-AI's TemporalDurability (`TriageRuntime`).
+AI's TemporalDurability (`TriageRuntime`). The Action Executor's note activity
+(`NoteActivities`) is not on the case queue; no workflow calls it before T-026.
 """
 
 from collections.abc import Callable
@@ -20,7 +21,13 @@ from ais0c_activities.enrichment import (
     floor_level,
     match_critical_assets,
 )
-from ais0c_activities.gateway import SystemRun, SystemRunError, system_run
+from ais0c_activities.gateway import (
+    GatewayProfile,
+    GatewayTool,
+    SystemRun,
+    SystemRunError,
+    system_run,
+)
 from ais0c_activities.gateway_source import (
     INTAKE_CONTEXT,
     SOURCE_AGENT_ID,
@@ -44,6 +51,16 @@ from ais0c_activities.model_release import (
     load_model_releases,
     model_release_changes,
     parse_model_releases,
+)
+from ais0c_activities.note import (
+    NOTE_PROFILE,
+    WRITE_OFFENSE_NOTE,
+    GatewayOffenseNotes,
+    NoteActivities,
+    NoteGatewayClient,
+    NoteRuntime,
+    NoteToolset,
+    load_note_runtime,
 )
 from ais0c_activities.offense_source import FakeOffenseSource, OffenseSource
 from ais0c_activities.priority import pre_priority
@@ -84,14 +101,19 @@ def case_queue_activities(
 __all__ = [
     "GROUP_WINDOW",
     "INTAKE_CONTEXT",
+    "NOTE_PROFILE",
     "RATE_WINDOW",
     "SOURCE_AGENT_ID",
+    "WRITE_OFFENSE_NOTE",
     "CaseActivities",
     "CaseLauncher",
     "CaseRuntime",
     "CaseSettings",
     "FakeOffenseSource",
+    "GatewayOffenseNotes",
     "GatewayOffenseSource",
+    "GatewayProfile",
+    "GatewayTool",
     "GroupState",
     "GroupingDecision",
     "GroupingOutcome",
@@ -102,6 +124,10 @@ __all__ = [
     "ModelReleaseChange",
     "ModelReleaseError",
     "NoIocMatcher",
+    "NoteActivities",
+    "NoteGatewayClient",
+    "NoteRuntime",
+    "NoteToolset",
     "OffenseSource",
     "OffenseSourceError",
     "RuntimeConfigError",
@@ -119,6 +145,7 @@ __all__ = [
     "floor_level",
     "load_case_runtime",
     "load_model_releases",
+    "load_note_runtime",
     "match_critical_assets",
     "model_release_changes",
     "parse_model_releases",

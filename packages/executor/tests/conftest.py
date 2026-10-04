@@ -5,7 +5,7 @@ same pinned image, and a non-superuser application role that owns its database. 
 migrated once into a template database; every test gets its own copy.
 
 This directory is not a package (see packages/storage/tests/conftest.py). The test modules
-import `storage_postgres` by name, so its directory goes on sys.path.
+import `note_payloads` and `storage_postgres` by name, so both directories go on sys.path.
 """
 
 import secrets
@@ -21,7 +21,7 @@ from ais0c_storage import create_engine, create_session_factory, create_sync_eng
 from ais0c_storage.migrate import upgrade
 
 HERE = Path(__file__).parent
-sys.path[:0] = [str(HERE.parents[1] / "storage" / "tests")]
+sys.path[:0] = [str(HERE), str(HERE.parents[1] / "storage" / "tests")]
 
 from storage_postgres import (  # noqa: E402  # pyright: ignore[reportMissingImports]
     Server,
