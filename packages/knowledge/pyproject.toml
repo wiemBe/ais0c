@@ -1,9 +1,17 @@
 [project]
 name = "ais0c-knowledge"
 version = "0.1.0"
-description = "ATT&CK and CTI ingestion, hunt pack validation and Analysis Catalog sync."
+description = "ATT&CK and CTI ingestion, hunt pack validation, Analysis Catalog sync and skills."
 requires-python = ">=3.12"
-dependencies = ["ais0c-contracts", "ais0c-storage", "ais0c-querylang"]
+dependencies = [
+    "ais0c-contracts",
+    "ais0c-storage",
+    "ais0c-querylang",
+    # Skill manifest models (skills/); same version range as ais0c-contracts.
+    "pydantic>=2.12,<3",
+    # Skill manifests (skills/<id>/<version>/skill.yaml) are YAML.
+    "pyyaml>=6.0.3,<7",
+]
 
 [build-system]
 requires = ["uv_build>=0.12.22,<0.13.0"]

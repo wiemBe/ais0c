@@ -1,0 +1,50 @@
+# Password spraying. A draft: the synthetic log generator (T-008) can produce the 4625 events,
+# and T-030 adds the lab scenario. Approval sets status, approved_by and content_hash
+# (skills/README.md).
+id: password-spraying
+version: 1.0.0
+status: draft
+owner: soc-engineering
+allowed_agent_roles: [investigation]
+triggers:
+  # QRadar rule IDs differ between installations: the target QRadar's rules are added before
+  # approval.
+  rule_ids: []
+  log_source_types: []
+  # Brute force (T1110) offenses are offered the skill too: its first step tells the two apart.
+  attack_techniques: [T1110, T1110.003]
+required_telemetry:
+  - log_source_type: Microsoft Windows Security Event Log
+    events:
+      - "4625 failed logons with the target account, the source address and the failure status"
+      - "4624 successful logons from the same source addresses"
+    required: true
+  - log_source_type: Microsoft Windows Security Event Log
+    events:
+      - "4771 Kerberos pre-authentication failures and 4776 NTLM credential validation on domain controllers"
+      - "4740 account lockouts on domain controllers"
+    required: false
+  - log_source_type: Fortinet FortiGate Security Gateway
+    events:
+      - "SSL VPN login failures, when the attempts target the VPN portal"
+    required: false
+required_evidence:
+  - id: failure-pattern
+    description: "The failed logons per source address: distinct target accounts, attempts per account and time span"
+  - id: failure-reasons
+    description: "The failure statuses: wrong password, unknown account, locked or disabled account"
+  - id: successful-logons
+    description: "Successful logons from the same sources, or of the targeted accounts from new sources, during and after the failures"
+  - id: source-classification
+    description: "What the source is: an internal host, a VPN tunnel address or an external address"
+# Starting values; the skill's suite (T-030) measures them. One Ariel search takes at least four
+# tool calls (create, status, results, delete); critical and high offenses have a 10 minute SLA.
+budgets:
+  tokens: 120000
+  tool_calls: 24
+  wall_clock_seconds: 300
+output_schema: InvestigationResult
+eval_suites: [skill-password-spraying, prompt-injection, adversarial-fn]
+expires_at: 2027-10-01
+content_hash: null
+approved_by: null

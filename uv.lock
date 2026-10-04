@@ -192,6 +192,8 @@ dependencies = [
     { name = "ais0c-contracts" },
     { name = "ais0c-querylang" },
     { name = "ais0c-storage" },
+    { name = "pydantic" },
+    { name = "pyyaml" },
 ]
 
 [package.metadata]
@@ -199,6 +201,8 @@ requires-dist = [
     { name = "ais0c-contracts", editable = "packages/contracts" },
     { name = "ais0c-querylang", editable = "packages/querylang" },
     { name = "ais0c-storage", editable = "packages/storage" },
+    { name = "pydantic", specifier = ">=2.12,<3" },
+    { name = "pyyaml", specifier = ">=6.0.3,<7" },
 ]
 
 [[package]]

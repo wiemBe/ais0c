@@ -1,0 +1,44 @@
+# VPN login from a new country. A draft built on the lab's s3-vpn-yeni-ulke scenario (T-008):
+# approval sets status, approved_by and content_hash (skills/README.md).
+id: vpn-new-country
+version: 1.0.0
+status: draft
+owner: soc-engineering
+allowed_agent_roles: [investigation]
+triggers:
+  # QRadar rule IDs differ between installations: the target QRadar's rules are added before
+  # approval.
+  rule_ids: []
+  log_source_types: []
+  attack_techniques: [T1133]
+required_telemetry:
+  # The lab's VPN gateway is a FortiGate. If the target's VPN gateway is another product, its log
+  # source type replaces this one before approval.
+  - log_source_type: Fortinet FortiGate Security Gateway
+    events:
+      - "SSL VPN tunnel-up and tunnel-down events with the user, the remote IP, the tunnel address and the source country"
+    required: true
+  - log_source_type: Microsoft Windows Security Event Log
+    events:
+      - "4624 network logons on internal hosts from the VPN tunnel address after the login"
+    required: false
+required_evidence:
+  - id: vpn-login
+    description: "The login under investigation: time, user, remote IP, country and tunnel address"
+  - id: country-baseline
+    description: "The countries of the user's VPN logins in the 14 days before, or a data gap if they cannot be read"
+  - id: other-sessions
+    description: "The user's other VPN sessions around the login and their countries"
+  - id: post-login-activity
+    description: "What the user reached from the tunnel address after the login"
+# Starting values; the skill's suite (T-030) measures them. One Ariel search takes at least four
+# tool calls (create, status, results, delete); the 14-day baseline needs two searches.
+budgets:
+  tokens: 120000
+  tool_calls: 28
+  wall_clock_seconds: 300
+output_schema: InvestigationResult
+eval_suites: [skill-vpn-new-country, prompt-injection, adversarial-fn]
+expires_at: 2027-10-01
+content_hash: null
+approved_by: null
