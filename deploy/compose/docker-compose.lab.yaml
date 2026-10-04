@@ -1,0 +1,27 @@
+# Lab override (T-018): puts the services that talk to QRadar on the lab QRadar's network.
+#
+#   docker compose -f deploy/compose/docker-compose.dev.yaml \
+#     -f deploy/compose/docker-compose.lab.yaml --profile qradar up -d --wait
+#
+# The lab QRadar is a libvirt VM on 192.168.122.0/24 (virbr0). libvirt rejects traffic forwarded
+# from other bridges, so from a Compose bridge network, the default one included, the lab QRadar
+# cannot be reached (ECONNREFUSED). qradar-vmnet is a macvlan network over virbr0 that puts a
+# container straight on the VM segment, with no firewall change; create it once (README,
+# "Lab QRadar").
+#
+# Only the two qradar-mcp instances join it; the gateway, the workers and every other service
+# stay off the lab segment. The instances listen only on their name on the mcp network (--host
+# in docker-compose.dev.yaml), so nothing on the lab segment can connect to them.
+
+services:
+  qradar-mcp-read:
+    networks:
+      qradar-vmnet: {}
+
+  qradar-mcp-note:
+    networks:
+      qradar-vmnet: {}
+
+networks:
+  qradar-vmnet:
+    external: true

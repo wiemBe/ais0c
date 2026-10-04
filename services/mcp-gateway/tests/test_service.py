@@ -144,6 +144,25 @@ async def test_a_missing_database_url_stops_startup(
         start(secrets_dir)
 
 
+async def test_the_note_profile_needs_the_note_instance(secrets_dir: Path) -> None:
+    # T-018: the executor's profile runs on qradar-mcp-note, with that instance's own MCP token.
+    write_secret(secrets_dir, "gateway-token-qradar-note-write", new_token())
+
+    with pytest.raises(SettingsError, match="mcp-token-qradar-mcp-note is missing"):
+        start(secrets_dir)
+    write_secret(secrets_dir, "mcp-token-qradar-mcp-note", new_token())
+    with pytest.raises(SettingsError, match="AIS0C_GATEWAY_UPSTREAM_URL_QRADAR_MCP_NOTE"):
+        start(secrets_dir)
+
+    service = start(
+        secrets_dir,
+        AIS0C_GATEWAY_UPSTREAM_URL_QRADAR_MCP_NOTE="http://qradar-mcp-note.mcp:5000/mcp",
+    )
+
+    assert set(service.gateway.registry.profiles) == {"qradar-note-write"}
+    assert set(service.gateway.upstreams) == {"qradar-mcp-note"}
+
+
 async def test_a_broken_registry_stops_startup(secrets_dir: Path, tmp_path: Path) -> None:
     write_secret(secrets_dir, "gateway-token-qradar-triage-read", new_token())
 

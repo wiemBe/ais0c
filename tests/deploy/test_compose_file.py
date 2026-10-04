@@ -4,6 +4,10 @@ They keep every image pinned, every secret in the environment and .env out of gi
 localhost and every long-running service under a healthcheck. Each rule also runs against a
 broken input to show that it catches the problem. The running stack is checked by
 test_dev_stack.py.
+
+T-018 added images built on this machine (pinned by tag, with pinned base images) and secret
+files (a <NAME>_FILE variable may name one); its own checks of the "qradar" profile are in
+services/mcp-gateway/tests/test_deploy.py.
 """
 
 import os
@@ -51,7 +55,9 @@ def split_image(reference: str) -> tuple[str, str | None, str | None]:
     return name, None, digest or None
 
 
-def image_problems(reference: str) -> list[str]:
+def image_problems(reference: str, *, local: bool = False) -> list[str]:
+    """What keeps `reference` from being pinned. A `local` image, built on this machine and
+    never pulled, has no registry digest; it needs only a fixed tag."""
     if "$" in reference:
         return ["is set through a variable"]
     _, tag, digest = split_image(reference)
@@ -60,7 +66,7 @@ def image_problems(reference: str) -> list[str]:
         problems.append("has no tag")
     elif "latest" in tag:
         problems.append(f"uses the floating tag {tag!r}")
-    if digest is None or not DIGEST.fullmatch(digest):
+    if not local and (digest is None or not DIGEST.fullmatch(digest)):
         problems.append("is not pinned by a sha256 digest")
     return problems
 
@@ -77,20 +83,96 @@ def image_references(compose: dict[str, Any]) -> dict[str, str]:
     return references
 
 
+# T-018: images built on this machine. Compose never pulls them: `build` builds the image from
+# this checkout, whose Dockerfile pins its base images; `never` uses an image built elsewhere,
+# such as the qradar-mcp fork, and fails when it is missing.
+LOCAL_PULL_POLICIES = {"build", "never"}
+
+
+def local_services(compose: dict[str, Any]) -> set[str]:
+    return {
+        name
+        for name, service in compose["services"].items()
+        if service.get("pull_policy") in LOCAL_PULL_POLICIES
+    }
+
+
 def test_every_image_is_pinned_by_tag_and_digest() -> None:
-    references = image_references(load_compose())
+    compose = load_compose()
+    references = image_references(compose)
+    local = local_services(compose)
 
     assert "otel-collector:/probe" in references  # image volumes are checked too
-    problems = {where: image_problems(ref) for where, ref in references.items()}
+    problems = {
+        where: image_problems(ref, local=where in local) for where, ref in references.items()
+    }
     assert {where: found for where, found in problems.items() if found} == {}
 
 
-def test_no_service_builds_an_image() -> None:
-    # A build would bring in base images this file does not show. Extend the pinning check to
-    # the Dockerfile's FROM lines before adding one.
-    assert [
-        name for name, service in load_compose()["services"].items() if "build" in service
-    ] == []
+def dockerfile_images(dockerfile: str) -> list[str]:
+    """The images a Dockerfile pulls: FROM lines and --from= of earlier stages excluded."""
+    stages: set[str] = set()
+    images: list[str] = []
+    for line in dockerfile.replace("\\\n", " ").splitlines():
+        words = line.split()
+        if not words or words[0].startswith("#"):
+            continue
+        instruction = words[0].upper()
+        if instruction == "FROM":
+            arguments = [word for word in words[1:] if not word.startswith("--")]
+            if arguments[0].lower() not in stages:
+                images.append(arguments[0])
+            if len(arguments) == 3 and arguments[1].upper() == "AS":
+                stages.add(arguments[2].lower())
+        elif instruction in ("COPY", "RUN"):
+            for word in words[1:]:
+                for option in word.split(","):
+                    _, found, source = option.rpartition("from=")
+                    if found and not source.isdigit() and source.lower() not in stages:
+                        images.append(source)
+    return images
+
+
+def built_services(compose: dict[str, Any]) -> dict[str, Path]:
+    """Map each service that builds its image to its Dockerfile."""
+    return {
+        name: COMPOSE_DIR / service["build"]["context"] / service["build"]["dockerfile"]
+        for name, service in compose["services"].items()
+        if "build" in service
+    }
+
+
+def test_built_images_pin_their_base_images() -> None:
+    # A build brings in base images this file does not show; their FROM lines are pinned like
+    # the images above, and the built image is never pulled under its own name.
+    compose = load_compose()
+
+    for name, dockerfile in built_services(compose).items():
+        assert compose["services"][name].get("pull_policy") == "build", name
+        images = dockerfile_images(dockerfile.read_text(encoding="utf-8"))
+        assert images, name
+        problems = {image: image_problems(image) for image in images}
+        assert {image: found for image, found in problems.items() if found} == {}, name
+
+
+def test_dockerfile_images_are_found_and_stages_skipped() -> None:
+    dockerfile = (
+        f"FROM ghcr.io/astral-sh/uv:0.12.22@{EXAMPLE_DIGEST} AS uv\n"
+        "FROM --platform=linux/amd64 python:3.12-slim AS build\n"
+        "COPY --from=uv /uv /usr/local/bin/uv\n"
+        "COPY --from=docker.io/library/busybox:latest /bin/busybox /bin/\n"
+        "RUN --mount=type=bind,from=build,source=/x,target=/y \\\n    true\n"
+        "FROM build\n"
+    )
+
+    images = dockerfile_images(dockerfile)
+
+    assert images == [
+        f"ghcr.io/astral-sh/uv:0.12.22@{EXAMPLE_DIGEST}",
+        "python:3.12-slim",
+        "docker.io/library/busybox:latest",
+    ]
+    assert [image for image in images if image_problems(image)] == images[1:]
 
 
 @pytest.mark.parametrize(
@@ -121,6 +203,19 @@ def test_pinned_image_is_accepted(reference: str) -> None:
     assert image_problems(reference) == []
 
 
+@pytest.mark.parametrize(
+    ("reference", "expected"),
+    [
+        ("ais0c-mcp-gateway:dev", []),
+        ("qradar-mcp-fork:238ab6b9d0d49ba1d137fa70d1a86d05bf00e013", []),
+        ("qradar-mcp-fork", ["has no tag"]),
+        ("qradar-mcp-fork:latest", ["uses the floating tag 'latest'"]),
+    ],
+)
+def test_local_image_needs_a_fixed_tag(reference: str, expected: list[str]) -> None:
+    assert image_problems(reference, local=True) == expected
+
+
 # --- secrets (criterion 9) ----------------------------------------------------------------
 
 
@@ -133,13 +228,29 @@ def environment(service: dict[str, Any]) -> dict[str, str | None]:
     return {name: (val if sep else None) for name, sep, val in pairs}
 
 
+def secret_files(service: dict[str, Any]) -> set[str]:
+    """The paths of the Compose secrets a service mounts (default /run/secrets/<name>)."""
+    paths: set[str] = set()
+    for item in service.get("secrets") or []:
+        target = item if isinstance(item, str) else item.get("target") or item["source"]
+        paths.add(target if target.startswith("/") else f"/run/secrets/{target}")
+    return paths
+
+
 def secret_problems(compose: dict[str, Any]) -> list[str]:
-    """Describe secret settings that are not taken from the environment without a default."""
+    """Describe secret settings that are not taken from the environment without a default.
+
+    A <NAME>_FILE variable (T-018) may instead name one of the service's own secret files: it
+    holds a path, and the secret stays in the file."""
     problems: list[str] = []
     for name, service in compose["services"].items():
         for key, value in environment(service).items():
             # A name without a value passes the variable through from compose's environment.
             if not SECRET_NAME.search(key) or value is None:
+                continue
+            if key.endswith("_FILE") and INTERPOLATION.fullmatch(value) is None:
+                if value not in secret_files(service):
+                    problems.append(f"{name}: {key} does not name one of its secret files")
                 continue
             match = INTERPOLATION.fullmatch(value)
             if match is None:
@@ -203,6 +314,28 @@ def test_secret_from_the_environment_is_accepted(environment_value: object) -> N
     compose = {"services": {"db": {"environment": environment_value}}}
 
     assert secret_problems(compose) == []
+
+
+@pytest.mark.parametrize(
+    ("secrets", "value", "expected"),
+    [
+        (["db-token"], "/run/secrets/db-token", []),
+        ([{"source": "db-token", "target": "/etc/db/token"}], "/etc/db/token", []),
+        ([], "/run/secrets/db-token", ["db: DB_TOKEN_FILE does not name one of its secret files"]),
+        (
+            ["db-token"],
+            "/run/secrets/other",
+            ["db: DB_TOKEN_FILE does not name one of its secret files"],
+        ),
+    ],
+    ids=["mounted", "mounted-at-a-target", "not-mounted", "another-file"],
+)
+def test_a_secret_file_variable_names_a_mounted_secret(
+    secrets: list[object], value: str, expected: list[str]
+) -> None:
+    compose = {"services": {"db": {"environment": {"DB_TOKEN_FILE": value}, "secrets": secrets}}}
+
+    assert secret_problems(compose) == expected
 
 
 def test_env_example_has_only_empty_values() -> None:

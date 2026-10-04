@@ -14,6 +14,8 @@ Temporal, PostgreSQL + pgvector, LiteLLM ve OpenTelemetry collector'ı tek komut
 | `litellm` | LiteLLM 1.103.2 | `127.0.0.1:4000` | Model gateway, [`litellm.dev.yaml`](../../config/litellm/litellm.dev.yaml) ile |
 | `otel-collector` | OTel collector contrib 0.161.0 | `127.0.0.1:4317` (gRPC), `127.0.0.1:4318` (HTTP) | OTLP alır, yalnızca debug exporter'a yazar |
 
+QRadar'a giden servisler (`mcp-gateway`, `qradar-mcp-read`, `qradar-mcp-note`) `qradar` compose profilindedir ve yalnızca istenince başlar: [QRadar ve gateway](#qradar-ve-gateway-qradar-profili).
+
 Veritabanı rolleri: `ais0c` yalnızca `ais0c` veritabanına, `temporal` yalnızca kendi iki veritabanına bağlanabilir. İkisi de süper kullanıcı değildir. pgvector "trusted" bir eklenti olmadığı için init script'i onu süper kullanıcıyla kurar; migration'ların çalıştıracağı `CREATE EXTENSION IF NOT EXISTS vector` sorunsuz geçer.
 
 ## Başlatma
@@ -45,6 +47,89 @@ Komutlar repo kökünden çalıştırılır.
 - **LiteLLM:** OpenAI uyumlu API, `http://127.0.0.1:4000/v1`, başlık `Authorization: Bearer <LITELLM_MASTER_KEY>`. Model adı olarak yalnızca alias'lar kullanılır: `soc-fast`, `soc-reasoning`, `soc-verifier`, `soc-report`. Alias'ların hangi modele gittiği [`config/litellm/`](../../config/litellm/), yetenekleri [`config/models/`](../../config/models/) içindedir.
 - **OTLP:** `http://127.0.0.1:4318` (HTTP) veya `127.0.0.1:4317` (gRPC). Gelen veriyi görmek için `docker compose -f deploy/compose/docker-compose.dev.yaml logs -f otel-collector`.
 
+## QRadar ve gateway (`qradar` profili)
+
+[T-018](../../docs/impl/tasks/T-018-gateway-compose-not-profili.md), mimari §11.2, §13.4 ve §25. Ajanlar ve Action Executor QRadar'a yalnızca MCP Policy Gateway üzerinden ulaşır. QRadar token'ları yalnızca MCP instance'larındadır ve MCP instance'larına yalnızca gateway erişir.
+
+| Servis | İmaj | Adres | Görev |
+|---|---|---|---|
+| `mcp-gateway` | `ais0c-mcp-gateway:dev`, bu checkout'tan derlenir ([Dockerfile](../../services/mcp-gateway/Dockerfile)) | `127.0.0.1:8090` | MCP Policy Gateway |
+| `qradar-mcp-read` | `qradar-mcp-fork:<server_version>` | yalnızca `mcp` ağı | Fork, `--profile qradar-read`; salt okunur QRadar token'ı |
+| `qradar-mcp-note` | `qradar-mcp-fork:<server_version>` | yalnızca `mcp` ağı | Fork, `--profile qradar-note`; not ekleyebilen QRadar token'ı, üzerinde yalnızca not araçları kayıtlı |
+
+Ağlar:
+
+- `mcp`: Gateway ve iki MCP instance'ı bu ağdadır, başka servis yoktur. Ağ `internal` olduğu için dışarı çıkışı yoktur. MCP sunucuları `--host` ile yalnızca bu ağdaki adlarına (`qradar-mcp-read.mcp`, `qradar-mcp-note.mcp`) bağlanır; başka bir ağdan gelen bağlantıyı kabul etmez.
+- `qradar-egress`: MCP instance'larının QRadar'a çıkışı. Bu ağda başka servis yoktur.
+- `qradar-vmnet`: Yalnızca lab override'ında, yalnızca MCP instance'ları için ([Lab QRadar](#lab-qradar)).
+
+### Fork imajı
+
+İmaj fork reposundan (T-006), connector manifest'teki commit'ten ([`server_version`](../../config/connectors/qradar.yaml)) derlenir ve aynı commit ile etiketlenir. Compose bu imajı hiçbir zaman indirmez (`pull_policy: never`); imaj yoksa servis başlamaz. `git archive` yalnızca commit'teki dosyaları gönderir, çalışma dizinindeki değişiklikler imaja girmez.
+
+```bash
+FORK=../qradar-mcp   # fork reposunun yolu
+VERSION=$(sed -n 's/^server_version: //p' config/connectors/qradar.yaml)
+git -C "$FORK" archive --format=tar "$VERSION" | docker build -t "qradar-mcp-fork:$VERSION" -
+```
+
+`server_version` değişince `docker-compose.dev.yaml`'daki etiket de değişir; `services/mcp-gateway/tests/test_deploy.py` ikisinin aynı olduğunu kontrol eder.
+
+### Secret dosyaları
+
+Token'lar compose dosyasında değil, `deploy/compose/secrets/` altındaki dosyalardadır. Dizin git dışıdır. Dosyaları [`make_secrets.py`](make_secrets.py) üretir; var olan bir dosyayı değiştirmez, bir token'ı yenilemek için dosyasını silip yeniden çalıştır.
+
+| Dosya | İçerik | Compose'da bağlandığı servis | Compose dışında okuyan |
+|---|---|---|---|
+| `agents/gateway-token-<profil>` | Ajan profilinin gateway token'ı | `mcp-gateway` | Worker'lar |
+| `executor/gateway-token-qradar-note-write` | `qradar-note-write` profilinin token'ı | `mcp-gateway` | Yalnızca Action Executor |
+| `mcp/mcp-token-<instance>` | Gateway'in MCP instance'ına sunduğu token | `mcp-gateway` ve o instance | |
+| `qradar/qradar-token-read`, `qradar/qradar-token-note` | QRadar authorized service token'ı | Yalnızca ilgili MCP instance'ı | |
+
+Gateway ve MCP token'ları rastgele üretilir. QRadar token'ları QRadar'dan gelir; betik onları `AIS0C_QRADAR_READ_TOKEN` ve `AIS0C_QRADAR_NOTE_TOKEN` değişkenlerinden kopyalar. Okuma token'ı yalnızca okuyabilmeli, not token'ı not ekleyebilmelidir (mimari §11.2). Tek token'ı olan bir lab ikisi için aynı token'ı kullanabilir; betik bunu bir notla belirtir.
+
+```bash
+# Lab: token'ı repoya yazmadan, örneğin ~/.config/ais0c/lab.env'den yükle
+set -a; . ~/.config/ais0c/lab.env; set +a
+AIS0C_QRADAR_READ_TOKEN="$QRADAR_LAB_TOKEN" AIS0C_QRADAR_NOTE_TOKEN="$QRADAR_LAB_TOKEN" \
+  uv run python deploy/compose/make_secrets.py
+```
+
+Dizinler `0700`, dosyalar `0644` izinlidir: Konteynerler dosyaları başka kullanıcılarla okur (fork 1001, gateway 10001), makinedeki diğer kullanıcılar ise dizine giremez. SELinux'un açık olduğu makinede compose'un dosya secret'ları `container_file_t` etiketini ister; betik `chcon -R -t container_file_t deploy/compose/secrets` çalıştırır, olmazsa komutu yazar.
+
+### Başlatma
+
+1. `.env`'e `QRADAR_CONSOLE_FQDN`'i (QRadar konsolunun adı veya IP'si) ekle. Lab'ın sertifikası kendinden imzalıysa `QRADAR_VERIFY_SSL=false`. Fork, QRadar'a açılışta ulaşamazsa çalışmaz ve yeniden başlar.
+2. Fork imajını derle ve secret dosyalarını üret (yukarıda).
+3. Yığını profille başlat. Lab'da override dosyası da verilir:
+
+   ```bash
+   docker compose -f deploy/compose/docker-compose.dev.yaml \
+     -f deploy/compose/docker-compose.lab.yaml --profile qradar up -d --wait
+   ```
+
+4. Gateway her çağrıyı uygulama veritabanındaki ajan çalışmasına bağlar. Şemayı bir kez son sürüme taşı:
+
+   ```bash
+   AIS0C_DATABASE_URL="postgresql+psycopg://ais0c:${AIS0C_DB_PASSWORD}@127.0.0.1:5432/ais0c" \
+     uv run alembic -c packages/storage/alembic.ini upgrade head
+   ```
+
+Bu makinede çalışan worker gateway'e `AIS0C_GATEWAY_URL=http://127.0.0.1:8090` ve `AIS0C_WORKER_SECRETS_DIR=deploy/compose/secrets/agents` ile bağlanır. Action Executor yalnızca `deploy/compose/secrets/executor` dizinini alır; not token'ı hiçbir ajan worker'ına verilmez. Gateway de bu profili yalnızca `action-executor` sahte ajanının çalışmalarına açar.
+
+### Lab QRadar
+
+Lab QRadar, libvirt ağında (`virbr0`) bir VM'dir. libvirt başka köprülerden gelen trafiği reddettiği için compose'un bridge ağlarından, varsayılan ağ dahil, lab QRadar'a ulaşılamaz (ECONNREFUSED). [`docker-compose.lab.yaml`](docker-compose.lab.yaml) QRadar'a giden iki MCP instance'ını dış `qradar-vmnet` ağına bağlar. Bu ağ `virbr0` üzerinde bir macvlan'dır ve konteyneri doğrudan VM'lerin segmentine koyar. Bir kez oluşturulur; değerler libvirt'in varsayılan ağına göredir:
+
+```bash
+docker network create -d macvlan -o parent=virbr0 \
+  --subnet 192.168.122.0/24 --gateway 192.168.122.1 --ip-range 192.168.122.240/28 qradar-vmnet
+```
+
+Gateway ve diğer servisler bu ağa girmez. MCP sunucuları yalnızca `mcp` ağındaki adlarında dinlediği için lab segmentinden onlara bağlanılamaz.
+
+Docker, makine açılırken `virbr0`'dan önce başlarsa macvlan sürücüsü ağı yükleyemez ve konteynerler `network id "..." not found` hatasıyla başlamaz. Docker'ı yeniden başlat (`sudo systemctl restart docker`) ya da ağı silip yukarıdaki komutla yeniden oluştur.
+
 ## LiteLLM smoke testi
 
 `.env`'de `OPENROUTER_API_KEY` tanımlıysa `soc-fast`'e kısa bir istek atar ve yanıtı yazar. Anahtar yoksa `SKIPPED` yazar ve başarıyla çıkar.
@@ -65,9 +150,12 @@ Anahtarı yığın çalışırken eklediysen önce LiteLLM'i yeniden oluştur: `
   AIS0C_DEV_STACK=1 uv run pytest tests/deploy/test_dev_stack.py
   ```
 
+  `qradar` profiliyle başlatılmış yığında `COMPOSE_PROFILES=qradar` de ver; gateway ve MCP instance'larının sağlıklı olması da beklenir. Profilin konteynerleri çalışıyorsa bu değişken olmadan da sağlıklı olmaları gerekir.
+- `qradar` profilinin statik testleri `services/mcp-gateway/tests/test_deploy.py`'dedir: gateway imajı ve servisi, fork imajının etiketi, token'ların secret dosyalarından okunması, ağ yalıtımı, her secret'ın yalnızca gereken serviste olması, lab override'ı ve `make_secrets.py`.
+
 ## Durdurma ve sıfırlama
 
-- Durdurmak için `docker compose -f deploy/compose/docker-compose.dev.yaml down`. Veriler `ais0c-dev_postgres-data` volume'unda kalır.
+- Durdurmak için `docker compose -f deploy/compose/docker-compose.dev.yaml --profile qradar down`. `--profile qradar` olmadan profilin konteynerleri çalışmaya devam eder. Veriler `ais0c-dev_postgres-data` volume'unda kalır.
 - Sıfırlamak için `down -v`. Init script'i yalnızca boş veri dizininde çalışır; parolaları veya `postgres/init/` altındaki script'i değiştirdiysen yığını sıfırla.
 
 ## İmaj güncelleme

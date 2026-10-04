@@ -32,6 +32,9 @@ profiles:
   # max_time_window: the longest ToolIntent.time_window a call may declare.
   # aql: AQL Guard rules (packages/policy aql_guard.AqlProfile) for create_ariel_search.
   # output_filter: removes fields from every result of the profile.
+  # text_arguments: limits of a text argument in every tool of the profile (ais0c_mcp_gateway
+  #   text_rules): max_length in characters, and multiline to allow "\n". The text may hold no
+  #   other control or invisible character. Every free-text argument of a write tool needs one.
   qradar-triage-read:
     max_time_window: P31D
   qradar-investigate-read:
@@ -50,3 +53,11 @@ profiles:
   qradar-tuning-read:
     max_time_window: P92D
     aql: {max_window: P31D, max_limit: 1000, allowed_tables: [events], wide_window_threshold: PT24H}
+  qradar-note-write:
+    # The executor declares a window within the case's last 31 days, like the Triage profile.
+    max_time_window: P31D
+    text_arguments:
+      # The note (architecture §9): the template puts one field on each line. 2000 characters is
+      # the limit of QRadar's offense note dialog; the API documents none. T-019 checks it in the
+      # lab and keeps its template below it.
+      note_text: {max_length: 2000, multiline: true}

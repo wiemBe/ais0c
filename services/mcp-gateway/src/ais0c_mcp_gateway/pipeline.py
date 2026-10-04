@@ -4,9 +4,13 @@ A call passes these steps in order; the first one that fails decides the answer:
 
 1. the run: the intent's `run_id` names an agent run that is in progress and belongs to the
    caller's profile, agent and case or hunt;
-2. the profile: the intent names the caller's profile, and the tool is in that profile;
-3. the ToolIntent: the semantic checks of packages/policy, the tool's schema version, and its
-   arguments against the registry's JSON Schema;
+2. the profile: the intent names the caller's profile, and the tool is in that profile; a
+   profile that belongs to a platform component (`caller`, such as the Action Executor's
+   qradar-note-write) serves only runs of that component;
+3. the ToolIntent: no NUL character anywhere (the database cannot store one; the record holds
+   U+FFFD instead), the semantic checks of packages/policy, the tool's schema version, its
+   arguments against the registry's JSON Schema, and the profile's text rules (length, control
+   characters; text_rules.py);
 4. for a call that starts an Ariel search: the AQL Guard, and for a profile with an output
    filter, no reference to a filtered field;
 5. for a call that reads or deletes an Ariel search: ownership;
@@ -55,6 +59,7 @@ from ais0c_mcp_gateway.evidence import build_evidence, is_evidence, record_call,
 from ais0c_mcp_gateway.logs import Redactor
 from ais0c_mcp_gateway.quotas import Admission, QuotaDenial, QuotaPool
 from ais0c_mcp_gateway.registry import POOL_NAMES, PoolName, Profile, Registry, SearchStep, Tool
+from ais0c_mcp_gateway.text_rules import text_problem
 from ais0c_mcp_gateway.upstream import Upstream, UpstreamFailure, UpstreamOutcome, one_line
 from ais0c_policy import (
     AqlGuardResult,
@@ -74,6 +79,10 @@ _DETAIL_LENGTH: Final = 120
 # The form of the run IDs the platform issues: workflow IDs (`case-12345-triage-1`) and UUIDs.
 # An ID of another form names no run and is not looked up.
 _RUN_ID: Final = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,199}")
+# JSON can carry U+0000 ("\u0000"); PostgreSQL text and jsonb cannot store it. An intent that
+# holds one is denied, and its record holds U+FFFD instead. JSON cannot carry lone surrogates.
+_NUL: Final = chr(0)
+_REPLACEMENT: Final = chr(0xFFFD)
 
 
 class UnknownRunError(LookupError):
@@ -163,6 +172,8 @@ class Gateway:
     async def _authorize(
         self, session: AsyncSession, profile: Profile, run: AgentRunRow, intent: ToolIntent
     ) -> _Plan | Denial:
+        if _holds_nul(intent.model_dump(mode="json")):
+            return Denial("invalid_intent", "the intent holds a NUL character (U+0000)")
         if run.ended_at is not None or run.status is not None:
             return Denial("run_not_active", "the agent run has ended")
         if intent.toolset_profile != profile.name:
@@ -177,6 +188,10 @@ class Gateway:
             intent.hunt_id,
         ):
             return Denial("run_mismatch", "the run belongs to another profile, agent, case or hunt")
+        # The token is the boundary. This keeps a component's token useless in another run too:
+        # a run is recorded under its agent ID by platform code, never by a model.
+        if profile.caller is not None and run.agent_id != profile.caller:
+            return Denial("caller_not_allowed", f"{profile.name} serves only {profile.caller}")
         tool = profile.tools.get(intent.tool_id)
         if tool is None:
             return Denial(
@@ -194,6 +209,9 @@ class Gateway:
         problem = _argument_problem(tool, intent.arguments)
         if problem is not None:
             return Denial("invalid_arguments", problem)
+        problem = _text_problem(profile, intent.arguments)
+        if problem is not None:
+            return Denial("invalid_text", problem)
 
         plan = _Plan(tool=tool, arguments=dict(intent.arguments), pool=_pool_of(intent))
         _clamp_page_size(plan)
@@ -385,7 +403,7 @@ class Gateway:
             async with self.sessions.begin() as session:
                 await record_call(
                     session,
-                    intent=intent,
+                    intent=_storable(intent),
                     decision=reply.decision,
                     status=result.status,
                     latency_ms=latency_ms,
@@ -423,6 +441,34 @@ def build_pools(
     }
 
 
+def _holds_nul(value: JsonValue) -> bool:
+    if isinstance(value, str):
+        return _NUL in value
+    if isinstance(value, dict):
+        return any(_NUL in key or _holds_nul(item) for key, item in value.items())
+    if isinstance(value, list):
+        return any(_holds_nul(item) for item in value)
+    return False
+
+
+def _without_nul(value: JsonValue) -> JsonValue:
+    if isinstance(value, str):
+        return value.replace(_NUL, _REPLACEMENT)
+    if isinstance(value, dict):
+        return {key.replace(_NUL, _REPLACEMENT): _without_nul(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_without_nul(item) for item in value]
+    return value
+
+
+def _storable(intent: ToolIntent) -> ToolIntent:
+    """The intent as tool_calls can hold it: a NUL character becomes U+FFFD."""
+    data = intent.model_dump(mode="json")
+    if not _holds_nul(data):
+        return intent
+    return ToolIntent.model_validate(_without_nul(data))
+
+
 def _denied(denial: Denial) -> _Reply:
     result = ToolResult(
         status=ToolStatus.DENIED,
@@ -444,6 +490,15 @@ def _argument_problem(tool: Tool, arguments: Mapping[str, JsonValue]) -> str | N
     if error is None:
         return None
     return _describe(error, tool)
+
+
+def _text_problem(profile: Profile, arguments: Mapping[str, JsonValue]) -> str | None:
+    """What breaks one of the profile's text rules, without echoing the text."""
+    for name, rule in profile.text_rules.items():
+        value = arguments.get(name)
+        if isinstance(value, str) and (problem := text_problem(name, value, rule)) is not None:
+            return problem
+    return None
 
 
 def _describe(error: SchemaValidationError, tool: Tool) -> str:

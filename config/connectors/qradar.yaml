@@ -8,11 +8,14 @@
 # own QRadar token (§11.2). The MCP Policy Gateway (services/mcp-gateway) reads the rest of
 # this file: the tool registry, the gateway profiles, the quota pools and the limits. Gateway
 # profiles may only use tools listed in their server profile. The rules each gateway profile
-# is held to (AQL Guard, ToolIntent window, output filter) are in config/policies/qradar.yaml.
+# is held to (AQL Guard, ToolIntent window, output filter, text rules) are in
+# config/policies/qradar.yaml.
 id: qradar
 server: qradar-mcp-fork
 # Fork commit with the T-006 changes; the input schemas under `tools` are its snapshots.
-# Replace with the fork's merge commit or image tag once the fork PR is merged.
+# Replace with the fork's merge commit or image tag once the fork PR is merged. The dev stack
+# runs the image qradar-mcp-fork:<server_version> (deploy/compose/docker-compose.dev.yaml);
+# change both together.
 server_version: 238ab6b9d0d49ba1d137fa70d1a86d05bf00e013
 upstream:
   repository: https://github.com/IBM/qradar-mcp
@@ -54,7 +57,8 @@ server_profiles:
       # The fork deletes only searches it created itself.
       - {id: delete_ariel_search, risk: read}
   qradar-note:
-    # Only the Action Executor uses this instance; no agent profile may include it.
+    # Only the Action Executor uses this instance (profile qradar-note-write). It has a write
+    # tool, so the gateway refuses to start if an agent profile uses it.
     instance: qradar-mcp-note
     tools:
       - {id: add_offense_note, risk: write}
@@ -350,11 +354,43 @@ tools:
       required: [search_id]
       properties:
         search_id: {type: string, pattern: '^[A-Za-z0-9_-]{1,128}$', description: The ID of the Ariel search to delete}
+  # The note tools are the Action Executor's (profile qradar-note-write); no agent sees them.
+  # add_offense_note takes no `fields`: a write tool takes only what the executor needs.
+  add_offense_note:
+    description: Add a note to a QRadar offense. The text is the Action Executor's note template
+      filled with cleaned structured fields (architecture §9); QRadar records the token's user as
+      its author.
+    cost_class: low
+    result: object
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: [offense_id, note_text]
+      properties:
+        note_text: {type: string, minLength: 1, maxLength: 10000, description: The text content of the note}
+        offense_id: {type: integer, minimum: 0, description: The ID of the offense to add the note to}
+  get_offense_notes:
+    description: Read one page of an offense's notes, to check that a note is not written twice;
+      page with limit and start.
+    cost_class: low
+    result: {rows: notes}
+    page_size_argument: limit
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: [offense_id]
+      properties:
+        fields: {type: string, maxLength: 1000, description: 'Optional comma-separated list of fields to return (e.g., ''id,note_text,create_time'')'}
+        filter: {type: string, maxLength: 1000, description: Optional filter to restrict notes}
+        limit: {type: integer, minimum: 1, maximum: 100, default: 50, description: Maximum number of notes to return}
+        offense_id: {type: integer, minimum: 0, description: The ID of the offense to retrieve notes for}
+        start: {type: integer, minimum: 0, default: 0, description: Starting index for pagination (0-based)}
 
 # Gateway profiles (architecture §8.2, §11.2). An agent manifest names one as its
 # toolset_profile; each profile has its own token, and the gateway gives it exactly these tools,
 # run on its server profile's instance. Agent profiles hold read tools only (AGENTS.md hard
-# rule 2); qradar-note-write and the Action Executor come in Faz 1.
+# rule 2) and run on qradar-mcp-read. A write tool names its caller, the platform component
+# that may call it; qradar-note-write is the Action Executor's.
 #
 # guard: aql runs the profile's AQL Guard rules on the query. only_own_searches limits the
 # tool to Ariel searches started through the gateway in the same case or hunt, under the same
@@ -430,6 +466,15 @@ profiles:
       - {id: get_ariel_search_status, risk: read, only_own_searches: true}
       - {id: get_ariel_search_results, risk: read, max_rows: 500, only_own_searches: true}
       - {id: delete_ariel_search, risk: read, only_own_searches: true}
+  # The Action Executor's profile (architecture §9, §11.2): add an offense note, and read the
+  # offense's notes to skip a note that is already there. It is never given to an agent. Its
+  # token is held only by the executor, and the gateway serves it only to runs of the pseudo
+  # agent action-executor. The note text's limits are in config/policies/qradar.yaml.
+  qradar-note-write:
+    server_profile: qradar-note
+    tools:
+      - {id: add_offense_note, risk: write, caller: action-executor}
+      - {id: get_offense_notes, risk: read, caller: action-executor}
 
 # Quota pools (architecture §8.2, §11.3). A call with a case_id runs in the case pool, a call
 # with only a hunt_id in the hunt pool. The pools share nothing, so a full hunt pool never

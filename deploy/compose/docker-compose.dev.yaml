@@ -3,16 +3,36 @@
 #
 #   docker compose -f deploy/compose/docker-compose.dev.yaml up -d --wait
 #
-# - Images are pinned by tag and digest: a tag can be moved, a digest cannot.
+# The compose profile "qradar" adds the MCP Policy Gateway and the two qradar-mcp instances
+# (T-018). They need a QRadar console and the secret files in deploy/compose/secrets/; the lab
+# QRadar also needs the override docker-compose.lab.yaml (README, "QRadar ve gateway").
+#
+# - Images are pinned by tag and digest: a tag can be moved, a digest cannot. Images built on
+#   this machine are the exception: they are never pulled (pull_policy), and the gateway's
+#   Dockerfile pins its own base images.
 # - Secrets come only from the environment, usually deploy/compose/.env (git-ignored; template:
-#   .env.example). Compose stops with a message when a required one is missing.
+#   .env.example), or from secret files mounted in /run/secrets. Compose stops with a message
+#   when a required one is missing.
 # - Ports are published on 127.0.0.1 only; Temporal has no authentication in this setup.
 # - Bind mounts are read-only and carry the SELinux label "z" for Fedora and RHEL hosts.
 #
-# Checks: tests/deploy/test_compose_file.py (static) and tests/deploy/test_dev_stack.py
-# (against the running stack).
+# Checks: tests/deploy/test_compose_file.py (static), tests/deploy/test_dev_stack.py (against
+# the running stack) and, for the "qradar" profile, services/mcp-gateway/tests/test_deploy.py.
 
 name: ais0c-dev
+
+# What the two qradar-mcp instances share. The image is the fork (T-006) built on this machine
+# from the commit in config/connectors/qradar.yaml (server_version), tagged with that commit; it
+# is never pulled (README, "Fork imajı").
+x-qradar-mcp: &qradar-mcp
+  profiles: [qradar]
+  image: qradar-mcp-fork:238ab6b9d0d49ba1d137fa70d1a86d05bf00e013
+  pull_policy: never
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  # The fork exits when it cannot reach QRadar at startup; it starts again until it can.
+  restart: unless-stopped
 
 services:
   # Application data, knowledge store and Temporal's databases, in separate databases (§25).
@@ -165,6 +185,149 @@ services:
       timeout: 5s
       retries: 12
       start_period: 5s
+
+  # --- profile "qradar": QRadar through the MCP Policy Gateway (§11.2, §13.4, §25; T-018) ----
+
+  # The only way to QRadar: agents and the Action Executor call it with their profile's token.
+  # Workers on the host reach it at http://127.0.0.1:8090.
+  mcp-gateway:
+    profiles: [qradar]
+    image: ais0c-mcp-gateway:dev
+    build:
+      context: ../..
+      dockerfile: services/mcp-gateway/Dockerfile
+    # Built from this checkout on every `up`; an image of this name is never pulled.
+    pull_policy: build
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      # The application database; its schema comes from packages/storage's migrations.
+      AIS0C_DATABASE_URL: postgresql+psycopg://ais0c:${AIS0C_DB_PASSWORD:?Set AIS0C_DB_PASSWORD in deploy/compose/.env}@postgres:5432/ais0c
+      AIS0C_GATEWAY_CONFIG_DIR: /etc/ais0c
+      AIS0C_GATEWAY_UPSTREAM_URL_QRADAR_MCP_READ: http://qradar-mcp-read.mcp:5000/mcp
+      AIS0C_GATEWAY_UPSTREAM_URL_QRADAR_MCP_NOTE: http://qradar-mcp-note.mcp:5000/mcp
+    # In /run/secrets: one token per gateway profile, and the gateway's token towards each MCP
+    # instance. No QRadar token: those stay in the MCP instances (§13.4).
+    secrets:
+      - gateway-token-qradar-triage-read
+      - gateway-token-qradar-investigate-read
+      - gateway-token-qradar-verify-read
+      - gateway-token-qradar-hunt-read
+      - gateway-token-qradar-inventory-read
+      - gateway-token-qradar-tuning-read
+      - gateway-token-qradar-note-write
+      - mcp-token-qradar-mcp-read
+      - mcp-token-qradar-mcp-note
+    volumes:
+      - ../../config/connectors:/etc/ais0c/connectors:ro,z
+      - ../../config/policies:/etc/ais0c/policies:ro,z
+    ports:
+      - "127.0.0.1:8090:8080"
+    networks: [default, mcp]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import sys, urllib.request; sys.exit(urllib.request.urlopen("http://127.0.0.1:8080/healthz", timeout=3).status != 200)
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+  # The qradar-mcp fork (T-006): one instance per fork --profile, each with its own QRadar
+  # token. qradar-mcp-read's token can only read; qradar-mcp-note's can add notes, and only the
+  # note tools are registered on it.
+  qradar-mcp-read:
+    <<: *qradar-mcp
+    # --host binds the server to its name on the mcp network (the image listens on 0.0.0.0), so
+    # it accepts no connection from any other network, the lab's macvlan included.
+    command: ["--profile", "qradar-read", "--host", "qradar-mcp-read.mcp"]
+    environment:
+      QRADAR_CONSOLE_FQDN: ${QRADAR_CONSOLE_FQDN:-}
+      QRADAR_VERIFY_SSL: ${QRADAR_VERIFY_SSL:-true}
+      QRADAR_AUTH_TOKEN_FILE: /run/secrets/qradar-token-read
+      MCP_AUTH_TOKEN_FILE: /run/secrets/mcp-token-qradar-mcp-read
+    secrets: [qradar-token-read, mcp-token-qradar-mcp-read]
+    networks:
+      mcp:
+        aliases: [qradar-mcp-read.mcp]
+      qradar-egress: {}
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import sys, urllib.request; sys.exit(urllib.request.urlopen("http://qradar-mcp-read.mcp:5000/healthz", timeout=3).status != 200)
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+
+  qradar-mcp-note:
+    <<: *qradar-mcp
+    command: ["--profile", "qradar-note", "--host", "qradar-mcp-note.mcp"]
+    environment:
+      QRADAR_CONSOLE_FQDN: ${QRADAR_CONSOLE_FQDN:-}
+      QRADAR_VERIFY_SSL: ${QRADAR_VERIFY_SSL:-true}
+      QRADAR_AUTH_TOKEN_FILE: /run/secrets/qradar-token-note
+      MCP_AUTH_TOKEN_FILE: /run/secrets/mcp-token-qradar-mcp-note
+    secrets: [qradar-token-note, mcp-token-qradar-mcp-note]
+    networks:
+      mcp:
+        aliases: [qradar-mcp-note.mcp]
+      qradar-egress: {}
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import sys, urllib.request; sys.exit(urllib.request.urlopen("http://qradar-mcp-note.mcp:5000/healthz", timeout=3).status != 200)
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+
+networks:
+  # The gateway's south side (§13.4): the gateway and the MCP instances and nothing else, so only
+  # the gateway reaches the MCP servers. Internal: nothing on it has a route out.
+  mcp:
+    internal: true
+  # The MCP instances' way to QRadar; no other service is on it. On the lab machine this bridge
+  # cannot reach the lab QRadar, so docker-compose.lab.yaml adds qradar-vmnet.
+  qradar-egress: {}
+
+# Secret files, made by make_secrets.py (README, "QRadar ve gateway"). Each is mounted only into
+# the services that hold it: the gateway's profile tokens are held, outside Compose, by the
+# workers (agents/) and by the Action Executor alone (executor/).
+secrets:
+  gateway-token-qradar-triage-read:
+    file: ./secrets/agents/gateway-token-qradar-triage-read
+  gateway-token-qradar-investigate-read:
+    file: ./secrets/agents/gateway-token-qradar-investigate-read
+  gateway-token-qradar-verify-read:
+    file: ./secrets/agents/gateway-token-qradar-verify-read
+  gateway-token-qradar-hunt-read:
+    file: ./secrets/agents/gateway-token-qradar-hunt-read
+  gateway-token-qradar-inventory-read:
+    file: ./secrets/agents/gateway-token-qradar-inventory-read
+  gateway-token-qradar-tuning-read:
+    file: ./secrets/agents/gateway-token-qradar-tuning-read
+  gateway-token-qradar-note-write:
+    file: ./secrets/executor/gateway-token-qradar-note-write
+  mcp-token-qradar-mcp-read:
+    file: ./secrets/mcp/mcp-token-qradar-mcp-read
+  mcp-token-qradar-mcp-note:
+    file: ./secrets/mcp/mcp-token-qradar-mcp-note
+  qradar-token-read:
+    file: ./secrets/qradar/qradar-token-read
+  qradar-token-note:
+    file: ./secrets/qradar/qradar-token-note
 
 volumes:
   postgres-data:

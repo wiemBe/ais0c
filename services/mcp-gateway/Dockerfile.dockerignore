@@ -1,0 +1,19 @@
+# Build context of services/mcp-gateway/Dockerfile, which is the repository root. BuildKit reads
+# this file instead of a .dockerignore at the root.
+#
+# Only what `uv sync --package ais0c-mcp-gateway` needs gets in: uv reads every workspace
+# member's pyproject.toml to check uv.lock, and builds the gateway and the workspace packages it
+# depends on. Docs, tests, configuration, deploy files and local secrets stay out.
+*
+!.python-version
+!pyproject.toml
+!uv.lock
+!harness/pyproject.toml
+!packages/*/pyproject.toml
+!services/*/pyproject.toml
+!packages/contracts/src
+!packages/policy/src
+!packages/storage/src
+!services/mcp-gateway/src
+**/__pycache__
+**/*.pyc

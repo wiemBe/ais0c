@@ -7,6 +7,7 @@ Opt-in, because they need Docker and a running stack. From the repository root:
 
 The LiteLLM smoke test runs only when OPENROUTER_API_KEY is set as well. The prod LiteLLM
 configuration is loaded into the pinned LiteLLM image in a container without network access.
+With COMPOSE_PROFILES=qradar the services of that profile (T-018) must be healthy too.
 """
 
 import json
@@ -96,8 +97,12 @@ def test_every_service_is_healthy() -> None:
     }
     output = compose_ok("ps", "--all", "--format", "json")
     containers = {c["Service"]: c for c in map(json.loads, output.splitlines())}
+    # The services `up` starts: those without a profile and those of the profiles in
+    # COMPOSE_PROFILES, such as T-018's "qradar". A profile's running containers are listed
+    # even when COMPOSE_PROFILES leaves it out; they must be healthy too.
+    started = set(compose_ok("config", "--services").split())
 
-    assert set(containers) == set(services)
+    assert started <= set(containers) <= set(services)
     for name, container in containers.items():
         if name in jobs:
             assert (container["State"], container["ExitCode"]) == ("exited", 0), name

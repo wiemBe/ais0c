@@ -18,7 +18,8 @@ QUERY = "SELECT sourceip FROM events WHERE username = 'svc_backup_7731' LIMIT 10
 
 
 async def test_each_profile_has_its_own_token(harness: Harness) -> None:
-    assert len(set(harness.tokens.values())) == len(harness.tokens) == 6
+    # Six agent profiles and the Action Executor's qradar-note-write.
+    assert len(set(harness.tokens.values())) == len(harness.tokens) == 7
     async with harness.client() as client:
         for profile, token in harness.tokens.items():
             response = await client.get("/v1/tools", headers=auth(token))

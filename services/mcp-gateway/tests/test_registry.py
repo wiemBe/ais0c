@@ -1,4 +1,5 @@
-"""The registry: config/connectors/qradar.yaml and config/policies/qradar.yaml (criteria 1, 5).
+"""The registry: config/connectors/qradar.yaml and config/policies/qradar.yaml (T-011 criteria 1
+and 5, T-018 criterion 3).
 
 The real files must load; a mistake in them must stop the gateway rather than weaken a check.
 """
@@ -22,21 +23,40 @@ AGENT_PROFILES = {
     "qradar-inventory-read",
     "qradar-tuning-read",
 }
+NOTE_PROFILE = "qradar-note-write"
 
 
-def test_the_real_files_define_the_agent_profiles(registry: Registry) -> None:
-    assert set(registry.profiles) == AGENT_PROFILES
+def test_the_real_files_define_the_agent_profiles_and_the_note_profile(registry: Registry) -> None:
+    assert set(registry.profiles) == AGENT_PROFILES | {NOTE_PROFILE}
     for profile in registry.profiles.values():
-        assert profile.instance == "qradar-mcp-read"
         for tool in profile.tools.values():
             assert tool.entry.description.strip()
+    for name in AGENT_PROFILES:
+        profile = registry.profiles[name]
+        assert (profile.instance, profile.caller) == ("qradar-mcp-read", None)
+        assert {tool.risk for tool in profile.tools.values()} == {"read"}
+    note = registry.profiles[NOTE_PROFILE]
+    assert (note.instance, note.caller) == ("qradar-mcp-note", "action-executor")
 
 
 def test_tool_lists_are_what_the_agents_package_expects(registry: Registry) -> None:
-    for profile in registry.profiles.values():
+    for name in AGENT_PROFILES:
+        profile = registry.profiles[name]
         parsed = ToolsetProfile.model_validate(profile.tool_list())
         assert parsed.name == profile.name
         assert [tool.id for tool in parsed.tools] == list(profile.tools)
+
+
+def test_an_agent_cannot_load_the_note_profile(registry: Registry) -> None:
+    # The list says add_offense_note is a write tool, which an agent's toolset refuses.
+    listed = registry.profiles[NOTE_PROFILE].tool_list()
+
+    assert [(tool["id"], tool["risk"]) for tool in listed["tools"]] == [  # type: ignore[index]
+        ("add_offense_note", "write"),
+        ("get_offense_notes", "read"),
+    ]
+    with pytest.raises(ValueError, match="risk"):
+        ToolsetProfile.model_validate(listed)
 
 
 def test_ariel_tools_carry_their_controls(registry: Registry) -> None:
@@ -149,13 +169,79 @@ def _unknown_field(manifest: dict[str, Any], policy: dict[str, Any]) -> None:
     manifest["profiles"]["qradar-triage-read"]["allow_everything"] = True
 
 
+# --- the note profile (T-018) --------------------------------------------------------------
+
+
+def _executor_tool_in_an_agent_profile(manifest: dict[str, Any], policy: dict[str, Any]) -> None:
+    manifest["profiles"]["qradar-triage-read"]["tools"].append(
+        {"id": "add_offense_note", "risk": "write", "caller": "action-executor"}
+    )
+
+
+def _note_profile_tool_without_its_caller(manifest: dict[str, Any], policy: dict[str, Any]) -> None:
+    tool_entry(manifest, NOTE_PROFILE, "get_offense_notes").pop("caller")
+
+
+def _agent_profile_on_the_note_server(manifest: dict[str, Any], policy: dict[str, Any]) -> None:
+    # Only a read tool, but the note instance's QRadar token can write.
+    manifest["profiles"]["qradar-inventory-read"] = {
+        "server_profile": "qradar-note",
+        "tools": [{"id": "get_offense_notes", "risk": "read"}],
+    }
+
+
+def _unknown_caller(manifest: dict[str, Any], policy: dict[str, Any]) -> None:
+    for tool in manifest["profiles"][NOTE_PROFILE]["tools"]:
+        tool["caller"] = "triage"
+
+
+def _note_profile_on_the_read_server(manifest: dict[str, Any], policy: dict[str, Any]) -> None:
+    manifest["profiles"][NOTE_PROFILE]["server_profile"] = "qradar-read"
+
+
+def _note_text_without_a_text_rule(manifest: dict[str, Any], policy: dict[str, Any]) -> None:
+    policy["profiles"][NOTE_PROFILE].pop("text_arguments")
+
+
+def _note_tool_with_more_free_text(manifest: dict[str, Any], policy: dict[str, Any]) -> None:
+    properties = manifest["tools"]["add_offense_note"]["input_schema"]["properties"]
+    properties["fields"] = {"type": "string", "maxLength": 1000}
+
+
+def _text_rule_no_tool_applies_to(manifest: dict[str, Any], policy: dict[str, Any]) -> None:
+    policy["profiles"][NOTE_PROFILE]["text_arguments"]["comment"] = {"max_length": 100}
+
+
+def _text_rule_above_the_schema(manifest: dict[str, Any], policy: dict[str, Any]) -> None:
+    policy["profiles"][NOTE_PROFILE]["text_arguments"]["note_text"]["max_length"] = 20000
+
+
+def _text_rule_of_no_length(manifest: dict[str, Any], policy: dict[str, Any]) -> None:
+    policy["profiles"][NOTE_PROFILE]["text_arguments"]["note_text"]["max_length"] = 0
+
+
+def _two_server_profiles_on_one_instance(manifest: dict[str, Any], policy: dict[str, Any]) -> None:
+    manifest["server_profiles"]["qradar-note"]["instance"] = "qradar-mcp-read"
+
+
 @pytest.mark.parametrize(
     ("change", "message"),
     [
         (_create_without_guard, "needs guard: aql"),
         (_results_without_ownership, "needs only_own_searches"),
         (_guard_without_aql_rules, "needs guard: aql and aql rules"),
-        (_write_tool_in_an_agent_profile, "risk"),
+        (_write_tool_in_an_agent_profile, "a risk: write tool needs a caller"),
+        (_executor_tool_in_an_agent_profile, "every tool of a profile names the same caller"),
+        (_note_profile_tool_without_its_caller, "every tool of a profile names the same caller"),
+        (_agent_profile_on_the_note_server, "agent profile: it may not use qradar-note"),
+        (_unknown_caller, "Input should be 'action-executor'"),
+        (_note_profile_on_the_read_server, "add_offense_note is not a write tool of qradar-read"),
+        (_note_text_without_a_text_rule, "writes the free text note_text: needs a text rule"),
+        (_note_tool_with_more_free_text, "writes the free text fields: needs a text rule"),
+        (_text_rule_no_tool_applies_to, "text rule for comment, which no tool"),
+        (_text_rule_above_the_schema, r"allows more than its schema's maxLength \(10000\)"),
+        (_text_rule_of_no_length, "greater than or equal to 1"),
+        (_two_server_profiles_on_one_instance, "every server profile runs on its own instance"),
         (_note_tool_claimed_as_read, "is not a read tool of qradar-read"),
         (_tool_the_server_does_not_have, "is not a read tool of qradar-read"),
         (_tool_without_registry_entry, "has no registry entry"),

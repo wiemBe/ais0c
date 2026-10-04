@@ -152,6 +152,16 @@ def default_response(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         }
     if name == "list_offenses":
         return {"offenses": [{"id": 1001}, {"id": 1002}], "count": 2, "total_count": 2}
+    if name == "add_offense_note":
+        return {
+            "id": 9001,
+            "note_text": arguments["note_text"],
+            "create_time": 1759525200000,
+            "username": "API_token: ais0c-note",
+        }
+    if name == "get_offense_notes":
+        note = {"id": 9001, "note_text": "Synthetic analyst note.", "create_time": 1759525200000}
+        return {"offense_id": arguments["offense_id"], "total_notes": 1, "notes": [note]}
     if name.startswith("list_"):
         return {"items": [{"id": 1, "name": "synthetic"}, {"id": 2, "name": "synthetic"}]}
     return {"id": 1, "name": "synthetic"}
