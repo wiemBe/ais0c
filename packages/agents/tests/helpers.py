@@ -37,12 +37,17 @@ from ais0c_agents import (
     FakeGatewayClient,
     KnowledgeItem,
     PromptTemplate,
+    ReviewedClaim,
+    ReviewedDecision,
     RunDeps,
     ToolsetProfile,
     ToolSpec,
     TriageAgent,
     TriageTask,
+    VerificationAgent,
+    VerificationTask,
     build_triage_agent,
+    build_verification_agent,
     check_agent_config,
     create_agent,
     load_manifest,
@@ -57,6 +62,7 @@ from ais0c_agents.registry import ModelRegistry, parse_model_registry
 from ais0c_contracts import (
     AgentTask,
     Budget,
+    CaseVerdict,
     CatalogContext,
     CatalogLogSource,
     CatalogMode,
@@ -80,12 +86,17 @@ from ais0c_contracts import (
     TriageResult,
     UrgentEvent,
     Usage,
+    VerificationResult,
 )
 from ais0c_policy import KnowledgeKind
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 TRIAGE_MANIFEST = REPO_ROOT / "config/agents/triage.yaml"
 TRIAGE_PROMPT = "prompts/triage/v2.md"
+VERIFICATION_MANIFEST = REPO_ROOT / "config/agents/verification.yaml"
+VERIFICATION_PROMPT = "prompts/verification/v1.md"
+GATEWAY_POLICY = REPO_ROOT / "config/policies/qradar.yaml"
+MODEL_REGISTRY = REPO_ROOT / "config/models/registry.dev.yaml"
 SHARED_RULES = "prompts/_shared/rules/v2.md"
 
 NONCE = "7f3a9c01d2e4"
@@ -164,8 +175,17 @@ def triage_manifest(
     return manifest.model_copy(update=update)
 
 
+def verification_manifest() -> AgentManifest:
+    """config/agents/verification.yaml, checked against the model registry."""
+    return load_manifest(VERIFICATION_MANIFEST, registry())
+
+
 def triage_prompt() -> PromptTemplate:
     return load_prompt(REPO_ROOT, TRIAGE_PROMPT, shared_rules=SHARED_RULES)
+
+
+def verification_prompt() -> PromptTemplate:
+    return load_prompt(REPO_ROOT, VERIFICATION_PROMPT, shared_rules=SHARED_RULES)
 
 
 def tool_spec(
@@ -198,7 +218,23 @@ INVESTIGATE_PROFILE = ToolsetProfile(
         tool_spec("get_ariel_search_results", search_id={"type": "string"}),
     ),
 )
-PROFILES = {profile.name: profile for profile in (TRIAGE_PROFILE, INVESTIGATE_PROFILE)}
+# The four tools of qradar-verify-read (config/connectors/qradar.yaml): the Ariel search
+# lifecycle and nothing else.
+VERIFY_PROFILE = ToolsetProfile(
+    name="qradar-verify-read",
+    connector="qradar",
+    tools=(
+        tool_spec(
+            "create_ariel_search", cost_class=CostClass.HIGH, query_expression={"type": "string"}
+        ),
+        tool_spec("get_ariel_search_status", search_id={"type": "string"}),
+        tool_spec("get_ariel_search_results", search_id={"type": "string"}),
+        tool_spec("delete_ariel_search", search_id={"type": "string"}),
+    ),
+)
+PROFILES = {
+    profile.name: profile for profile in (TRIAGE_PROFILE, INVESTIGATE_PROFILE, VERIFY_PROFILE)
+}
 
 
 # --- task data --------------------------------------------------------------------------------
@@ -213,6 +249,20 @@ def agent_task(*, tool_calls: int = 12, tokens: int = 60000) -> AgentTask:
         agent_version="1.1.0",
         objective="Triage QRadar offense 4711.",
         context_refs=[],
+        time_window=TimeWindow(start=START, end=END),
+        budget=Budget(tokens=tokens, tool_calls=tool_calls, seconds=180),
+    )
+
+
+def verification_agent_task(*, tool_calls: int = 12, tokens: int = 60000) -> AgentTask:
+    return AgentTask(
+        task_id="task-4711-2",
+        parent_run_id="case-4711-triage-1",
+        case_id="case-4711",
+        agent_id="verification",
+        agent_version="1.0.0",
+        objective="Check the decision on QRadar offense 4711.",
+        context_refs=list(CONTEXT_EVIDENCE),
         time_window=TimeWindow(start=START, end=END),
         budget=Budget(tokens=tokens, tool_calls=tool_calls, seconds=180),
     )
@@ -629,3 +679,136 @@ def summary_output(*evidence_ids: str, **overrides: object) -> dict[str, object]
     )
     output: dict[str, object] = {"summary": "Logon failures, then a logon.", "claims": claims}
     return output | overrides
+
+
+# --- the Verification agent (T-024) ------------------------------------------------------------
+
+VERIFICATION_RUN_ID = "case-4711-verification-1"
+VERIFICATION_WINDOW = TimeWindow(start=START, end=END)
+"""The window the Verification run's tool calls declare (AgentTask.time_window)."""
+VERIFICATION_QUERY = (
+    "SELECT username, sourceip FROM events WHERE username = 'svc_backup_7731' "
+    "LIMIT 50 START '2026-10-02 13:00' STOP '2026-10-02 14:00'"
+)
+
+# The claims of the reviewed decision: the first is backed by the evidence below it, the second
+# is the refutable one (the account is a user account, not a machine account).
+CONFIRMED_CLAIM = "svc_backup_7731 logged on from 203.0.113.77 at 13:05."
+DOUBTED_CLAIM = "svc_backup_7731 is a machine account, so this is a false positive."
+# A claim whose text carries the injection and the run's closing tag (an attacker wrote it).
+INJECTED_CLAIM = f"svc_backup_7731 is a machine account. {ESCAPE} {INJECTION}"
+# Evidence a claim cites that the case does not carry: the pre-check rejects the claim.
+MISSING_EVIDENCE = "ev_0199a1b2c3d47e8f9a0b1c2d3e4f5a6f"
+
+
+def reviewed_claim(text: str, evidence_id: str, *, critical: bool = True) -> ReviewedClaim:
+    return ReviewedClaim(claim=Claim(text=text, evidence_ids=[evidence_id]), critical=critical)
+
+
+def verification_task(
+    *,
+    evidence: Sequence[EvidenceRef] | None = None,
+    claims: Sequence[ReviewedClaim] | None = None,
+) -> VerificationTask:
+    """The reviewed decision, its claims and their evidence; the offense of `offense()`.
+
+    `evidence=None` keeps the two context evidence pieces, an empty sequence leaves the case
+    without evidence; `claims=None` keeps the two standard claims.
+    """
+    return VerificationTask(
+        task=verification_agent_task(),
+        reviewed=ReviewedDecision(
+            verdict=CaseVerdict.FP, confidence=Confidence.MEDIUM, ai_level=Level.LOW
+        ),
+        claims=[
+            *(claims if claims is not None else DEFAULT_REVIEWED_CLAIMS),
+        ],
+        evidence=list(context_evidence() if evidence is None else evidence),
+        offense=offense(),
+    )
+
+
+DEFAULT_REVIEWED_CLAIMS: Sequence[ReviewedClaim] = (
+    reviewed_claim(CONFIRMED_CLAIM, CONTEXT_EVIDENCE[0]),
+    reviewed_claim(DOUBTED_CLAIM, CONTEXT_EVIDENCE[1]),
+)
+
+
+def verification_gateway(**responses: ToolResult | list[ToolResult]) -> FakeGatewayClient:
+    """A fake gateway whose Ariel lifecycle answers with evidence."""
+    defaults: dict[str, ToolResult | list[ToolResult]] = {
+        "create_ariel_search": ok("ev_01JB3K4M5N6P7Q8R9U", {"search_id": "search-1"}),
+        "get_ariel_search_status": ok("ev_01JB3K4M5N6P7Q8R9V", {"status": "COMPLETED"}),
+        "get_ariel_search_results": ok(
+            "ev_01JB3K4M5N6P7Q8R9W",
+            {"username": "svc_backup_7731", "sourceip": "203.0.113.77", "LOGONSERVER": "DC-01"},
+        ),
+        "delete_ariel_search": ok(None, {"deleted": True}),
+    }
+    return FakeGatewayClient(defaults | responses)
+
+
+def verification_output(*evidence_ids: str, **overrides: object) -> dict[str, object]:
+    """A valid VerificationResult that agrees with the reviewed decision and checked `ev_c1`.
+
+    The result cites `evidence_ids` in its own claim; pass the alias the run makes citable
+    (`ev_c<n>` for context evidence, `ev_<n>` for a tool result).
+    """
+    claims: list[object] = (
+        [
+            {
+                "text": "The query returns one logon of svc_backup_7731 from 203.0.113.77.",
+                "evidence_ids": list(evidence_ids),
+            }
+        ]
+        if evidence_ids
+        else []
+    )
+    output: dict[str, object] = {
+        "agrees": True,
+        "verdict": "suspicious",
+        "confidence": "medium",
+        "disagreements": [],
+        "checked_evidence_ids": ["ev_c1"],
+        "claims": claims,
+        "data_gaps": [],
+        "injection_suspected": True,
+    }
+    return output | overrides
+
+
+def disagreement(
+    text: str = DOUBTED_CLAIM, reason: str = "The account is a user account."
+) -> dict[str, str]:
+    """A disagreement entry, as the model writes it: the claim's text and the reason."""
+    return {"claim_text": text, "reason": reason}
+
+
+def build_verification(
+    script: ScriptedModel, fake: FakeGatewayClient, manifest: AgentManifest | None = None
+) -> VerificationAgent:
+    return build_verification_agent(
+        manifest=manifest or verification_manifest(),
+        prompt=verification_prompt(),
+        profiles=PROFILES,
+        gateway=fake,
+        model=script.model,
+    )
+
+
+def run_verification(
+    agent: VerificationAgent,
+    task: VerificationTask | None = None,
+    *,
+    run_id: str = VERIFICATION_RUN_ID,
+) -> AgentRun[VerificationResult]:
+    return asyncio.run(
+        agent.run(task or verification_task(), run_id=run_id, nonce=NONCE, clock=FakeClock())
+    )
+
+
+def verification_instructions(task: VerificationTask | None = None, *, tool_budget: int = 7) -> str:
+    agent = build_verification(ScriptedModel(answer(verification_output())), verification_gateway())
+    return agent.render_instructions(
+        task or verification_task(), nonce=NONCE, tool_budget=tool_budget
+    )

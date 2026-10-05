@@ -51,6 +51,7 @@ from ais0c_contracts import (
     CostClass,
     EvidenceId,
     RunId,
+    ShortText,
     TimeWindow,
     ToolIntent,
     ToolResult,
@@ -146,6 +147,10 @@ class RunDeps(BaseModel):
     """The gateway's evidence IDs of the evidence from earlier agents that the prompt shows
     (evidence.render_context_evidence), in its order: the model cites the n-th as `ev_c<n>`
     (decision T-38)."""
+    reviewed_claim_texts: tuple[ShortText, ...] = ()
+    """The texts of the claims the prompt shows (verification.py), in their order: an output
+    validator checks that every disagreement names one of them exactly, so the workflow can
+    tell which claim the agent contested. The default keeps runs that never set it valid."""
 
 
 class GatewayCallRecord(BaseModel):
