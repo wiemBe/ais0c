@@ -12,11 +12,11 @@
 # config/policies/qradar.yaml.
 id: qradar
 server: qradar-mcp-fork
-# Fork commit with the T-006 changes; the input schemas under `tools` are its snapshots.
-# Replace with the fork's merge commit or image tag once the fork PR is merged. The dev stack
-# runs the image qradar-mcp-fork:<server_version> (deploy/compose/docker-compose.dev.yaml);
+# Fork commit with the T-006 and T-040 changes; the input schemas under `tools` are its
+# snapshots. Replace with the fork's merge commit or image tag once the fork PR is merged. The dev
+# stack runs the image qradar-mcp-fork:<server_version> (deploy/compose/docker-compose.dev.yaml);
 # change both together.
-server_version: 238ab6b9d0d49ba1d137fa70d1a86d05bf00e013
+server_version: 7dcf3ce72062978e74975c7bca4f77e21d383a68
 upstream:
   repository: https://github.com/IBM/qradar-mcp
   commit: f51c0070f0b480c401fd527b0bf5b8e1bf360169
@@ -266,7 +266,6 @@ tools:
       required: [name]
       properties:
         fields: {type: string, maxLength: 1000, description: Optional comma-separated list of fields to return}
-        filter: {type: string, maxLength: 1000, description: Optional AQL filter to restrict map entries}
         limit: {type: integer, minimum: 1, maximum: 10000, default: 50, description: 'Maximum number of entries to return (default: 50)'}
         name: {type: string, pattern: '^(?!\.{1,2}$)[^/\\?#%]{1,255}$', description: The name of the reference map to retrieve}
         namespace: {type: string, enum: [SHARED, TENANT], description: 'Optional namespace: SHARED or TENANT (default: SHARED)'}
@@ -296,7 +295,6 @@ tools:
       required: [name]
       properties:
         fields: {type: string, maxLength: 1000, description: Optional comma-separated list of fields to return}
-        filter: {type: string, maxLength: 1000, description: Optional AQL filter to restrict table entries}
         limit: {type: integer, minimum: 1, maximum: 10000, default: 50, description: 'Maximum number of entries to return (default: 50)'}
         name: {type: string, pattern: '^(?!\.{1,2}$)[^/\\?#%]{1,255}$', description: The name of the reference table to retrieve}
         namespace: {type: string, enum: [SHARED, TENANT], description: 'Optional namespace: SHARED or TENANT (default: SHARED)'}

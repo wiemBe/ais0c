@@ -1,12 +1,13 @@
-"""The Action Executor's profile qradar-note-write (T-018 criteria 3, 4 and 5).
+"""The Action Executor's profile qradar-note-write (T-018 criteria 3, 4 and 5; T-040 criterion 4).
 
 3. The profile is in config/connectors/qradar.yaml and config/policies/qradar.yaml with the
    fork's two note tools, and its calls go to the note instance, qradar-mcp-note.
 4. Only the executor's token reaches the note tools. With an agent profile's token a note call
    is denied whatever the intent claims, and the note token serves only runs of the pseudo agent
    action-executor.
-5. On top of the schema, the gateway checks the note text: at most 2000 characters, and no
-   control or invisible character except the line feed.
+5. On top of the schema, the gateway checks the note text: at most 2000 UTF-16 code units, as
+   QRadar counts them (T-040: an emoji counts as two), and no control or invisible character
+   except the line feed.
 
 A denied call is recorded like any other, and the MCP server never sees it. Special characters
 are written as chr() calls, so this file holds none of them.
@@ -33,7 +34,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from ais0c_agents import ToolsetProfile
 from ais0c_contracts import ToolResult, ToolStatus
 from ais0c_mcp_gateway.registry import Registry
-from ais0c_mcp_gateway.text_rules import TextRule, text_problem
+from ais0c_mcp_gateway.text_rules import TextRule, text_problem, utf16_length
 from ais0c_mcp_gateway.upstream import UpstreamOutcome
 from ais0c_storage import PolicyDecision
 
@@ -53,6 +54,9 @@ AGENT_PROFILES = [
     "qradar-tuning-read",
 ]
 MAX_NOTE_LENGTH = 2000
+TOO_LONG = "invalid_text: note_text is longer than 2000 UTF-16 code units"
+# A character outside the Basic Multilingual Plane: two UTF-16 code units (U+1F6A8, an emoji).
+EMOJI = chr(0x1F6A8)
 # The first lines of a note as the executor's template writes them (architecture §9).
 NOTE = "\n".join(
     [
@@ -276,8 +280,77 @@ async def test_a_longer_note_is_denied(harness: Harness) -> None:
         harness, note_intent(harness, arguments={"offense_id": OFFENSE_ID, "note_text": text})
     )
 
-    await assert_denied(
-        harness, run, result, "invalid_text: note_text is longer than 2000 characters"
+    await assert_denied(harness, run, result, TOO_LONG)
+
+
+# T-040 criterion 4: the limit is counted in UTF-16 code units. On the lab QRadar a note of 2000
+# characters with one emoji (2001 units) got 422 (T-019).
+
+
+async def write_note(harness: Harness, text: str) -> tuple[str, ToolResult]:
+    run = await start_note_run(harness)
+    result = await post(
+        harness, note_intent(harness, arguments={"offense_id": OFFENSE_ID, "note_text": text})
+    )
+    return run, result
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        pytest.param("ğ" * MAX_NOTE_LENGTH, id="2000-bmp-characters"),
+        pytest.param(EMOJI * (MAX_NOTE_LENGTH // 2), id="1000-emoji-2000-units"),
+    ],
+)
+async def test_a_note_of_2000_utf16_units_is_written(harness: Harness, text: str) -> None:
+    _, result = await write_note(harness, text)
+
+    assert utf16_length(text) == MAX_NOTE_LENGTH
+    assert result.status is ToolStatus.OK
+    assert harness.fake.tool_calls("add_offense_note") == [
+        {"offense_id": OFFENSE_ID, "note_text": text}
+    ]
+
+
+async def test_2000_characters_with_an_emoji_are_denied(harness: Harness) -> None:
+    # 2000 code points, so the schema's maxLength and a count in characters would pass it.
+    text = "ğ" * (MAX_NOTE_LENGTH - 1) + EMOJI
+
+    run, result = await write_note(harness, text)
+
+    assert (len(text), utf16_length(text)) == (MAX_NOTE_LENGTH, MAX_NOTE_LENGTH + 1)
+    await assert_denied(harness, run, result, TOO_LONG)
+    # The reason gives the limit and its unit, never the text.
+    assert "ğ" not in (result.deny_reason or "")
+    assert EMOJI not in (result.deny_reason or "")
+
+
+@pytest.mark.parametrize(
+    ("text", "units"),
+    [
+        ("", 0),
+        ("note", 4),
+        ("Şüpheli → 203.0.113.7", 21),
+        (EMOJI, 2),
+        ("a" + EMOJI + "b", 4),
+        (chr(0xE0041), 2),  # a Unicode tag: outside the BMP, refused as invisible besides
+        (chr(0xD800), 1),  # a lone surrogate is one code unit
+    ],
+)
+def test_utf16_length_counts_code_units(text: str, units: int) -> None:
+    assert utf16_length(text) == units
+
+
+def test_the_length_limit_is_checked_in_utf16_units() -> None:
+    rule = TextRule(max_length=4, multiline=True)
+
+    assert text_problem("note_text", "ab" + EMOJI, rule) is None
+    assert text_problem("note_text", "abc" + EMOJI, rule) == (
+        "note_text is longer than 4 UTF-16 code units"
+    )
+    assert text_problem("note_text", EMOJI * 2, rule) is None
+    assert text_problem("note_text", EMOJI * 3, rule) == (
+        "note_text is longer than 4 UTF-16 code units"
     )
 
 

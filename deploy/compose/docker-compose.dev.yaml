@@ -27,7 +27,7 @@ name: ais0c-dev
 # is never pulled (README, "Fork imajı").
 x-qradar-mcp: &qradar-mcp
   profiles: [qradar]
-  image: qradar-mcp-fork:238ab6b9d0d49ba1d137fa70d1a86d05bf00e013
+  image: qradar-mcp-fork:7dcf3ce72062978e74975c7bca4f77e21d383a68
   pull_policy: never
   read_only: true
   cap_drop: [ALL]

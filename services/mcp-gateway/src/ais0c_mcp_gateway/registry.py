@@ -515,6 +515,8 @@ def _check_text_rules(
                 f"{name}: text rule for {argument}, which no tool of the profile takes as a string"
             )
         for spec in specs:
+            # maxLength counts code points and the rule UTF-16 code units. A text never has fewer
+            # units than code points, so a rule at or below maxLength is the tighter limit.
             limit = spec.get("maxLength")
             if isinstance(limit, int) and rule.max_length > limit:
                 raise RegistryError(
