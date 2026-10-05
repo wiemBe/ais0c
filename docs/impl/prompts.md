@@ -37,7 +37,20 @@ Her ajan prompt'u şu bölümlerden oluşur:
 1. **Role:** Ajan kim, hangi vakada çalışıyor
 2. **Objective:** Bu çalışmada ne üretmesi gerekiyor
 3. **Shared rules:** Manifest'in `shared_rules` alanının seçtiği `_shared/rules/v<N>.md` içeriği, olduğu gibi
-4. **Skill:** Workflow'un doğruladığı skill'in `instructions.md` içeriği, ardından `required_telemetry` ve `required_evidence` listeleri (T-36). Skill seçilmediyse bölümde yalnızca şu cümle bulunur: "No skill was selected for this case: investigate with the general method." (T-44). Skill içeriği onaylı ve taranmış olduğu için `untrusted_*` ile sarılmaz (architecture §7).
+4. **Skill:** Workflow'un doğruladığı skill'in `instructions.md` içeriği, ardından `required_telemetry` ve `required_evidence` listeleri (T-36). Skill seçilmediyse bölümde yalnızca şu cümle bulunur: "No skill was selected for this case: investigate with the general method." (T-44). Skill içeriği onaylı ve taranmış olduğu için `untrusted_*` ile sarılmaz (architecture §7). Bölümü `ais0c_agents.render_skill` üretir (T-043); skill'li metnin biçimi şudur (T-47):
+
+   ```text
+   <instructions.md, sondaki boş satırlar kırpılmış>
+
+   ## Required telemetry
+
+   - <log_source_type> (required|optional):
+     - <event>
+
+   ## Required evidence
+
+   - <id>: <description>
+   ```
 5. **Tools:** Hangi araç ne zaman kullanılır, bütçe ne kadar
 6. **Output:** Çıktı şemasının adı. Çıktıyı Pydantic AI structured output ile zorlar; prompt'ta JSON elle tarif edilmez.
 7. **Examples:** İsteğe bağlı; yalnızca lab verisinden
