@@ -8,10 +8,14 @@
 | `AIS0C_SLA_LOW_MINUTES` | 60 | Agent SLA for medium, low and unrated offenses |
 | `AIS0C_REEVALUATION_MINUTES` | 30 | An update that only brings more events is evaluated again once this long has passed since the last evaluation (D-31) |
 | `AIS0C_TRIAGE_RETRY_MINUTES` | 5 | Wait before a Triage run that the model's outage ended runs once more (D-33) |
+| `AIS0C_PLAN_TOKENS` | 250000 | Plan budget: tokens of all the steps of one evaluation's plan together (T-41) |
+| `AIS0C_PLAN_TOOL_CALLS` | 40 | Plan budget: tool calls of all the steps together |
+| `AIS0C_PLAN_SECONDS` | 480 | Plan budget: wall-clock seconds of all the steps together |
 
 The group limit and the SLA defaults are the values of architecture §9, the re-evaluation
 interval the one of D-31 and the retry wait the one of task T-014. §9 gives no number for the
-concurrent case limit; 10 is this package's choice.
+concurrent case limit; 10 is this package's choice. The plan budget's defaults are those of
+task T-044; T-030 measures them.
 """
 
 import os
@@ -21,7 +25,7 @@ from datetime import timedelta
 from typing import Final, Self
 
 from ais0c_activities.levels import level_rank
-from ais0c_contracts import Level
+from ais0c_contracts import Budget, Level
 
 MAX_CONCURRENT_CASES_ENV: Final = "AIS0C_MAX_CONCURRENT_CASES"
 GROUP_FULL_ANALYSES_PER_HOUR_ENV: Final = "AIS0C_GROUP_FULL_ANALYSES_PER_HOUR"
@@ -29,6 +33,9 @@ SLA_HIGH_MINUTES_ENV: Final = "AIS0C_SLA_HIGH_MINUTES"
 SLA_LOW_MINUTES_ENV: Final = "AIS0C_SLA_LOW_MINUTES"
 REEVALUATION_MINUTES_ENV: Final = "AIS0C_REEVALUATION_MINUTES"
 TRIAGE_RETRY_MINUTES_ENV: Final = "AIS0C_TRIAGE_RETRY_MINUTES"
+PLAN_TOKENS_ENV: Final = "AIS0C_PLAN_TOKENS"
+PLAN_TOOL_CALLS_ENV: Final = "AIS0C_PLAN_TOOL_CALLS"
+PLAN_SECONDS_ENV: Final = "AIS0C_PLAN_SECONDS"
 
 
 @dataclass(frozen=True)
@@ -39,6 +46,9 @@ class CaseSettings:
     sla_low: timedelta = timedelta(minutes=60)
     reevaluation_interval: timedelta = timedelta(minutes=30)
     triage_retry_delay: timedelta = timedelta(minutes=5)
+    plan_tokens: int = 250000
+    plan_tool_calls: int = 40
+    plan_seconds: int = 480
 
     def __post_init__(self) -> None:
         if self.max_concurrent_cases < 1:
@@ -51,6 +61,15 @@ class CaseSettings:
             raise ValueError(
                 "the re-evaluation interval and the triage retry delay must be positive"
             )
+        if min(self.plan_tokens, self.plan_tool_calls, self.plan_seconds) < 1:
+            raise ValueError("the plan budget must be positive")
+
+    @property
+    def plan_budget(self) -> Budget:
+        """What the steps of one evaluation's plan may use together (decision T-41)."""
+        return Budget(
+            tokens=self.plan_tokens, tool_calls=self.plan_tool_calls, seconds=self.plan_seconds
+        )
 
     def sla_for(self, level: Level | None) -> timedelta:
         """Critical and high get the short SLA; medium, low and no level the long one."""
@@ -84,6 +103,9 @@ class CaseSettings:
                     env, TRIAGE_RETRY_MINUTES_ENV, _minutes(defaults.triage_retry_delay)
                 )
             ),
+            plan_tokens=_positive_int(env, PLAN_TOKENS_ENV, defaults.plan_tokens),
+            plan_tool_calls=_positive_int(env, PLAN_TOOL_CALLS_ENV, defaults.plan_tool_calls),
+            plan_seconds=_positive_int(env, PLAN_SECONDS_ENV, defaults.plan_seconds),
         )
 
 
