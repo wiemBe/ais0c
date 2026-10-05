@@ -1,4 +1,5 @@
-"""Repository functions of `notes_written` and `notifications` (criterion 6)."""
+"""Repository functions of `notes_written` and `notifications` (criterion 6), with the
+`disabled` status and `notifications.error` of contracts v0.4 (T-041 criteria 3-5)."""
 
 import pytest
 import storage_payloads as payloads
@@ -230,3 +231,138 @@ async def test_list_emails_of_a_case_a_group_or_a_hunt(session: AsyncSession) ->
     assert await list_notifications(session, hunt_id="hunt-1") == []
     with pytest.raises(ValueError, match="required"):
         await list_notifications(session)
+
+
+async def test_a_note_the_kill_switch_held_back_is_disabled_and_written_later(
+    session: AsyncSession,
+) -> None:
+    await open_case(session)
+
+    disabled = await record_note(
+        session,
+        payloads.note_content(run_marker="7f3a9c"),
+        case_id=CASE_ID,
+        status=NoteStatus.DISABLED,
+        written_at=T0,
+    )
+    assert (disabled.status, disabled.error) == (NoteStatus.DISABLED, None)
+
+    written = await update_note_status(
+        session,
+        offense_id=OFFENSE_ID,
+        run_marker="7f3a9c",
+        status=NoteStatus.WRITTEN,
+        written_at=T1,
+    )
+
+    assert (written.id, written.status, written.error, written.written_at) == (
+        disabled.id,
+        NoteStatus.WRITTEN,
+        None,
+        T1,
+    )
+
+
+async def test_an_email_the_kill_switch_held_back_is_disabled_and_sent_later(
+    session: AsyncSession,
+) -> None:
+    message = payloads.email_message(idempotency_key="case_alert:case-12345:1")
+
+    disabled = await record_notification(
+        session, message, status=NotificationStatus.DISABLED, level=Level.HIGH, case_id=CASE_ID
+    )
+    assert (disabled.status, disabled.error, disabled.sent_at) == (
+        NotificationStatus.DISABLED,
+        None,
+        None,
+    )
+    assert (disabled.recipients, disabled.subject, disabled.level) == (
+        ["soc-operators@example.com"],
+        message.subject,
+        Level.HIGH,
+    )
+
+    sent = await update_notification_status(
+        session, "case_alert:case-12345:1", status=NotificationStatus.SENT, sent_at=T1
+    )
+
+    assert (sent.id, sent.status, sent.sent_at, sent.error) == (
+        disabled.id,
+        NotificationStatus.SENT,
+        T1,
+        None,
+    )
+
+
+async def test_a_failed_or_rejected_email_records_why(session: AsyncSession) -> None:
+    failed = await record_notification(
+        session,
+        payloads.email_message(idempotency_key="case_alert:case-12345:1"),
+        status=NotificationStatus.FAILED,
+        level=Level.HIGH,
+        case_id=CASE_ID,
+        error="send: the relay answered 451 4.3.0 later",
+    )
+    rejected = await record_notification(
+        session,
+        payloads.email_message(idempotency_key="case_alert:case-12345:2"),
+        status=NotificationStatus.REJECTED,
+        level=Level.CRITICAL,
+        case_id=CASE_ID,
+        error="1 of 3 recipients are not plain addresses in the allowed domains",
+    )
+    assert (failed.error, rejected.error) == (
+        "send: the relay answered 451 4.3.0 later",
+        "1 of 3 recipients are not plain addresses in the allowed domains",
+    )
+
+    # A later attempt's outcome replaces the reason.
+    again = await update_notification_status(
+        session,
+        "case_alert:case-12345:1",
+        status=NotificationStatus.FAILED,
+        error="connect: ConnectionRefusedError",
+    )
+    assert again.error == "connect: ConnectionRefusedError"
+    sent = await update_notification_status(
+        session, "case_alert:case-12345:1", status=NotificationStatus.SENT, sent_at=T1
+    )
+    assert (sent.status, sent.error) == (NotificationStatus.SENT, None)
+    stored = await get_notification(session, "case_alert:case-12345:2")
+    assert stored is not None
+    assert stored.error == "1 of 3 recipients are not plain addresses in the allowed domains"
+
+
+@pytest.mark.parametrize("status", [NotificationStatus.SENT, NotificationStatus.DISABLED])
+async def test_only_a_failed_or_rejected_email_has_an_error(
+    session: AsyncSession, status: NotificationStatus
+) -> None:
+    sent_at = T1 if status is NotificationStatus.SENT else None
+    with pytest.raises(ValueError, match="only a failed or rejected e-mail has an error"):
+        await record_notification(
+            session,
+            payloads.email_message(idempotency_key="case_alert:case-12345:1"),
+            status=status,
+            level=Level.HIGH,
+            case_id=CASE_ID,
+            sent_at=sent_at,
+            error="the kill switch is off",
+        )
+    await record_notification(
+        session,
+        payloads.email_message(idempotency_key="case_alert:case-12345:1"),
+        status=NotificationStatus.FAILED,
+        level=Level.HIGH,
+        case_id=CASE_ID,
+        error="send: the relay answered 451 4.3.0 later",
+    )
+    with pytest.raises(ValueError, match="only a failed or rejected e-mail has an error"):
+        await update_notification_status(
+            session, "case_alert:case-12345:1", status=status, sent_at=sent_at, error="x"
+        )
+    stored = await get_notification(session, "case_alert:case-12345:1")
+    assert stored is not None
+    assert (stored.status, stored.error) == (
+        NotificationStatus.FAILED,
+        "send: the relay answered 451 4.3.0 later",
+    )

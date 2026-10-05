@@ -7,7 +7,8 @@ by a model:
   short note of an offense added to a group) or a `NoDecisionNote` ("AI değerlendirmesi
   yapılamadı").
 - `NoteWriter`: writes a note once. It skips a note QRadar already has, checks the kill switch
-  right before the write and records the outcome in `notes_written`.
+  right before the write and records the outcome in `notes_written`: `written`,
+  `skipped_duplicate`, `disabled` (the kill switch held it back) or `failed`.
 
 QRadar is reached through an `OffenseNotes`; the activity `write_offense_note`
 (`ais0c_activities.note`) gives the writer one that calls the MCP Policy Gateway with the
@@ -34,7 +35,6 @@ from ais0c_executor.note.writer import (
     EXECUTOR_ID,
     NOTE_AUDIT_ACTION,
     NOTE_OBJECT_TYPE,
-    WRITES_DISABLED_PREFIX,
     NoteWriter,
     OffenseNotes,
     OpenNotes,
@@ -47,7 +47,6 @@ __all__ = [
     "NOTE_OBJECT_TYPE",
     "NOTE_TEMPLATES",
     "NOTE_TIME_ZONE",
-    "WRITES_DISABLED_PREFIX",
     "EvaluationNote",
     "InvalidNote",
     "NoDecisionNote",

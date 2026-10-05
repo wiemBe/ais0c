@@ -4,6 +4,7 @@ from datetime import timedelta
 
 import anyio
 import pytest
+from sqlalchemy.exc import StatementError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 from storage_payloads import T0, T1
 
@@ -92,6 +93,26 @@ async def test_update_changes_only_the_given_fields(session: AsyncSession) -> No
         await update_offense_seen(session, 99999, status=OffenseStatus.DONE)
     with pytest.raises(ValueError, match="no field"):
         await update_offense_seen(session, 12345)
+
+
+async def test_an_offense_admitted_later_counts_as_first_seen_then(session: AsyncSession) -> None:
+    """T-30 (5): a skipped offense admitted for analysis counts as first seen at that time, by
+    the hourly group limit too; the intake changes it through `update_offense_seen`."""
+    await add(session, 12345, status=OffenseStatus.SKIPPED)
+    later = T1 + timedelta(hours=2)
+
+    updated = await update_offense_seen(
+        session, 12345, first_seen_at=later, status=OffenseStatus.PENDING
+    )
+
+    assert (updated.first_seen_at, updated.last_updated_at, updated.status) == (
+        later,
+        T0,
+        OffenseStatus.PENDING,
+    )
+    assert await count_offenses(session, first_seen_since=later) == 1
+    with pytest.raises(StatementError, match="naive datetime"):
+        await update_offense_seen(session, 12345, first_seen_at=later.replace(tzinfo=None))
 
 
 async def test_pending_offenses_come_by_priority_then_age(session: AsyncSession) -> None:

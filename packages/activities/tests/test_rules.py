@@ -16,7 +16,15 @@ from ais0c_activities import (
     sla_deadline,
 )
 from ais0c_activities.levels import at_least, level_rank, max_level
-from ais0c_contracts import CatalogMode, CatalogRule, Confidence, CriticalAssetHit, IocHit, Level
+from ais0c_contracts import (
+    SHORT_TEXT_MAX_LENGTH,
+    CatalogMode,
+    CatalogRule,
+    Confidence,
+    CriticalAssetHit,
+    IocHit,
+    Level,
+)
 from ais0c_storage.enums import CriticalAssetKind
 from ais0c_storage.models import CriticalAssetRow
 
@@ -120,6 +128,24 @@ def test_a_malformed_stored_asset_is_skipped() -> None:
         asset(CriticalAssetKind.IP, "198.51.100.15", "SWIFT"),
     ]
     assert [hit.label for hit in match_critical_assets(offense(1), assets)] == ["SWIFT"]
+
+
+def test_a_label_stored_before_the_limit_is_cut_and_the_hit_still_counts(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """`CriticalAssetHit.label` is `ShortText` (contracts v0.4). Storage refuses a longer label
+    now; one stored before is cut, so the hit and the floor it raises are not lost."""
+    assets = [asset(CriticalAssetKind.IP, "198.51.100.15", "Ş" * 400, Level.CRITICAL)]
+
+    hits = match_critical_assets(offense(1), assets)
+
+    assert hits == [
+        CriticalAssetHit(
+            value="198.51.100.15", label="Ş" * SHORT_TEXT_MAX_LENGTH, level=Level.CRITICAL
+        )
+    ]
+    assert "has a label longer than 300" in caplog.text
+    assert "Ş" not in caplog.text
 
 
 # --- Floor -------------------------------------------------------------------------------------

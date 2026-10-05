@@ -17,8 +17,16 @@ Summary = Annotated[str, StringConstraints(max_length=SUMMARY_MAX_LENGTH)]
 # Issued by the gateway, never by an agent.
 EvidenceId = Annotated[str, StringConstraints(pattern=r"^ev_\S+$")]
 
+# The form of every run ID the platform issues (v0.4, T-37): workflow IDs such as
+# `case-12345-triage-1` and `case-12345-triage-1-retry`, the UUIDs of the pseudo agent runs and
+# hunt IDs. A letter or digit first, then letters, digits, `.`, `_`, `:` and `-`; ASCII only.
+RUN_ID_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$"
+
 # An agent run (`agent_runs.run_id`); set by the platform, never by a model.
-RunId = Annotated[str, StringConstraints(min_length=1, max_length=RUN_ID_MAX_LENGTH)]
+RunId = Annotated[
+    str,
+    StringConstraints(min_length=1, max_length=RUN_ID_MAX_LENGTH, pattern=RUN_ID_PATTERN),
+]
 
 # An ATT&CK technique or sub-technique ID, e.g. T1003 or T1003.006 (v0.3, T-26).
 AttackTechnique = Annotated[str, StringConstraints(pattern=r"^T[0-9]{4}(\.[0-9]{3})?$")]

@@ -1,10 +1,11 @@
 """QRadar's rules and log sources, read for the Analysis Catalog (architecture §9, D-25).
 
 `read_inventory` reads three lists with the tools of the MCP Policy Gateway's
-`qradar-inventory-read` profile: the rules (`list_rules`), the log sources
-(`list_log_sources`) and the log source types (`list_log_source_types`), which name each log
-source's type. The caller hands in the call function: `ais0c_activities` makes the calls in a
-run of the pseudo agent `catalog-sync` (D-33), so this package needs no gateway client.
+`qradar-inventory-read` profile: the rules with their enabled state (`list_rules`), the log
+sources (`list_log_sources`) and the log source types (`list_log_source_types`), which name
+each log source's type. The caller hands in the call function: `ais0c_activities` makes the
+calls in a run of the pseudo agent `catalog-sync` (D-33), so this package needs no gateway
+client.
 
 Paging: the gateway caps the rows of one result (`max_rows`, 200 unless the profile says
 otherwise) and their size (`max_result_bytes`), so a long list comes in pages. Each list is
@@ -97,9 +98,9 @@ class _List:
 
 _RULES: Final = _List(
     "list_rules",
-    {"fields": "id,name"},
+    {"fields": "id,name,enabled"},
     reason="Read QRadar's rules for the Analysis Catalog sync.",
-    expected_evidence="The ID and name of every rule.",
+    expected_evidence="The ID, name and enabled state of every rule.",
 )
 _LOG_SOURCES: Final = _List(
     "list_log_sources",
@@ -124,6 +125,11 @@ class _Named(BaseModel):
     name: str
 
 
+class _Rule(_Named):
+    # Synced as `catalog_rules.qradar_enabled` (T-37).
+    enabled: bool
+
+
 class _LogSource(_Named):
     type_id: _Id
 
@@ -135,7 +141,7 @@ async def read_inventory(
     read in full; errors of the call function itself pass through."""
     if page_size < 1 or max_pages < 1:
         raise ValueError("page_size and max_pages must be at least 1")
-    rules = _parse(_Named, await _read_all(call, _RULES, page_size, max_pages), _RULES)
+    rules = _parse(_Rule, await _read_all(call, _RULES, page_size, max_pages), _RULES)
     sources = _parse(
         _LogSource, await _read_all(call, _LOG_SOURCES, page_size, max_pages), _LOG_SOURCES
     )
@@ -147,7 +153,10 @@ async def read_inventory(
     )
     type_names = {item.id: clean_name(item.name) for item in types}
     return QRadarInventory(
-        rules=tuple(SyncedRule(rule.id, clean_name(rule.name)) for rule in _by_id(rules)),
+        rules=tuple(
+            SyncedRule(rule.id, clean_name(rule.name), qradar_enabled=rule.enabled)
+            for rule in _by_id(rules)
+        ),
         log_sources=tuple(
             SyncedLogSource(source.id, clean_name(source.name), type_names[source.type_id])
             for source in _by_id(sources)

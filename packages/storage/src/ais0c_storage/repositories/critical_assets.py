@@ -4,15 +4,19 @@ least `high` (architecture §9)."""
 import ipaddress
 import uuid
 
+from pydantic import TypeAdapter
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ais0c_contracts import Level
+from ais0c_contracts import Level, ShortText
 from ais0c_storage.enums import CriticalAssetKind
 from ais0c_storage.models import CriticalAssetRow
 from ais0c_storage.repositories._common import fetch_all, insert_row
 
 CRITICAL_ASSET_LEVELS = frozenset({Level.HIGH, Level.CRITICAL})
+
+# A hit carries the label into the prompt as `CriticalAssetHit.label` (contracts v0.4).
+_LABEL: TypeAdapter[str] = TypeAdapter(ShortText)
 
 
 def _normalized(kind: CriticalAssetKind, value: str) -> str:
@@ -30,9 +34,11 @@ def _normalized(kind: CriticalAssetKind, value: str) -> str:
 async def add_critical_asset(
     session: AsyncSession, *, kind: CriticalAssetKind, value: str, label: str, level: Level
 ) -> CriticalAssetRow:
-    """`level` is `high` or `critical`."""
+    """`level` is `high` or `critical`. `label` is a short label such as "SWIFT", at most 300
+    characters; a longer one raises ValidationError."""
     if level not in CRITICAL_ASSET_LEVELS:
         raise ValueError("a critical asset is high or critical")
+    _LABEL.validate_python(label)
     values = dict(kind=kind, value=_normalized(kind, value), label=label, level=level)
     return await insert_row(session, CriticalAssetRow, values)
 

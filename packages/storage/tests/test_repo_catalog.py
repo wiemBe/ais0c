@@ -1,4 +1,5 @@
-"""Repository functions of `catalog_rules` and `catalog_log_sources` (criterion 6)."""
+"""Repository functions of `catalog_rules` and `catalog_log_sources` (criterion 6), with
+`qradar_enabled` and `missing_since` of contracts v0.4 (T-041 criterion 6)."""
 
 from datetime import timedelta
 
@@ -20,7 +21,9 @@ from ais0c_storage.repositories import (
     get_catalog_rules,
     list_catalog_log_sources,
     list_catalog_rules,
+    set_catalog_log_sources_missing,
     set_catalog_rule_draft,
+    set_catalog_rules_missing,
     sync_catalog_log_sources,
     sync_catalog_rules,
     to_catalog_log_source,
@@ -335,3 +338,162 @@ async def test_log_source_sync_edit_and_listing(session: AsyncSession) -> None:
             updated_by="admin01",
             updated_at=T1,
         )
+
+
+async def test_sync_stores_and_follows_qradar_enabled_state(session: AsyncSession) -> None:
+    await sync_catalog_rules(
+        session,
+        [SyncedRule(1, "Enabled"), SyncedRule(2, "Disabled", qradar_enabled=False)],
+        synced_by=SYNC,
+        synced_at=T0,
+    )
+    await define_rule(session, 2, CatalogMode.SKIP)
+    added = {row.rule_id: row.qradar_enabled for row in await list_catalog_rules(session)}
+    assert added == {1: True, 2: False}
+
+    later = T1 + timedelta(days=1)
+    new_ids = await sync_catalog_rules(
+        session,
+        [SyncedRule(1, "Enabled"), SyncedRule(2, "Disabled", qradar_enabled=True)],
+        synced_by=SYNC,
+        synced_at=later,
+    )
+
+    assert new_ids == []
+    enabled = await get_catalog_rule(session, 2)
+    unchanged = await get_catalog_rule(session, 1)
+    assert enabled is not None
+    assert unchanged is not None
+    assert (enabled.qradar_enabled, enabled.updated_by, enabled.updated_at) == (True, SYNC, later)
+    # The operator's fields stay; the analysis does not look at the QRadar state.
+    assert (enabled.defined, enabled.mode, enabled.context_note) == (True, CatalogMode.SKIP, NOTE)
+    assert to_catalog_rule(enabled) == CatalogRule(
+        rule_id=2, mode=CatalogMode.SKIP, min_level=Level.HIGH, context_note=NOTE
+    )
+    assert (unchanged.qradar_enabled, unchanged.updated_at) == (True, T0)
+
+
+async def test_entries_qradar_no_longer_lists_are_marked_and_unmarked(
+    session: AsyncSession,
+) -> None:
+    await sync_catalog_rules(
+        session,
+        [
+            SyncedRule(1, "Rule 1"),
+            SyncedRule(2, "Rule 2", qradar_enabled=False),
+            SyncedRule(3, "3"),
+        ],
+        synced_by=SYNC,
+        synced_at=T0,
+    )
+    await define_rule(session, 1, CatalogMode.SKIP)
+    later = T1 + timedelta(days=1)
+
+    marked = await set_catalog_rules_missing(
+        session, [2, 1, 404, 1], missing=True, synced_by=SYNC, synced_at=later
+    )
+
+    assert marked == [1, 2]
+    rule = await get_catalog_rule(session, 1)
+    listed = await get_catalog_rule(session, 3)
+    assert rule is not None
+    assert listed is not None
+    assert (rule.missing_since, rule.updated_by, rule.updated_at) == (later, SYNC, later)
+    assert (rule.defined, rule.mode, rule.min_level, rule.context_note) == (
+        True,
+        CatalogMode.SKIP,
+        Level.HIGH,
+        NOTE,
+    )
+    assert (listed.missing_since, listed.updated_at) == (None, T0)
+    # The enrichment still finds a marked rule, and its context carries no new field.
+    assert [row.rule_id for row in await get_catalog_rules(session, [1, 2, 3])] == [1, 2, 3]
+    assert to_catalog_rule(rule) == CatalogRule(
+        rule_id=1, mode=CatalogMode.SKIP, min_level=Level.HIGH, context_note=NOTE
+    )
+
+    # A later sync that still misses them keeps the first mark and changes nothing.
+    much_later = later + timedelta(days=1)
+    again = await set_catalog_rules_missing(
+        session, [1, 2], missing=True, synced_by=SYNC, synced_at=much_later
+    )
+    assert again == []
+    rule = await get_catalog_rule(session, 1)
+    assert rule is not None
+    assert (rule.missing_since, rule.updated_at) == (later, later)
+
+    # Rule 2 is listed again; rule 3 never went missing, so nothing changes for it.
+    back = await set_catalog_rules_missing(
+        session, [2, 3], missing=False, synced_by=SYNC, synced_at=much_later
+    )
+    assert back == [2]
+    returned = await get_catalog_rule(session, 2)
+    listed = await get_catalog_rule(session, 3)
+    assert returned is not None
+    assert listed is not None
+    assert (returned.missing_since, returned.updated_at, returned.qradar_enabled) == (
+        None,
+        much_later,
+        False,
+    )
+    assert listed.updated_at == T0
+
+
+async def test_log_sources_qradar_no_longer_lists_are_marked_and_unmarked(
+    session: AsyncSession,
+) -> None:
+    sources = [
+        SyncedLogSource(112, "FW-DMZ-01", "Cisco ASA"),
+        SyncedLogSource(113, "DC-01", "Microsoft Windows Security Event Log"),
+    ]
+    await sync_catalog_log_sources(session, sources, synced_by=SYNC, synced_at=T0)
+
+    marked = await set_catalog_log_sources_missing(
+        session, [113], missing=True, synced_by=SYNC, synced_at=T1
+    )
+
+    assert marked == [113]
+    source = await get_catalog_log_source(session, 113)
+    assert source is not None
+    assert (source.missing_since, source.updated_at) == (T1, T1)
+    assert [row.log_source_id for row in await get_catalog_log_sources(session, [112, 113])] == [
+        112,
+        113,
+    ]
+    assert to_catalog_log_source(source) == CatalogLogSource(
+        log_source_id=113, type_name="Microsoft Windows Security Event Log"
+    )
+    assert (
+        await set_catalog_log_sources_missing(
+            session, [113], missing=True, synced_by=SYNC, synced_at=T1 + timedelta(days=1)
+        )
+        == []
+    )
+
+    later = T1 + timedelta(days=2)
+    back = await set_catalog_log_sources_missing(
+        session, [112, 113], missing=False, synced_by=SYNC, synced_at=later
+    )
+
+    assert back == [113]
+    source = await get_catalog_log_source(session, 113)
+    assert source is not None
+    assert (source.missing_since, source.updated_at) == (None, later)
+
+
+async def test_marks_handle_large_lists(session: AsyncSession) -> None:
+    rules = [SyncedRule(rule_id, f"Rule {rule_id}") for rule_id in range(1, 2501)]
+    await sync_catalog_rules(session, rules, synced_by=SYNC, synced_at=T0)
+
+    marked = await set_catalog_rules_missing(
+        session, range(1, 2501), missing=True, synced_by=SYNC, synced_at=T1
+    )
+    back = await set_catalog_rules_missing(
+        session, range(1001, 2501), missing=False, synced_by=SYNC, synced_at=T1
+    )
+
+    assert (marked, back) == (list(range(1, 2501)), list(range(1001, 2501)))
+    assert (
+        await set_catalog_rules_missing(session, [], missing=True, synced_by=SYNC, synced_at=T1)
+        == []
+    )

@@ -63,6 +63,7 @@ async def update_offense_seen(
     status: OffenseStatus | None = None,
     case_id: str | None = None,
     group_id: str | None = None,
+    first_seen_at: datetime | None = None,
     last_updated_at: datetime | None = None,
     description: str | None = None,
     rule_ids: Sequence[int] | None = None,
@@ -71,12 +72,14 @@ async def update_offense_seen(
 ) -> OffenseSeenRow:
     """Change the given fields; a field left as None keeps its value.
 
-    Raises `NotFoundError` if the offense was never recorded.
+    `first_seen_at` changes when a skipped offense is admitted for analysis: it then counts as
+    first seen at that time (T-30). Raises `NotFoundError` if the offense was never recorded.
     """
     changes = {
         "status": status,
         "case_id": case_id,
         "group_id": group_id,
+        "first_seen_at": first_seen_at,
         "last_updated_at": last_updated_at,
         "description": description,
         "rule_ids": None if rule_ids is None else list(rule_ids),

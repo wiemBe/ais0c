@@ -181,11 +181,13 @@ class EmailResult(StrEnum):
     - `not_needed`: the level is below high, or a re-evaluation did not raise it above the
       levels already e-mailed about the case. Nothing was sent or recorded.
     - `rejected`: a recipient is outside the allowed company domains. Nothing was sent;
-      `notifications` records it as `rejected` and `audit_log` as `email.reject`.
-    - `writes_disabled`: the kill switch was off (T-23). Nothing was sent or recorded:
-      `notifications` has no status that tells it apart from a relay failure.
+      `notifications` records it as `rejected`, with the reason in `error`, and `audit_log` as
+      `email.reject`.
+    - `writes_disabled`: the kill switch was off (T-23). Nothing was sent; `notifications`
+      records it as `disabled`, which is not a failure (T-37), and a later attempt with writes
+      on sends it.
     - `failed`: the relay did not take the e-mail, or the recipient list is empty;
-      `notifications` records it as `failed`.
+      `notifications` records it as `failed`, with the reason in `error`.
     """
 
     SENT = "sent"

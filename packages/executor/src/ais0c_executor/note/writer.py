@@ -12,7 +12,10 @@ therefore:
 5. checks the kill switch again right before the write, then adds the note.
 
 Each attempt's outcome goes to `notes_written`, keyed by offense and run marker; a later
-attempt updates the row. A written note is also appended to `audit_log` as `note.write`.
+attempt updates the row. A note the kill switch held back is recorded as `disabled`, without an
+error text: it is not a failure (T-37). Only `written` and `skipped_duplicate` end the work, so
+a later attempt with writes on writes a `disabled` or `failed` note. A written note is also
+appended to `audit_log` as `note.write`.
 
 QRadar is reached through an `OffenseNotes` (the gateway's `qradar-note-write` profile,
 `ais0c_activities.note`). The writer opens it only for steps 4 and 5.
@@ -46,13 +49,12 @@ from ais0c_storage.repositories import append_audit, get_note, update_note_statu
 EXECUTOR_ID: Final = "action-executor"
 NOTE_AUDIT_ACTION: Final = "note.write"
 NOTE_OBJECT_TYPE: Final = "offense"
-WRITES_DISABLED_PREFIX: Final = "writes_disabled: "
 MAX_ERROR_LENGTH: Final = 500
 
 _STATUS: Final = {
     NoteResult.WRITTEN: NoteStatus.WRITTEN,
     NoteResult.SKIPPED_DUPLICATE: NoteStatus.SKIPPED_DUPLICATE,
-    NoteResult.WRITES_DISABLED: NoteStatus.FAILED,
+    NoteResult.WRITES_DISABLED: NoteStatus.DISABLED,
     NoteResult.FAILED: NoteStatus.FAILED,
 }
 _DONE: Final = {
@@ -153,11 +155,11 @@ class NoteWriter:
         return NoteOutcome(result=result, offense_id=note.offense_id, run_marker=note.run_marker)
 
     async def _finish(self, note: _Note, result: NoteResult, error: str | None) -> NoteOutcome:
+        """Record the attempt and return its outcome. The outcome says why a note was not
+        written; the record keeps that text only for a failure."""
         message = None if error is None else clean_text(error, MAX_ERROR_LENGTH)
-        stored = message
-        if result is NoteResult.WRITES_DISABLED:
-            stored = WRITES_DISABLED_PREFIX + (message or "the kill switch is off")
-        await self._record(note, _STATUS[result], stored)
+        status = _STATUS[result]
+        await self._record(note, status, message if status is NoteStatus.FAILED else None)
         return NoteOutcome(
             result=result, offense_id=note.offense_id, run_marker=note.run_marker, error=message
         )

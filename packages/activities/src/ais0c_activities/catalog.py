@@ -8,7 +8,8 @@ The reads are one system run of the pseudo agent `catalog-sync` in the context
 `knowledge-sync` (D-33, `ais0c_activities.gateway.system_run`): the gateway records every call
 and its evidence under that run, as it does for the intake's reads. The catalog is written
 only after every list has been read in full, in one transaction; an attempt that fails while
-reading changes nothing in the catalog. A list QRadar's data makes unreadable fails the
+reading changes nothing in the catalog, so no entry is marked missing or listed again
+(`missing_since`, T-37) on a partial read. A list QRadar's data makes unreadable fails the
 attempt for good (`InventoryUnreadable`); other failures, such as an unreachable gateway or a
 denied call, are retried by the workflow.
 
@@ -113,10 +114,13 @@ class CatalogSyncActivities:
             report = await sync_catalog(session, inventory, synced_at=self._clock())
         _log.info("catalog sync in run %s: %s", run.run_id, report.counts())
         for message, ids in (
-            ("%d catalog rules are no longer listed by QRadar: %s", report.rules_missing),
             (
-                "%d catalog log sources are no longer listed by QRadar: %s",
-                report.log_sources_missing,
+                "%d catalog rules are no longer listed by QRadar and were marked missing: %s",
+                report.rules_marked_missing,
+            ),
+            (
+                "%d catalog log sources are no longer listed by QRadar and were marked missing: %s",
+                report.log_sources_marked_missing,
             ),
             (
                 "%d log sources have a type missing from QRadar's type list and were left "

@@ -1,5 +1,6 @@
 """Writing a note once (T-019 criteria 3-5): the duplicate guard, the kill switch and the
-`notes_written` record, on a real database. QRadar is a fake `OffenseNotes` that keeps notes in
+`notes_written` record, on a real database. A note the kill switch held back is `disabled`
+(T-041 criterion 4). QRadar is a fake `OffenseNotes` that keeps notes in
 memory and, like QRadar's `note_text LIKE` filter, returns the notes that hold a text."""
 
 from collections.abc import AsyncIterator, Awaitable, Callable
@@ -18,7 +19,7 @@ from note_payloads import (
     group_note,
     no_decision_note,
 )
-from sqlalchemy import func, select
+from sqlalchemy import func, insert, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from ais0c_contracts import CaseSource
@@ -315,8 +316,8 @@ async def test_only_a_first_line_with_the_same_marker_counts(
 async def test_with_writes_never_switched_on_nothing_is_read_or_written(
     sessions: Sessions, writer: NoteWriter, qradar: FakeQRadar
 ) -> None:
-    """Shadow mode: the note is not written, QRadar is not even read, and the record says
-    why."""
+    """Shadow mode: the note is not written and QRadar is not even read. The record says
+    `disabled`, not a failure, and holds no error text; the outcome says why."""
     outcome = await write(writer, qradar, evaluation_note())
 
     assert outcome.result is NoteResult.WRITES_DISABLED
@@ -324,8 +325,7 @@ async def test_with_writes_never_switched_on_nothing_is_read_or_written(
     assert "never switched on (shadow mode)" in outcome.error
     assert qradar.opened == 0
     recorded = await row(sessions, OFFENSE_ID, MARKER)
-    assert recorded.status is NoteStatus.FAILED
-    assert recorded.error == f"writes_disabled: {outcome.error}"
+    assert (recorded.status, recorded.error) == (NoteStatus.DISABLED, None)
     assert await note_audit(sessions) == []
 
 
@@ -347,23 +347,59 @@ async def test_a_switch_off_after_the_read_stops_the_write(
     assert qradar.adds == []
     assert qradar.notes == {}
     recorded = await row(sessions, OFFENSE_ID, MARKER)
-    assert recorded.status is NoteStatus.FAILED
-    assert recorded.error == f"writes_disabled: {outcome.error}"
+    assert (recorded.status, recorded.error) == (NoteStatus.DISABLED, None)
 
 
-async def test_once_writes_are_on_the_note_is_written(
+async def test_a_disabled_note_is_written_once_writes_are_on(
     sessions: Sessions, writer: NoteWriter, qradar: FakeQRadar
 ) -> None:
+    """`disabled` does not end the work: the next attempt with writes on writes the note and
+    updates the same record."""
     request = evaluation_note()
     assert (await write(writer, qradar, request)).result is NoteResult.WRITES_DISABLED
+    disabled = await row(sessions, OFFENSE_ID, MARKER)
+    assert disabled.status is NoteStatus.DISABLED
 
     await switch(sessions, True)
     outcome = await write(writer, qradar, request)
 
     assert outcome.result is NoteResult.WRITTEN
+    assert qradar.with_marker(OFFENSE_ID, MARKER) == [render_note(request)]
+    recorded = await row(sessions, OFFENSE_ID, MARKER)
+    assert (recorded.id, recorded.status, recorded.error) == (
+        disabled.id,
+        NoteStatus.WRITTEN,
+        None,
+    )
+    assert await rows(sessions) == 1
+    assert len(await note_audit(sessions)) == 1
+
+
+async def test_a_note_recorded_the_old_way_is_written_once_writes_are_on(
+    sessions: Sessions, writer: NoteWriter, qradar: FakeQRadar
+) -> None:
+    """A note T-019 recorded as `failed` with a `writes_disabled:` error before migration 0006
+    moved it is tried again like any failure."""
+    request = evaluation_note()
+    async with sessions.begin() as session:
+        await session.execute(
+            insert(NoteWrittenRow).values(
+                case_id=request.case_id,
+                offense_id=OFFENSE_ID,
+                evaluation_no=request.evaluation_no,
+                run_marker=MARKER,
+                status=NoteStatus.FAILED,
+                error="writes_disabled: the kill switch is off",
+                written_at=T0,
+            )
+        )
+    await switch(sessions, True)
+
+    outcome = await write(writer, qradar, request)
+
+    assert outcome.result is NoteResult.WRITTEN
     recorded = await row(sessions, OFFENSE_ID, MARKER)
     assert (recorded.status, recorded.error) == (NoteStatus.WRITTEN, None)
-    assert await rows(sessions) == 1
 
 
 # --- failures ------------------------------------------------------------------------------

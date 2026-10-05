@@ -170,6 +170,7 @@
       "additionalProperties": false,
       "properties": {
         "label": {
+          "maxLength": 300,
           "title": "Label",
           "type": "string"
         },

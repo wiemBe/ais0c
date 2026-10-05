@@ -143,8 +143,8 @@ class NoteResult(StrEnum):
     """What a write came to.
 
     `writes_disabled`: the kill switch was off (T-23), so nothing was written. `notes_written`
-    has no status of its own for it and records it as `failed`, with an error that starts with
-    `writes_disabled:`.
+    records it as `disabled`, without an error text; it is not a failure (T-37), and a later
+    attempt with writes on writes the note.
     """
 
     WRITTEN = "written"

@@ -4,6 +4,7 @@ import uuid
 from datetime import timedelta
 
 import pytest
+from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ais0c_contracts import Level
@@ -80,6 +81,25 @@ async def test_invalid_critical_assets_are_refused(
 ) -> None:
     with pytest.raises(ValueError, match=error):
         await add_critical_asset(session, kind=kind, value=value, label="x", level=level)
+
+
+async def test_a_label_is_a_short_text(session: AsyncSession) -> None:
+    """The label reaches prompts as `CriticalAssetHit.label`, `ShortText` since contracts v0.4:
+    at most 300 characters, counted as characters, not bytes."""
+    asset = await add_critical_asset(
+        session, kind=CriticalAssetKind.IP, value="192.0.2.10", label="Ş" * 300, level=Level.HIGH
+    )
+    assert asset.label == "Ş" * 300
+
+    with pytest.raises(ValidationError, match="at most 300 characters"):
+        await add_critical_asset(
+            session,
+            kind=CriticalAssetKind.IP,
+            value="192.0.2.11",
+            label="Ş" * 301,
+            level=Level.HIGH,
+        )
+    assert [asset.value for asset in await list_critical_assets(session)] == ["192.0.2.10"]
 
 
 async def test_audit_entries(session: AsyncSession) -> None:

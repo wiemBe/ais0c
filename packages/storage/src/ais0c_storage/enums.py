@@ -49,18 +49,28 @@ class PolicyDecision(StrEnum):
 
 
 class NoteStatus(StrEnum):
-    """`notes_written.status`."""
+    """`notes_written.status`.
+
+    `disabled`: the kill switch was off (shadow mode, T-23), so the note was not written. It is
+    not a failure; the error alarms do not count it (T-37).
+    """
 
     WRITTEN = "written"
     SKIPPED_DUPLICATE = "skipped_duplicate"
+    DISABLED = "disabled"
     FAILED = "failed"
 
 
 class NotificationStatus(StrEnum):
-    """`notifications.status`."""
+    """`notifications.status`.
+
+    `disabled`: the kill switch was off (T-23), so the e-mail was not sent. Only `sent` counts
+    as sent; a key recorded as `disabled`, `rejected` or `failed` is tried again (T-37).
+    """
 
     SENT = "sent"
     REJECTED = "rejected"
+    DISABLED = "disabled"
     FAILED = "failed"
 
 

@@ -4,7 +4,15 @@ the catalog check of updates, T-014 criterion 3)."""
 from datetime import datetime, timedelta
 
 import pytest
-from activity_db import case, catalog_rule, critical_asset, group, seen, start_case_row
+from activity_db import (
+    case,
+    catalog_rule,
+    critical_asset,
+    gone_from_qradar,
+    group,
+    seen,
+    start_case_row,
+)
 from activity_payloads import T0, offense
 from temporalio.testing import ActivityEnvironment
 
@@ -191,6 +199,24 @@ async def test_a_skipped_offense_is_analyzed_once_one_of_its_rules_is(
     assert row.first_seen_at == later
     assert row.group_id == new_group_id(rule_set_hash([SKIP_RULE]), later)
     assert await ActivityEnvironment().run(intake.next_pending_offenses) == [6]
+
+
+async def test_the_qradar_state_of_a_rule_does_not_change_the_admission(
+    sessions: SessionFactory, intake: IntakeActivities
+) -> None:
+    """T-37: whether QRadar disables or stops listing a rule, the catalog entry's mode decides;
+    an offense of a disabled `analyze` rule is analyzed, one of a `skip` rule skipped."""
+    await catalog_rule(sessions, NOISY_RULE)
+    await catalog_rule(sessions, SKIP_RULE, mode=CatalogMode.SKIP)
+    await gone_from_qradar(sessions, rule_ids=[NOISY_RULE, SKIP_RULE])
+
+    await admit(intake, offense(30, rule_ids=[NOISY_RULE]), offense(31, rule_ids=[SKIP_RULE]))
+
+    analyzed, skipped = await seen(sessions, 30), await seen(sessions, 31)
+    assert analyzed is not None
+    assert skipped is not None
+    assert (analyzed.status, analyzed.catalog_mode) == (OffenseStatus.PENDING, CatalogMode.ANALYZE)
+    assert (skipped.status, skipped.catalog_mode) == (OffenseStatus.SKIPPED, CatalogMode.SKIP)
 
 
 async def test_a_skipped_offense_with_a_new_rule_outside_the_catalog_is_analyzed(

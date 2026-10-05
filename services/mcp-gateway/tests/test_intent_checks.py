@@ -4,17 +4,25 @@ A time window longer than the profile allows, or an intent without case_id and h
 rejected. So are a wrong schema version, arguments outside the tool's schema and a call that
 does not match its agent run. A rejected call never reaches the MCP server.
 
-The agent run comes only from the intent's `run_id` (T-013 criterion 5).
+The agent run comes only from the intent's `run_id` (T-013 criterion 5). Its form is the
+contract's `RunId` (contracts v0.4, T-041 criterion 1): an ID of another form is not a
+ToolIntent, and the gateway's own check of an intent built without validation is the same
+pattern.
 """
 
+import re
 from datetime import timedelta
 from typing import Any
 
 import pytest
 from gateway_support import AGENT_RUN, CASE_ID, OTHER_CASE_ID, Harness, auth, tool_result
+from pydantic import ValidationError
 
-from ais0c_contracts import ToolStatus
-from ais0c_storage import PolicyDecision
+from ais0c_contracts import RUN_ID_PATTERN, ToolIntent, ToolStatus
+from ais0c_mcp_gateway.pipeline import _RUN_ID as GATEWAY_RUN_ID
+from ais0c_mcp_gateway.pipeline import UnknownRunError
+from ais0c_storage import PolicyDecision, new_uuid7
+from ais0c_workflows.names import case_workflow_id, triage_workflow_id
 
 pytestmark = pytest.mark.anyio
 
@@ -231,14 +239,57 @@ async def test_an_intent_without_a_valid_run_id_is_rejected(
     assert harness.fake.calls == []
 
 
-@pytest.mark.parametrize(
-    "run_id", ["run with spaces", "../etc/passwd", "run\x00", "-run", "run-1\n", "ü" * 10]
-)
-async def test_a_run_id_the_platform_never_issues_names_no_run(
+def platform_run_ids() -> list[str]:
+    """One run ID of every form the platform issues, made by the code that makes them where
+    that code exists."""
+    case_id = case_workflow_id(1001)
+    return [
+        # Triage runs, and the retry after a model outage (D-33).
+        triage_workflow_id(case_id, 1),
+        triage_workflow_id(case_id, 1, retry=True),
+        triage_workflow_id("group-G-3f2a9c1b2d4e-20261005T101500Z", 2),
+        # The pseudo agent runs of platform code: intake, executor, catalog sync.
+        str(new_uuid7()),
+        # Hunts (repo-structure.md): `hunt-<pack>-<start>-<end>-<scope hash>`.
+        "hunt-ornek-grup-2026-01-01-2026-03-31-3f2a9c1b",
+        "hunt-ornek_grup-2026-01-01T00:00:00Z-2026-03-31T23:59:59.999Z-3f2a9c1b",
+        "case-hunt-hunt-ornek-grup-2026-01-01-2026-03-31-3f2a9c1b-1-triage-1",
+    ]
+
+
+# Forms the platform never issues; ToolIntent refuses every one.
+MALFORMED_RUN_IDS = [
+    "run with spaces",
+    "../etc/passwd",
+    "run/1",
+    "run\x00",
+    "-run",
+    ".run",
+    "run-1\n",
+    "run-1\r\nX-Ais0c-Run-Id: run-2",
+    "ü" * 10,
+    "r" * 201,
+]
+
+
+@pytest.mark.parametrize("run_id", platform_run_ids())
+async def test_every_run_id_form_the_platform_issues_is_accepted(
     harness: Harness, run_id: str
 ) -> None:
-    # Even when a run with that ID is recorded: no lookup is made for it.
-    await harness.start_run(run_id.replace("\x00", ""), profile=TRIAGE, agent_id="triage")
+    run = await harness.start_run(run_id, profile=TRIAGE, agent_id="triage")
+
+    async with harness.client() as client:
+        result = tool_result(await harness.post(client, offense_intent(harness), run_id=run))
+
+    assert result.status is ToolStatus.OK
+    assert [row.intent.run_id for row in await harness.tool_calls(run_id)] == [run_id]
+
+
+@pytest.mark.parametrize("run_id", platform_run_ids())
+async def test_a_well_formed_run_id_that_names_no_run_is_unknown(
+    harness: Harness, run_id: str
+) -> None:
+    await triage_run(harness)
 
     async with harness.client() as client:
         response = await harness.post(client, offense_intent(harness), run_id=run_id)
@@ -246,6 +297,75 @@ async def test_a_run_id_the_platform_never_issues_names_no_run(
     assert response.status_code == 422
     assert response.json()["title"] == "gateway.unknown_run"
     assert harness.fake.calls == []
+
+
+@pytest.mark.parametrize("run_id", MALFORMED_RUN_IDS)
+async def test_a_run_id_the_platform_never_issues_is_not_a_tool_intent(
+    harness: Harness, run_id: str
+) -> None:
+    # Even when a run with that ID is recorded: the intent is refused before any lookup.
+    recorded = await harness.start_run(
+        run_id.replace("\x00", ""), profile=TRIAGE, agent_id="triage"
+    )
+
+    async with harness.client() as client:
+        response = await harness.post(client, offense_intent(harness), run_id=run_id)
+
+    assert response.status_code == 422
+    assert response.json()["title"] == "gateway.invalid_intent"
+    # The detail names the field and the rule, never the value.
+    assert response.json()["detail"] in {
+        f"run_id: String should match pattern '{RUN_ID_PATTERN}'",
+        "run_id: String should have at most 200 characters",
+    }
+    assert harness.fake.calls == []
+    assert await harness.tool_calls(recorded) == []
+
+
+@pytest.mark.parametrize("run_id", MALFORMED_RUN_IDS)
+async def test_an_intent_built_without_validation_is_checked_with_the_same_pattern(
+    harness: Harness, run_id: str
+) -> None:
+    """`Gateway.call` in process, with an intent changed without validation (`model_copy`):
+    the ID is not looked up, even when a run with it is recorded."""
+    recorded = await harness.start_run(
+        run_id.replace("\x00", ""), profile=TRIAGE, agent_id="triage"
+    )
+    valid = ToolIntent.model_validate(offense_intent(harness))
+    intent = valid.model_copy(update={"run_id": run_id})
+
+    with pytest.raises(UnknownRunError):
+        await harness.gateway.call(TRIAGE, intent)
+
+    assert harness.fake.calls == []
+    assert await harness.tool_calls(recorded) == []
+
+
+@pytest.mark.parametrize("run_id", [*platform_run_ids(), *MALFORMED_RUN_IDS, "", "r" * 200])
+def test_the_gateway_and_the_contract_agree_on_every_run_id(run_id: str) -> None:
+    assert GATEWAY_RUN_ID.pattern == RUN_ID_PATTERN
+    try:
+        ToolIntent.model_validate(_any_intent() | {"run_id": run_id})
+        contract_accepts = True
+    except ValidationError:
+        contract_accepts = False
+    assert bool(GATEWAY_RUN_ID.fullmatch(run_id)) is contract_accepts
+    assert bool(re.fullmatch(RUN_ID_PATTERN, run_id)) is contract_accepts
+
+
+def _any_intent() -> dict[str, Any]:
+    return {
+        "case_id": CASE_ID,
+        "agent_id": "triage",
+        "toolset_profile": TRIAGE,
+        "tool_id": "get_offense",
+        "tool_schema_version": "1",
+        "arguments": {"offense_id": 1001},
+        "reason": "Read the offense.",
+        "expected_evidence": "The offense.",
+        "time_window": {"start": "2026-10-05T09:00:00+00:00", "end": "2026-10-05T10:00:00+00:00"},
+        "cost_class": "low",
+    }
 
 
 async def test_the_old_run_header_means_nothing(harness: Harness) -> None:

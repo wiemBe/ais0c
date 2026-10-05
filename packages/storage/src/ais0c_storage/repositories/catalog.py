@@ -4,6 +4,10 @@ Catalog notes reach prompts as trusted context, so only admins edit them and eve
 audited; the caller appends the audit entry in the same transaction (`append_audit`). The
 fields that reach a prompt are checked against the `CatalogRule` and `CatalogLogSource`
 contracts before they are stored.
+
+The QRadar sync (`KnowledgeSync`) writes only what comes from QRadar: names, a log source's
+type, a rule's enabled state (`qradar_enabled`), and `missing_since` on entries QRadar no
+longer lists. An entry is never deleted (T-37).
 """
 
 from collections.abc import Collection, Iterable
@@ -15,6 +19,7 @@ from pydantic import TypeAdapter
 from sqlalchemy import or_, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import InstrumentedAttribute
 
 from ais0c_contracts import CatalogLogSource, CatalogMode, CatalogRule, Level, Summary
 from ais0c_storage.models import CatalogLogSourceRow, CatalogRuleRow
@@ -33,6 +38,8 @@ class SyncedRule:
 
     rule_id: int
     rule_name: str
+    qradar_enabled: bool = True
+    """QRadar's `enabled`; true, the column's default, when the reader does not know it."""
 
 
 @dataclass(frozen=True)
@@ -88,9 +95,9 @@ async def sync_catalog_rules(
 ) -> list[int]:
     """Bring the catalog in line with the rules read from QRadar (`KnowledgeSync`).
 
-    A new rule is added undefined: mode `analyze`, no floor, no note. A renamed rule gets its
-    new name. Operator fields are never changed and nothing is deleted. Returns the IDs of the
-    new rules.
+    A new rule is added undefined: mode `analyze`, no floor, no note, and QRadar's enabled
+    state. A rule renamed, enabled or disabled in QRadar gets its new name and state. Operator
+    fields are never changed and nothing is deleted. Returns the IDs of the new rules.
     """
     latest = {rule.rule_id: rule for rule in rules}
     new_ids: list[int] = []
@@ -99,6 +106,7 @@ async def sync_catalog_rules(
             {
                 "rule_id": rule.rule_id,
                 "rule_name": rule.rule_name,
+                "qradar_enabled": rule.qradar_enabled,
                 "defined": False,
                 "mode": CatalogMode.ANALYZE,
                 "has_automated_action": False,
@@ -115,17 +123,48 @@ async def sync_catalog_rules(
         )
         new_ids.extend(await session.scalars(added))
         upsert = insert(CatalogRuleRow).values(rows)
-        renamed = upsert.on_conflict_do_update(
+        changed = upsert.on_conflict_do_update(
             index_elements=[CatalogRuleRow.rule_id],
             set_={
                 "rule_name": upsert.excluded.rule_name,
+                "qradar_enabled": upsert.excluded.qradar_enabled,
                 "updated_by": upsert.excluded.updated_by,
                 "updated_at": upsert.excluded.updated_at,
             },
-            where=CatalogRuleRow.rule_name.is_distinct_from(upsert.excluded.rule_name),
+            where=or_(
+                CatalogRuleRow.rule_name.is_distinct_from(upsert.excluded.rule_name),
+                CatalogRuleRow.qradar_enabled.is_distinct_from(upsert.excluded.qradar_enabled),
+            ),
         )
-        await session.execute(renamed)
+        await session.execute(changed)
     return sorted(new_ids)
+
+
+async def set_catalog_rules_missing(
+    session: AsyncSession,
+    rule_ids: Iterable[int],
+    *,
+    missing: bool,
+    synced_by: str,
+    synced_at: datetime,
+) -> list[int]:
+    """Mark rules QRadar no longer lists (`missing=True`), or clear the mark of rules it lists
+    again (`missing=False`).
+
+    A marked rule gets `missing_since = synced_at` unless it has one: the mark keeps the sync
+    that first missed the rule. The rule, its operator fields and its audit history stay, and
+    the enrichment goes on using it. Only rules whose mark changes get `updated_by` and
+    `updated_at`. Returns their IDs, sorted.
+    """
+    return await _set_missing(
+        session,
+        CatalogRuleRow,
+        CatalogRuleRow.rule_id,
+        rule_ids,
+        missing=missing,
+        synced_by=synced_by,
+        synced_at=synced_at,
+    )
 
 
 async def update_catalog_rule(
@@ -206,7 +245,11 @@ async def accept_catalog_rule_draft(
 
 
 def to_catalog_rule(row: CatalogRuleRow) -> CatalogRule:
-    """The part of a rule that goes into `CatalogContext`."""
+    """The part of a rule that goes into `CatalogContext`.
+
+    `qradar_enabled` and `missing_since` stay out: the contract has no place for them, and the
+    analysis does not look at them (T-37).
+    """
     return CatalogRule(
         rule_id=row.rule_id,
         mode=row.mode,
@@ -315,6 +358,26 @@ async def sync_catalog_log_sources(
     return sorted(new_ids)
 
 
+async def set_catalog_log_sources_missing(
+    session: AsyncSession,
+    log_source_ids: Iterable[int],
+    *,
+    missing: bool,
+    synced_by: str,
+    synced_at: datetime,
+) -> list[int]:
+    """`set_catalog_rules_missing` for log sources."""
+    return await _set_missing(
+        session,
+        CatalogLogSourceRow,
+        CatalogLogSourceRow.log_source_id,
+        log_source_ids,
+        missing=missing,
+        synced_by=synced_by,
+        synced_at=synced_at,
+    )
+
+
 async def update_catalog_log_source(
     session: AsyncSession,
     log_source_id: int,
@@ -355,7 +418,8 @@ async def update_catalog_log_source(
 
 
 def to_catalog_log_source(row: CatalogLogSourceRow) -> CatalogLogSource:
-    """The part of a log source that goes into `CatalogContext`."""
+    """The part of a log source that goes into `CatalogContext`; `missing_since` stays out, as
+    in `to_catalog_rule`."""
     return CatalogLogSource(
         log_source_id=row.log_source_id,
         type_name=row.type_name,
@@ -363,3 +427,30 @@ def to_catalog_log_source(row: CatalogLogSourceRow) -> CatalogLogSource:
         criticality=row.criticality,
         context_note=row.context_note,
     )
+
+
+async def _set_missing(
+    session: AsyncSession,
+    entity: type[CatalogRuleRow] | type[CatalogLogSourceRow],
+    key: InstrumentedAttribute[int],
+    ids: Iterable[int],
+    *,
+    missing: bool,
+    synced_by: str,
+    synced_at: datetime,
+) -> list[int]:
+    marked = entity.missing_since.is_(None) if missing else entity.missing_since.is_not(None)
+    changed: list[int] = []
+    for batch in batched(sorted(set(ids)), _SYNC_BATCH):
+        statement = (
+            update(entity)
+            .where(key.in_(batch), marked)
+            .values(
+                missing_since=synced_at if missing else None,
+                updated_by=synced_by,
+                updated_at=synced_at,
+            )
+            .returning(key)
+        )
+        changed.extend(await session.scalars(statement))
+    return sorted(changed)

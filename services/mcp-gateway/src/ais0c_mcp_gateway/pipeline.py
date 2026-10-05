@@ -3,7 +3,8 @@
 A call passes these steps in order; the first one that fails decides the answer:
 
 1. the run: the intent's `run_id` names an agent run that is in progress and belongs to the
-   caller's profile, agent and case or hunt;
+   caller's profile, agent and case or hunt; an ID of a form the platform never issues is not
+   looked up;
 2. the profile: the intent names the caller's profile, and the tool is in that profile; a
    profile that belongs to a platform component (`caller`, such as the Action Executor's
    qradar-note-write) serves only runs of that component;
@@ -44,6 +45,7 @@ from sqlalchemy.exc import TimeoutError as PoolTimeoutError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from ais0c_contracts import (
+    RUN_ID_PATTERN,
     SHORT_TEXT_MAX_LENGTH,
     DataGap,
     DataGapReason,
@@ -76,9 +78,11 @@ logger = logging.getLogger("ais0c.gateway")
 
 _STORAGE_ERRORS: Final = (OperationalError, InterfaceError, PoolTimeoutError, OSError)
 _DETAIL_LENGTH: Final = 120
-# The form of the run IDs the platform issues: workflow IDs (`case-12345-triage-1`) and UUIDs.
-# An ID of another form names no run and is not looked up.
-_RUN_ID: Final = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,199}")
+# The form of the run IDs the platform issues: the contract's `RunId` (v0.4, T-37), so the two
+# checks cannot differ. Over HTTP an intent with an ID of another form is not a ToolIntent
+# (422, `gateway.invalid_intent`); an intent built without validation (`model_construct`) is
+# checked here again, and its ID names no run and is not looked up.
+_RUN_ID: Final = re.compile(RUN_ID_PATTERN)
 # JSON can carry U+0000 ("\u0000"); PostgreSQL text and jsonb cannot store it. An intent that
 # holds one is denied, and its record holds U+FFFD instead. JSON cannot carry lone surrogates.
 _NUL: Final = chr(0)

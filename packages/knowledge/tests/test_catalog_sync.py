@@ -1,4 +1,5 @@
-"""sync_catalog: QRadar's lists into the Analysis Catalog (criteria 3, 4 and 6).
+"""sync_catalog: QRadar's lists into the Analysis Catalog (criteria 3, 4 and 6), with the
+enabled state and the missing marks of contracts v0.4 (T-041 criterion 6).
 
 The database is real. Inventories are built by hand, as read_inventory returns them; names are
 made up, type names are QRadar product names.
@@ -44,10 +45,19 @@ Columns = dict[str, Any]
 
 T0 = datetime(2026, 10, 5, 0, 0, tzinfo=UTC)
 T1 = T0 + timedelta(days=1)
+T2 = T1 + timedelta(days=1)
+T3 = T2 + timedelta(days=1)
 
 # The columns a sync writes. Every other column is the operator's (or the AI draft's) and a
 # sync never changes it (criterion 4).
-RULE_QRADAR_COLUMNS = {"rule_id", "rule_name", "updated_by", "updated_at"}
+RULE_QRADAR_COLUMNS = {
+    "rule_id",
+    "rule_name",
+    "qradar_enabled",
+    "missing_since",
+    "updated_by",
+    "updated_at",
+}
 RULE_OPERATOR_COLUMNS = {
     "defined",
     "mode",
@@ -57,7 +67,14 @@ RULE_OPERATOR_COLUMNS = {
     "ai_draft_note",
     "attack_techniques",
 }
-LOG_SOURCE_QRADAR_COLUMNS = {"log_source_id", "name", "type_name", "updated_by", "updated_at"}
+LOG_SOURCE_QRADAR_COLUMNS = {
+    "log_source_id",
+    "name",
+    "type_name",
+    "missing_since",
+    "updated_by",
+    "updated_at",
+}
 LOG_SOURCE_OPERATOR_COLUMNS = {
     "defined",
     "description",
@@ -72,9 +89,13 @@ def inventory(
     rules: dict[int, str],
     sources: dict[int, tuple[str, str]],
     untyped: tuple[int, ...] = (),
+    disabled: tuple[int, ...] = (),
 ) -> QRadarInventory:
     return QRadarInventory(
-        rules=tuple(SyncedRule(rule_id, name) for rule_id, name in sorted(rules.items())),
+        rules=tuple(
+            SyncedRule(rule_id, name, qradar_enabled=rule_id not in disabled)
+            for rule_id, name in sorted(rules.items())
+        ),
         log_sources=tuple(
             SyncedLogSource(source_id, name, type_name)
             for source_id, (name, type_name) in sorted(sources.items())
@@ -83,10 +104,13 @@ def inventory(
     )
 
 
-LAB = inventory(
-    {100001: "Excessive Firewall Denies", 100353: "AIS0C LAB - DCSync by a non-machine account"},
-    {2001: ("DC-LAB-01", WINDOWS_SECURITY), 2002: ("WIN-FW-01", FORTIGATE)},
-)
+LAB_RULES = {
+    100001: "Excessive Firewall Denies",
+    100353: "AIS0C LAB - DCSync by a non-machine account",
+}
+LAB_SOURCES = {2001: ("DC-LAB-01", WINDOWS_SECURITY), 2002: ("WIN-FW-01", FORTIGATE)}
+# Rule 100001 is disabled in QRadar, as 38 of the lab's 134 rules are.
+LAB = inventory(LAB_RULES, LAB_SOURCES, disabled=(100001,))
 
 
 async def sync(sessions: Sessions, items: QRadarInventory, at: datetime = T0) -> CatalogSyncReport:
@@ -194,12 +218,14 @@ async def test_new_rules_and_log_sources_are_added_undefined_and_analyzed(
             "context_note": None,
             "ai_draft_note": None,
             "attack_techniques": [],
+            "qradar_enabled": enabled,
+            "missing_since": None,
             "updated_by": SYNC_ACTOR,
             "updated_at": T0,
         }
-        for rule_id, name in (
-            (100001, "Excessive Firewall Denies"),
-            (100353, "AIS0C LAB - DCSync by a non-machine account"),
+        for rule_id, name, enabled in (
+            (100001, "Excessive Firewall Denies", False),
+            (100353, "AIS0C LAB - DCSync by a non-machine account", True),
         )
     ]
     assert sources == [
@@ -213,6 +239,7 @@ async def test_new_rules_and_log_sources_are_added_undefined_and_analyzed(
             "criticality": None,
             "in_scope": True,
             "context_note": None,
+            "missing_since": None,
             "updated_by": SYNC_ACTOR,
             "updated_at": T0,
         }
@@ -247,6 +274,7 @@ async def test_operator_fields_are_never_overwritten(sessions: Sessions) -> None
                 2001: ("DC-LAB-01", f"{WINDOWS_SECURITY} (custom)"),
                 2002: ("WIN-FW-02", FORTIGATE),
             },
+            disabled=(100001,),
         ),
         at=T1,
     )
@@ -267,7 +295,7 @@ async def test_operator_fields_are_never_overwritten(sessions: Sessions) -> None
         f"{WINDOWS_SECURITY} (custom)",
         "WIN-FW-02",
     )
-    assert report.rules_renamed == (100001,)
+    assert report.rules_changed == (100001,)
     assert report.log_sources_changed == (2001, 2002)
     assert (report.rules_added, report.log_sources_added) == ((), ())
 
@@ -286,12 +314,16 @@ async def test_a_second_sync_changes_nothing(sessions: Sessions) -> None:
     assert second.counts() == {
         "rules": 2,
         "rules_added": 0,
-        "rules_renamed": 0,
+        "rules_changed": 0,
         "rules_missing": 0,
+        "rules_marked_missing": 0,
+        "rules_returned": 0,
         "log_sources": 2,
         "log_sources_added": 0,
         "log_sources_changed": 0,
         "log_sources_missing": 0,
+        "log_sources_marked_missing": 0,
+        "log_sources_returned": 0,
         "log_sources_untyped": 0,
     }
 
@@ -307,17 +339,145 @@ async def test_a_sync_after_operator_edits_changes_nothing_either(sessions: Sess
     assert not report.changed
 
 
-async def test_nothing_is_deleted_and_missing_entries_are_reported(sessions: Sessions) -> None:
+async def test_nothing_is_deleted_and_missing_entries_are_marked(sessions: Sessions) -> None:
+    """T-37: an entry QRadar no longer lists stays, with every operator field; only its mark,
+    `updated_by` and `updated_at` change."""
     await sync(sessions, LAB)
     await define_everything(sessions)
     rows = await catalog(sessions)
 
-    report = await sync(sessions, inventory({100353: LAB.rules[1].rule_name}, {}), at=T1)
+    report = await sync(sessions, inventory({100353: LAB_RULES[100353]}, {}), at=T1)
 
-    assert await catalog(sessions) == rows
-    assert report.rules_missing == (100001,)
-    assert report.log_sources_missing == (2001, 2002)
-    assert not report.changed
+    rules, sources = await catalog(sessions)
+    marked = {"missing_since": T1, "updated_by": SYNC_ACTOR, "updated_at": T1}
+    assert rules == [rows[0][0] | marked, rows[0][1]]
+    assert sources == [row | marked for row in rows[1]]
+    assert report.rules_missing == report.rules_marked_missing == (100001,)
+    assert report.log_sources_missing == report.log_sources_marked_missing == (2001, 2002)
+    assert (report.rules_returned, report.log_sources_returned) == ((), ())
+    assert report.changed
+
+
+async def test_a_mark_keeps_the_first_missed_sync_until_the_entry_returns(
+    sessions: Sessions,
+) -> None:
+    await sync(sessions, LAB)
+    await define_everything(sessions)
+    without_them = inventory({100353: LAB_RULES[100353]}, {2001: LAB_SOURCES[2001]})
+    await sync(sessions, without_them, at=T1)
+    marked = await catalog(sessions)
+    entries = [entry.id for entry in await audit_entries(sessions)]
+
+    # Still missing a day later: nothing changes, not even the audit log.
+    still = await sync(sessions, without_them, at=T2)
+
+    assert await catalog(sessions) == marked
+    assert [entry.id for entry in await audit_entries(sessions)] == entries
+    assert (still.rules_missing, still.log_sources_missing) == ((100001,), (2002,))
+    assert (still.rules_marked_missing, still.log_sources_marked_missing) == ((), ())
+    assert not still.changed
+
+    # QRadar lists both again: the marks go, the operator fields are as they were.
+    back = await sync(sessions, LAB, at=T3)
+
+    rules, sources = await catalog(sessions)
+    returned = {"missing_since": None, "updated_by": SYNC_ACTOR, "updated_at": T3}
+    assert rules == [marked[0][0] | returned, marked[0][1]]
+    assert sources == [marked[1][0], marked[1][1] | returned]
+    assert (back.rules_returned, back.log_sources_returned) == ((100001,), (2002,))
+    assert (back.rules_missing, back.log_sources_missing) == ((), ())
+    assert back.changed
+    marks = [
+        (entry.action, entry.object_id, entry.details)
+        for entry in await audit_entries(sessions)
+        if entry.details.get("change") in {"missing", "returned"}
+    ]
+    assert marks == [
+        (RULE_SYNC_ACTION, "100001", {"change": "missing", "missing_since": T1.isoformat()}),
+        (LOG_SOURCE_SYNC_ACTION, "2002", {"change": "missing", "missing_since": T1.isoformat()}),
+        (
+            RULE_SYNC_ACTION,
+            "100001",
+            {"change": "returned", "previous_missing_since": T1.isoformat()},
+        ),
+        (
+            LOG_SOURCE_SYNC_ACTION,
+            "2002",
+            {"change": "returned", "previous_missing_since": T1.isoformat()},
+        ),
+    ]
+
+    # Nothing more to do.
+    assert not (await sync(sessions, LAB, at=T3 + timedelta(days=1))).changed
+
+
+async def test_an_untyped_log_source_counts_as_listed(sessions: Sessions) -> None:
+    """QRadar lists a missing log source again, with a type its type list lacks: the mark goes;
+    the name and type stay what the catalog had."""
+    await sync(sessions, LAB)
+    await sync(sessions, inventory(LAB_RULES, {2001: LAB_SOURCES[2001]}, disabled=(100001,)), at=T1)
+
+    report = await sync(
+        sessions,
+        inventory(LAB_RULES, {2001: LAB_SOURCES[2001]}, untyped=(2002,), disabled=(100001,)),
+        at=T2,
+    )
+
+    _, sources = await catalog(sessions)
+    assert (sources[1]["name"], sources[1]["type_name"], sources[1]["missing_since"]) == (
+        "WIN-FW-01",
+        FORTIGATE,
+        None,
+    )
+    assert report.log_sources_returned == (2002,)
+    assert (report.log_sources_untyped, report.log_sources_missing) == ((2002,), ())
+
+
+async def test_the_enabled_state_follows_qradar_and_is_audited(sessions: Sessions) -> None:
+    """T-37: `qradar_enabled` is QRadar's `enabled`; a change is a sync change, audited, and
+    leaves the operator's fields alone."""
+    await sync(sessions, LAB)
+    await define_everything(sessions)
+    before, _ = await catalog(sessions)
+
+    # QRadar enables 100001 and disables 100353.
+    report = await sync(sessions, inventory(LAB_RULES, LAB_SOURCES, disabled=(100353,)), at=T1)
+
+    rules, _ = await catalog(sessions)
+    assert [rule["qradar_enabled"] for rule in rules] == [True, False]
+    for rule, previous in zip(rules, before, strict=True):
+        assert without(rule, RULE_QRADAR_COLUMNS) == without(previous, RULE_QRADAR_COLUMNS)
+        assert (rule["updated_by"], rule["updated_at"]) == (SYNC_ACTOR, T1)
+    assert report.rules_changed == (100001, 100353)
+    changes = [
+        (entry.object_id, entry.details)
+        for entry in await audit_entries(sessions)
+        if entry.action == RULE_SYNC_ACTION and entry.details["change"] == "changed"
+    ]
+    assert changes == [
+        (
+            "100001",
+            {
+                "change": "changed",
+                "rule_name": LAB_RULES[100001],
+                "qradar_enabled": True,
+                "previous_rule_name": LAB_RULES[100001],
+                "previous_qradar_enabled": False,
+            },
+        ),
+        (
+            "100353",
+            {
+                "change": "changed",
+                "rule_name": LAB_RULES[100353],
+                "qradar_enabled": False,
+                "previous_rule_name": LAB_RULES[100353],
+                "previous_qradar_enabled": True,
+            },
+        ),
+    ]
+    again = await sync(sessions, inventory(LAB_RULES, LAB_SOURCES, disabled=(100353,)), at=T2)
+    assert not again.changed
 
 
 async def test_each_change_is_audited_as_the_sync(sessions: Sessions) -> None:
@@ -326,8 +486,9 @@ async def test_each_change_is_audited_as_the_sync(sessions: Sessions) -> None:
     await sync(
         sessions,
         inventory(
-            {100001: "Firewall denies", 100353: LAB.rules[1].rule_name},
+            {100001: "Firewall denies", 100353: LAB_RULES[100353]},
             {2001: ("DC-LAB-01", WINDOWS_SECURITY), 2002: ("WIN-FW-01", LINUX)},
+            disabled=(100001,),
         ),
         at=T1,
     )
@@ -351,14 +512,18 @@ async def test_each_change_is_audited_as_the_sync(sessions: Sessions) -> None:
             RULE_SYNC_ACTION,
             RULE_OBJECT,
             "100001",
-            {"change": "added", "rule_name": "Excessive Firewall Denies"},
+            {"change": "added", "rule_name": "Excessive Firewall Denies", "qradar_enabled": False},
         ),
         (
             *system,
             RULE_SYNC_ACTION,
             RULE_OBJECT,
             "100353",
-            {"change": "added", "rule_name": "AIS0C LAB - DCSync by a non-machine account"},
+            {
+                "change": "added",
+                "rule_name": "AIS0C LAB - DCSync by a non-machine account",
+                "qradar_enabled": True,
+            },
         ),
         (
             *system,
@@ -380,9 +545,11 @@ async def test_each_change_is_audited_as_the_sync(sessions: Sessions) -> None:
             RULE_OBJECT,
             "100001",
             {
-                "change": "renamed",
+                "change": "changed",
                 "rule_name": "Firewall denies",
+                "qradar_enabled": False,
                 "previous_rule_name": "Excessive Firewall Denies",
+                "previous_qradar_enabled": False,
             },
         ),
         (
@@ -409,9 +576,10 @@ async def test_log_sources_of_an_unknown_type_are_left_as_they_are(sessions: Ses
     report = await sync(
         sessions,
         inventory(
-            {rule.rule_id: rule.rule_name for rule in LAB.rules},
+            LAB_RULES,
             {2001: ("DC-LAB-01", WINDOWS_SECURITY)},
             untyped=(2002, 2003),
+            disabled=(100001,),
         ),
         at=T1,
     )

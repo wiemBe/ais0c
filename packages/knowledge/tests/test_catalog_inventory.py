@@ -71,6 +71,8 @@ async def test_lists_longer_than_the_page_limit_are_read_in_full() -> None:
     inventory = await read_inventory(gateway)
 
     assert [rule.rule_id for rule in inventory.rules] == list(range(100001, 100451))
+    # QRadar's `enabled`, kept as `qradar_enabled` (T-37): every third test rule is disabled.
+    assert [rule.qradar_enabled for rule in inventory.rules[:4]] == [False, True, True, False]
     assert [source.log_source_id for source in inventory.log_sources] == list(range(2001, 2231))
     assert inventory.untyped_log_sources == ()
     assert inventory.log_sources[0] == SyncedLogSource(
@@ -104,13 +106,13 @@ async def test_a_lower_row_cap_only_makes_the_pages_shorter() -> None:
 
 
 async def test_a_page_cut_for_size_goes_on_at_the_first_row_left_out() -> None:
-    # A rule row is 45 bytes of JSON, so 21 rows fit in 1000 bytes.
+    # A rule row is 60 or 61 bytes of JSON, so 16 rows fit in 1000 bytes.
     gateway = fake(rule_rows(450), max_bytes=1000)
 
     inventory = await read_inventory(gateway)
 
     assert [rule.rule_id for rule in inventory.rules] == list(range(100001, 100451))
-    assert gateway.offsets("list_rules") == list(range(0, 450, 21))
+    assert gateway.offsets("list_rules") == list(range(0, 450, 16))
 
 
 async def test_a_row_over_the_size_limit_fails_the_read() -> None:
@@ -165,8 +167,12 @@ async def test_a_denied_call_fails_the_read(tool_id: str) -> None:
 @pytest.mark.parametrize(
     ("tool_id", "row", "field"),
     [
-        ("list_rules", {"id": 7, "name": None}, "name"),
-        ("list_rules", {"id": 7}, "name"),
+        ("list_rules", {"id": 7, "name": None, "enabled": True}, "name"),
+        ("list_rules", {"id": 7, "enabled": True}, "name"),
+        ("list_rules", {"id": 7, "name": "Rule"}, "enabled"),
+        ("list_rules", {"id": 7, "name": "Rule", "enabled": None}, "enabled"),
+        ("list_rules", {"id": 7, "name": "Rule", "enabled": "false"}, "enabled"),
+        ("list_rules", {"id": 7, "name": "Rule", "enabled": 0}, "enabled"),
         ("list_log_sources", {"id": 7, "name": "SRV", "type_id": "12"}, "type_id"),
         ("list_log_source_types", {"id": 7, "name": ["x"]}, "name"),
     ],
@@ -219,7 +225,7 @@ async def test_the_reads_ask_for_the_catalog_fields_in_order() -> None:
     await read_inventory(gateway)
 
     assert gateway.calls == [
-        ("list_rules", {"fields": "id,name", "limit": 200, "offset": 0}),
+        ("list_rules", {"fields": "id,name,enabled", "limit": 200, "offset": 0}),
         (
             "list_log_sources",
             {"fields": "id,name,type_id", "sort": "+id", "limit": 200, "offset": 0},
@@ -234,14 +240,20 @@ async def test_fields_that_were_not_asked_for_are_ignored() -> None:
 
     inventory = await read_inventory(gateway)
 
-    assert inventory == QRadarInventory(rules=(SyncedRule(5, "Rule"),), log_sources=())
+    assert inventory == QRadarInventory(
+        rules=(SyncedRule(5, "Rule", qradar_enabled=False),), log_sources=()
+    )
 
 
 async def test_names_are_stored_as_visible_text() -> None:
     rlo, zero_width, line_separator = chr(0x202E), chr(0x200B), chr(0x2028)
     rules: list[Row] = [
-        {"id": 1, "name": f"  Brute{zero_width} force\r\nfrom\tthe  {rlo}nretni{line_separator} "},
-        {"id": 2, "name": "Ş" * 300},
+        {
+            "id": 1,
+            "name": f"  Brute{zero_width} force\r\nfrom\tthe  {rlo}nretni{line_separator} ",
+            "enabled": True,
+        },
+        {"id": 2, "name": "Ş" * 300, "enabled": False},
     ]
     types: list[Row] = [{"id": 12, "name": f"{WINDOWS_SECURITY}{chr(0)}"}]
     sources: list[Row] = [{"id": 9, "name": "DC-LAB-01\n", "type_id": 12}]
@@ -250,8 +262,8 @@ async def test_names_are_stored_as_visible_text() -> None:
     inventory = await read_inventory(gateway)
 
     assert inventory.rules == (
-        SyncedRule(1, "Brute force from the nretni"),
-        SyncedRule(2, "Ş" * MAX_NAME_LENGTH),
+        SyncedRule(1, "Brute force from the nretni", qradar_enabled=True),
+        SyncedRule(2, "Ş" * MAX_NAME_LENGTH, qradar_enabled=False),
     )
     assert inventory.log_sources == (SyncedLogSource(9, "DC-LAB-01", WINDOWS_SECURITY),)
 

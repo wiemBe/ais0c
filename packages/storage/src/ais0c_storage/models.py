@@ -310,6 +310,8 @@ class NotificationRow(Base):
     subject: Mapped[str]
     idempotency_key: Mapped[str] = mapped_column(unique=True)
     status: Mapped[NotificationStatus] = mapped_column(EnumText(NotificationStatus))
+    # Why a `failed` or `rejected` e-mail was not sent (T-37, migration 0006).
+    error: Mapped[str | None]
     sent_at: Mapped[datetime | None]
 
 
@@ -335,6 +337,12 @@ class CatalogRuleRow(Base):
     # ATT&CK technique IDs an operator mapped to the rule; the sync never changes them. The
     # skill router reads them (T-26, migration 0005).
     attack_techniques: Mapped[list[str]] = mapped_column(ARRAY(Text), server_default=text("'{}'"))
+    # Synced from QRadar: whether the rule is enabled there. The UI can filter on it; the
+    # analysis never looks at it (T-37, migration 0006).
+    qradar_enabled: Mapped[bool] = mapped_column(server_default=text("true"))
+    # The sync that first found the rule missing from QRadar's list; empty while QRadar lists
+    # it. The entry stays and the enrichment still uses it (T-37, migration 0006).
+    missing_since: Mapped[datetime | None]
     updated_by: Mapped[str]
     updated_at: Mapped[datetime]
 
@@ -352,6 +360,8 @@ class CatalogLogSourceRow(Base):
     criticality: Mapped[Level | None] = mapped_column(EnumText(Level))
     in_scope: Mapped[bool]
     context_note: Mapped[str | None]
+    # As `catalog_rules.missing_since` (T-37, migration 0006).
+    missing_since: Mapped[datetime | None]
     updated_by: Mapped[str]
     updated_at: Mapped[datetime]
 

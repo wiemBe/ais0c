@@ -1,7 +1,8 @@
-"""`notifications`: e-mails the executor sent or refused (architecture §9, D-22).
+"""`notifications`: e-mails the executor sent, refused or held back (architecture §9, D-22).
 
 `idempotency_key` is unique, so the same e-mail cannot be recorded twice. `level` is an alert's
-notify level: a re-evaluated case is e-mailed again only above the levels already sent.
+notify level: a re-evaluated case is e-mailed again only above the levels already sent. Only
+`sent` counts as sent; `error` says why a `failed` or `rejected` e-mail was not (T-37).
 """
 
 from datetime import datetime
@@ -15,10 +16,18 @@ from ais0c_storage.enums import NotificationStatus
 from ais0c_storage.models import NotificationRow
 from ais0c_storage.repositories._common import fetch_all, fetch_one, insert_new, update_one
 
+# The statuses whose record says why the e-mail was not sent (T-37).
+_STATUSES_WITH_ERROR = frozenset({NotificationStatus.FAILED, NotificationStatus.REJECTED})
+
 
 def _check_sent_at(status: NotificationStatus, sent_at: datetime | None) -> None:
     if (status is NotificationStatus.SENT) != (sent_at is not None):
         raise ValueError("sent_at is required for a sent e-mail and only for it")
+
+
+def _check_error(status: NotificationStatus, error: str | None) -> None:
+    if error is not None and NotificationStatus(status) not in _STATUSES_WITH_ERROR:
+        raise ValueError("only a failed or rejected e-mail has an error")
 
 
 async def record_notification(
@@ -31,12 +40,14 @@ async def record_notification(
     hunt_id: str | None = None,
     group_id: str | None = None,
     sent_at: datetime | None = None,
+    error: str | None = None,
 ) -> NotificationRow:
     """Record the outcome of sending `message`.
 
     The ID matching the kind is required: `case_id` for a case alert, `group_id` for a group
     alert, `hunt_id` for a hunt report. So is `level` for a case or group alert; a hunt report
-    has none. Raises `DuplicateError` if the idempotency key is recorded.
+    has none. `error` is only for a `failed` or `rejected` e-mail. Raises `DuplicateError` if
+    the idempotency key is recorded.
     """
     message = revalidate(EmailMessage, message)
     subject_ids = {
@@ -49,6 +60,7 @@ async def record_notification(
     if (level is None) != (message.kind is EmailKind.HUNT_REPORT):
         raise ValueError("a case or group alert needs its notify level, and only an alert has one")
     _check_sent_at(status, sent_at)
+    _check_error(status, error)
     values = dict(
         kind=message.kind,
         level=level,
@@ -59,6 +71,7 @@ async def record_notification(
         subject=message.subject,
         idempotency_key=message.idempotency_key,
         status=status,
+        error=error,
         sent_at=sent_at,
     )
     return await insert_new(session, NotificationRow, values, f"e-mail {message.idempotency_key!r}")
@@ -75,13 +88,16 @@ async def update_notification_status(
     *,
     status: NotificationStatus,
     sent_at: datetime | None = None,
+    error: str | None = None,
 ) -> NotificationRow:
-    """For example `failed` -> `sent` when a retry succeeds."""
+    """For example `disabled` or `failed` -> `sent` when a later attempt succeeds. `error`
+    replaces the old one."""
     _check_sent_at(status, sent_at)
+    _check_error(status, error)
     statement = (
         update(NotificationRow)
         .where(NotificationRow.idempotency_key == idempotency_key)
-        .values(status=status, sent_at=sent_at)
+        .values(status=status, sent_at=sent_at, error=error)
     )
     return await update_one(session, statement, NotificationRow, f"e-mail {idempotency_key!r}")
 

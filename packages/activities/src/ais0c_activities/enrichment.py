@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ais0c_activities.levels import level_rank, max_level
 from ais0c_contracts import (
+    SHORT_TEXT_MAX_LENGTH,
     CatalogContext,
     CatalogMode,
     CatalogRule,
@@ -122,11 +123,25 @@ def match_critical_assets(
     hits: dict[tuple[str, str], CriticalAssetHit] = {}
     for asset in assets:
         names = hosts if asset.kind is CriticalAssetKind.HOST else users
+        label = _label(asset)
         for value in _asset_matches(asset, addresses, names):
-            key = (value, asset.label)
+            key = (value, label)
             if key not in hits or level_rank(asset.level) > level_rank(hits[key].level):
-                hits[key] = CriticalAssetHit(value=value, label=asset.label, level=asset.level)
+                hits[key] = CriticalAssetHit(value=value, label=label, level=asset.level)
     return sorted(hits.values(), key=lambda hit: (hit.value, hit.label))
+
+
+def _label(asset: CriticalAssetRow) -> str:
+    """The asset's label as a hit carries it, at most SHORT_TEXT_MAX_LENGTH characters
+    (contracts v0.4).
+
+    Labels are limited on write; a longer one stored before that is cut and logged, so the
+    hit, and the floor it raises, still count.
+    """
+    if len(asset.label) <= SHORT_TEXT_MAX_LENGTH:
+        return asset.label
+    _log.warning("critical asset %s has a label longer than %d", asset.id, SHORT_TEXT_MAX_LENGTH)
+    return asset.label[:SHORT_TEXT_MAX_LENGTH]
 
 
 def floor_level(

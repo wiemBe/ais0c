@@ -14,9 +14,12 @@ from ais0c_storage.repositories import (
     add_critical_asset,
     create_case,
     get_case,
+    get_catalog_rules,
     get_offense_group,
     get_offense_seen,
     set_case_status,
+    set_catalog_log_sources_missing,
+    set_catalog_rules_missing,
     sync_catalog_log_sources,
     sync_catalog_rules,
     update_catalog_rule,
@@ -54,6 +57,23 @@ async def catalog_log_source(sessions: SessionFactory, log_source_id: int, type_
     async with sessions.begin() as session:
         source = SyncedLogSource(log_source_id, f"Log source {log_source_id}", type_name)
         await sync_catalog_log_sources(session, [source], synced_by="sync", synced_at=T0)
+
+
+async def gone_from_qradar(
+    sessions: SessionFactory, *, rule_ids: Sequence[int] = (), log_source_ids: Sequence[int] = ()
+) -> None:
+    """QRadar disabled the rules, then stopped listing them and the log sources; the sync
+    marked them (T-37). Their operator fields stay."""
+    async with sessions.begin() as session:
+        for rule in await get_catalog_rules(session, rule_ids):
+            synced = SyncedRule(rule.rule_id, rule.rule_name, qradar_enabled=False)
+            await sync_catalog_rules(session, [synced], synced_by="sync", synced_at=T0)
+        await set_catalog_rules_missing(
+            session, rule_ids, missing=True, synced_by="sync", synced_at=T0
+        )
+        await set_catalog_log_sources_missing(
+            session, log_source_ids, missing=True, synced_by="sync", synced_at=T0
+        )
 
 
 async def critical_asset(

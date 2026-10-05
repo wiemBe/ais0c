@@ -243,7 +243,9 @@ def test_free_text_is_cut_to_the_summary_limit_and_labels_to_the_short_text_limi
     # model_construct skips validation, as a careless caller could; the builder still cuts.
     rule = CatalogRule.model_construct(rule_id=7, mode=CatalogMode.ANALYZE, context_note="n" * 900)
     source = CatalogLogSource.model_construct(log_source_id=9, description="d" * 900)
-    asset = CriticalAssetHit(value="198.51.100.20", label="l" * 900, level=Level.HIGH)
+    asset = CriticalAssetHit.model_construct(
+        value="198.51.100.20", label="l" * 900, level=Level.HIGH
+    )
     facts = CatalogContext.model_construct(rules=[rule], log_sources=[source])
 
     note, source_line, asset_line = org_context_of(

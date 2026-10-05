@@ -459,9 +459,7 @@ async def test_with_writes_off_no_run_is_recorded_and_nothing_is_called(
     assert gateway.intents == []
     assert await runs(sessions) == []
     row = await recorded(sessions)
-    assert row.status is NoteStatus.FAILED
-    assert row.error is not None
-    assert row.error.startswith("writes_disabled: ")
+    assert (row.status, row.error) == (NoteStatus.DISABLED, None)
 
 
 async def test_an_invalid_request_fails_without_a_retry(

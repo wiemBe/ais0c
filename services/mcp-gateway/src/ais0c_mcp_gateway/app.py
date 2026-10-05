@@ -11,11 +11,12 @@ The profile comes only from the token (T-007 report, section 2). Client addresse
 headers are not used; the network decides who reaches the gateway (architecture §13.4).
 
 A denial is a ToolResult, not an HTTP error. HTTP errors (application/problem+json, with a
-machine-readable `title`) mean no ToolResult can be given: an unknown token (401), a request
-that is not a ToolIntent (422, `gateway.invalid_intent`) or whose `run_id` names no recorded
-agent run (422, `gateway.unknown_run`), a body over 256 KiB (413) or an unreachable database
-(503). The agent run comes only from the ToolIntent's `run_id` (contracts v0.2, T-19); no
-request header names or changes it.
+machine-readable `title`) mean no ToolResult can be given: an unknown token (401); a request
+that is not a ToolIntent (422, `gateway.invalid_intent`), which includes one whose `run_id` is
+of a form the platform never issues (contracts v0.4); a ToolIntent whose `run_id` names no
+recorded agent run (422, `gateway.unknown_run`); a body over 256 KiB (413); or an unreachable
+database (503). The agent run comes only from the ToolIntent's `run_id` (contracts v0.2, T-19);
+no request header names or changes it.
 """
 
 from typing import Final

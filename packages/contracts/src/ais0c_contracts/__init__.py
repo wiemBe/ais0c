@@ -18,6 +18,7 @@ from ais0c_contracts.agents import (
 )
 from ais0c_contracts.common import (
     RUN_ID_MAX_LENGTH,
+    RUN_ID_PATTERN,
     SHORT_TEXT_MAX_LENGTH,
     SUMMARY_MAX_LENGTH,
     AttackTechnique,
@@ -83,6 +84,7 @@ from ais0c_contracts.tuning import Backtest, OperatorFeedback, TuningProposal
 __all__ = [
     "MAX_HUNT_WINDOW_MONTHS",
     "RUN_ID_MAX_LENGTH",
+    "RUN_ID_PATTERN",
     "SHORT_TEXT_MAX_LENGTH",
     "SUMMARY_MAX_LENGTH",
     "ActionType",

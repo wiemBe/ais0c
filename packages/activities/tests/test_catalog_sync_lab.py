@@ -1,4 +1,5 @@
-"""T-022 criterion 7: the lab QRadar's system rules and log sources reach the catalog.
+"""T-022 criterion 7: the lab QRadar's system rules and log sources reach the catalog, with
+each rule's enabled state (T-041 criterion 6).
 
 `@pytest.mark.lab`: skipped unless `QRADAR_LAB_URL` and `QRADAR_LAB_TOKEN` are set (see
 ais0c_harness.pytest_plugin), and skipped with a reason without the qradar-mcp fork
@@ -162,7 +163,7 @@ async def test_the_lab_rules_and_log_sources_reach_the_catalog(
         )
 
     lab = Lab()
-    rules = await lab.get("analytics/rules", "id,name,origin")
+    rules = await lab.get("analytics/rules", "id,name,origin,enabled")
     sources = await lab.get(
         "config/event_sources/log_source_management/log_sources", "id,name,type_id"
     )
@@ -181,6 +182,12 @@ async def test_the_lab_rules_and_log_sources_reach_the_catalog(
     system_rules = {row["id"] for row in rules if row["origin"] == "SYSTEM"}
     assert system_rules
     assert {(row.defined, row.mode) for row in catalog_rules} == {(False, CatalogMode.ANALYZE)}
+    # Each rule's enabled state is QRadar's (T-37); a complete read marks nothing missing.
+    assert {row.rule_id: row.qradar_enabled for row in catalog_rules} == {
+        row["id"]: row["enabled"] for row in rules
+    }
+    disabled_rules = sum(1 for row in rules if row["enabled"] is False)
+    assert [row for row in [*catalog_rules, *catalog_sources] if row.missing_since] == []
     # Every log source, with the name of its type.
     assert {row.log_source_id: (row.name, row.type_name) for row in catalog_sources} == {
         row["id"]: (clean_name(str(row["name"])), type_names[row["type_id"]]) for row in sources
@@ -205,6 +212,7 @@ async def test_the_lab_rules_and_log_sources_reach_the_catalog(
                 "first_run": first.catalog,
                 "second_run": second.catalog,
                 "system_rules": len(system_rules),
+                "disabled_rules": disabled_rules,
                 "log_source_types": len(types),
                 "gateway_calls_per_run": [run.tool_calls for run in runs],
                 "first_run_seconds": round(took, 1),

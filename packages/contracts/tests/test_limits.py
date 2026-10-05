@@ -1,5 +1,6 @@
 """Length limits, list limits, timezones, evidence IDs and content hashes."""
 
+import re
 from collections.abc import Callable
 from datetime import UTC, datetime
 
@@ -8,6 +9,7 @@ from pydantic import ValidationError
 
 from ais0c_contracts import (
     RUN_ID_MAX_LENGTH,
+    RUN_ID_PATTERN,
     SHORT_TEXT_MAX_LENGTH,
     SUMMARY_MAX_LENGTH,
     AgentTask,
@@ -17,6 +19,7 @@ from ais0c_contracts import (
     CatalogRule,
     Claim,
     ContractModel,
+    CriticalAssetHit,
     Disagreement,
     EmailMessage,
     EvidenceRef,
@@ -74,6 +77,7 @@ TEXT_LIMITS: list[tuple[type[ContractModel], str, int, Callable[[str], object]]]
     (CatalogLogSource, "type_name", 255, _single),
     (CatalogLogSource, "description", SHORT, _single),
     (CatalogLogSource, "context_note", SUMMARY, _single),
+    (CriticalAssetHit, "label", SHORT, _single),
     (AgentTask, "objective", SHORT, _single),
     (TriageResult, "rationale", SUMMARY, _single),
     (TriageResult, "investigation_focus", SHORT, _in_list),
@@ -85,7 +89,6 @@ TEXT_LIMITS: list[tuple[type[ContractModel], str, int, Callable[[str], object]]]
     (CaseReport, "summary_tr", SUMMARY, _single),
     (NoteContent, "summary_tr", 400, _single),
     (EmailMessage, "subject", 150, _single),
-    (ToolIntent, "run_id", RUN_ID_MAX_LENGTH, _single),
     (ToolIntent, "reason", SHORT, _single),
     (ToolIntent, "expected_evidence", SHORT, _single),
     (ToolResult, "deny_reason", SHORT, _single),
@@ -233,7 +236,6 @@ def test_evidence_id_fields_require_gateway_prefix(
 
 
 def test_tool_intent_needs_a_run_id() -> None:
-    assert RUN_ID_MAX_LENGTH == 200
     missing = payloads.tool_intent()
     del missing["run_id"]
     with pytest.raises(ValidationError) as excinfo:
@@ -245,8 +247,97 @@ def test_tool_intent_needs_a_run_id() -> None:
         assert len(excinfo.value.errors()) == 1
 
 
-def test_tool_intent_run_id_of_one_character_is_accepted() -> None:
-    assert ToolIntent.model_validate(payloads.tool_intent() | {"run_id": "r"}).run_id == "r"
+# The forms of the run IDs the platform issues (v0.4, T-37). services/mcp-gateway checks the
+# same against the functions that make them.
+PLATFORM_RUN_IDS = [
+    # Triage runs: `<case_id>-triage-<n>`, and the retry after a model outage (D-33).
+    "case-27-triage-1",
+    "case-27-triage-1-retry",
+    "case-12345-triage-99999",
+    # The case of a group, and of a hunt finding.
+    "group-G-3f2a9c1b2d4e-20261005T101500Z-triage-1",
+    "case-hunt-hunt-ornek-grup-2026-01-01-2026-03-31-3f2a9c1b-1-triage-1",
+    # Pseudo agent runs of platform code (intake, executor, catalog sync): UUIDv7 strings.
+    "01999c3e-8f1a-7b2c-9d3e-4f5a6b7c8d9e",
+    # Hunts: `hunt-<pack>-<start>-<end>-<scope hash>`, the times with or without a clock.
+    "hunt-ornek-grup-2026-01-01-2026-03-31-3f2a9c1b",
+    "hunt-ornek_grup-2026-01-01T00:00:00Z-2026-03-31T23:59:59.999Z-3f2a9c1b",
+    "r",
+    "R" * RUN_ID_MAX_LENGTH,
+]
+
+
+@pytest.mark.parametrize("run_id", PLATFORM_RUN_IDS)
+def test_tool_intent_accepts_every_run_id_form_the_platform_issues(run_id: str) -> None:
+    assert ToolIntent.model_validate(payloads.tool_intent() | {"run_id": run_id}).run_id == run_id
+    assert re.fullmatch(RUN_ID_PATTERN, run_id)
+
+
+@pytest.mark.parametrize(
+    ("run_id", "error"),
+    [
+        ("", "string_too_short"),
+        ("r" * (RUN_ID_MAX_LENGTH + 1), "string_too_long"),
+        ("case 27-triage-1", "string_pattern_mismatch"),
+        ("case-27-triage-1 ", "string_pattern_mismatch"),
+        (" case-27-triage-1", "string_pattern_mismatch"),
+        ("case-27\x00-triage-1", "string_pattern_mismatch"),
+        ("case-27-triage-1\x00", "string_pattern_mismatch"),
+        ("case-27/triage-1", "string_pattern_mismatch"),
+        ("../agent_runs", "string_pattern_mismatch"),
+        (".case-27-triage-1", "string_pattern_mismatch"),
+        ("-case-27-triage-1", "string_pattern_mismatch"),
+        ("_case-27-triage-1", "string_pattern_mismatch"),
+        (":case-27-triage-1", "string_pattern_mismatch"),
+        ("case-27-triage-1\n", "string_pattern_mismatch"),
+        ("case-27-triage-1\r\nX-Ais0c-Run-Id: run-2", "string_pattern_mismatch"),
+        ("case-27\ttriage-1", "string_pattern_mismatch"),
+        ("case-27-triage-1;DROP TABLE agent_runs", "string_pattern_mismatch"),
+        ("case-27-triage-1'", "string_pattern_mismatch"),
+        ("vaka-\u015f", "string_pattern_mismatch"),
+        ("case-\uff12\uff17", "string_pattern_mismatch"),
+        ("case-27-triage-1\u200b", "string_pattern_mismatch"),
+    ],
+    ids=[
+        "empty",
+        "201 characters",
+        "space",
+        "trailing space",
+        "leading space",
+        "NUL",
+        "trailing NUL",
+        "slash",
+        "path",
+        "dot first",
+        "hyphen first",
+        "underscore first",
+        "colon first",
+        "trailing newline",
+        "header injection",
+        "tab",
+        "semicolon",
+        "quote",
+        "non-ASCII letter",
+        "full-width digits",
+        "zero-width space",
+    ],
+)
+def test_tool_intent_rejects_a_run_id_of_another_form(run_id: str, error: str) -> None:
+    with pytest.raises(ValidationError) as excinfo:
+        ToolIntent.model_validate(payloads.tool_intent() | {"run_id": run_id})
+    assert [item["type"] for item in excinfo.value.errors()] == [error]
+    assert [item["loc"] for item in excinfo.value.errors()] == [("run_id",)]
+    assert not re.fullmatch(RUN_ID_PATTERN, run_id)
+
+
+def test_the_run_id_pattern_is_in_the_json_schema() -> None:
+    schema = ToolIntent.model_json_schema()["properties"]["run_id"]
+    assert (schema["pattern"], schema["minLength"], schema["maxLength"]) == (
+        RUN_ID_PATTERN,
+        1,
+        RUN_ID_MAX_LENGTH,
+    )
+    assert RUN_ID_MAX_LENGTH == 200
 
 
 @pytest.mark.parametrize(

@@ -1,5 +1,7 @@
 """Sending an alert once (T-020 criteria 3-6): the allowed domain check, no second e-mail for one
-idempotency key, the kill switch right before sending, and the level rule on re-evaluation."""
+idempotency key, the kill switch right before sending, and the level rule on re-evaluation.
+With contracts v0.4 (T-041 criterion 5) an attempt the kill switch held back is recorded as
+`disabled`, and a `failed` or `rejected` record says why in `error`."""
 
 import asyncio
 from datetime import UTC, datetime
@@ -143,14 +145,20 @@ async def test_a_failed_send_that_may_pass_is_recorded_retried_and_sent_once(
     assert raised.value is failure
     row = await notification(ready, KEY)
     assert row is not None
-    assert (row.status, row.sent_at) == (NotificationStatus.FAILED, None)
+    assert (row.status, row.sent_at, row.error) == (
+        NotificationStatus.FAILED,
+        None,
+        "send: the relay answered 451 4.3.0 later",
+    )
 
     retry = await sender(ready, transport).send_alert(case_alert())
 
     assert retry.result is SENT
     assert len(transport.sent) == 1
     rows = await notifications(ready)
-    assert [(row.status, row.sent_at) for row in rows] == [(NotificationStatus.SENT, SENT_AT)]
+    assert [(row.status, row.sent_at, row.error) for row in rows] == [
+        (NotificationStatus.SENT, SENT_AT, None)
+    ]
 
 
 async def test_an_unreachable_relay_is_recorded_and_retried(ready: Sessions) -> None:
@@ -162,7 +170,10 @@ async def test_an_unreachable_relay_is_recorded_and_retried(ready: Sessions) -> 
 
     row = await notification(ready, KEY)
     assert row is not None
-    assert row.status is NotificationStatus.FAILED
+    assert (row.status, row.error) == (
+        NotificationStatus.FAILED,
+        "connect: ConnectionRefusedError",
+    )
 
 
 async def test_an_email_the_relay_refused_for_good_is_returned_as_failed(ready: Sessions) -> None:
@@ -175,7 +186,7 @@ async def test_an_email_the_relay_refused_for_good_is_returned_as_failed(ready: 
     assert outcome.error == "send: the relay answered 554 5.7.1 refused"
     row = await notification(ready, KEY)
     assert row is not None
-    assert row.status is NotificationStatus.FAILED
+    assert (row.status, row.error) == (NotificationStatus.FAILED, outcome.error)
     assert await email_audit(ready) == []
 
 
@@ -203,6 +214,7 @@ async def test_one_recipient_outside_the_allowed_domains_stops_the_whole_email(
     assert row is not None
     assert (row.status, row.sent_at, row.level) == (NotificationStatus.REJECTED, None, Level.HIGH)
     assert row.recipients == ["soc-1@example.com", "soc-2@example.com", "soc@example.net"]
+    assert row.error == outcome.error
     [entry] = await email_audit(sessions)
     assert (entry.action, entry.object_type, entry.object_id) == (
         "email.reject",
@@ -249,7 +261,11 @@ async def test_a_rejected_alert_goes_out_once_the_list_is_fixed(sessions: Sessio
     assert retry.result is SENT
     assert [message.recipients for message in transport.messages] == [list(OPERATORS)]
     [row] = await notifications(sessions)
-    assert (row.status, row.recipients) == (NotificationStatus.SENT, list(OPERATORS))
+    assert (row.status, row.recipients, row.error) == (
+        NotificationStatus.SENT,
+        list(OPERATORS),
+        None,
+    )
     assert [entry.action for entry in await email_audit(sessions)] == [
         "email.reject",
         "email.send",
@@ -268,13 +284,21 @@ async def test_an_empty_recipient_list_is_a_failure(sessions: Sessions) -> None:
     assert transport.connections == 0
     row = await notification(sessions, KEY)
     assert row is not None
-    assert (row.status, row.recipients) == (NotificationStatus.FAILED, [])
+    assert (row.status, row.recipients, row.error) == (
+        NotificationStatus.FAILED,
+        [],
+        "the operators recipient list is empty",
+    )
 
 
 # --- criterion 5: the kill switch -----------------------------------------------------------
 
 
-async def test_in_shadow_mode_nothing_is_sent_or_recorded(sessions: Sessions) -> None:
+async def test_in_shadow_mode_nothing_is_sent_and_the_attempt_is_disabled(
+    sessions: Sessions,
+) -> None:
+    """The record keeps the recipients, the subject and the level the e-mail would have had;
+    it is not a failure and holds no error text."""
     await operators_in_example_com(sessions)
     transport = FakeTransport()
 
@@ -284,8 +308,39 @@ async def test_in_shadow_mode_nothing_is_sent_or_recorded(sessions: Sessions) ->
     assert outcome.error is not None
     assert "never switched on" in outcome.error
     assert transport.connections == 0
-    assert await notifications(sessions) == []
+    [row] = await notifications(sessions)
+    expected = alert_message(case_alert(), OPERATORS)
+    assert (row.idempotency_key, row.kind, row.case_id) == (KEY, EmailKind.CASE_ALERT, "case-12345")
+    assert (row.status, row.error, row.sent_at) == (NotificationStatus.DISABLED, None, None)
+    assert (row.recipients, row.subject, row.level) == (
+        list(OPERATORS),
+        expected.subject,
+        Level.HIGH,
+    )
     assert await email_audit(sessions) == []
+
+
+async def test_a_disabled_key_is_sent_once_writes_are_on(sessions: Sessions) -> None:
+    """Only `sent` counts as sent: the same alert, tried again with writes on, goes out and
+    its record becomes `sent`."""
+    await operators_in_example_com(sessions)
+    transport = FakeTransport()
+    assert (await sender(sessions, transport).send_alert(case_alert())).result is WRITES_DISABLED
+    [disabled] = await notifications(sessions)
+
+    await switch_writes(sessions, True)
+    outcome = await sender(sessions, transport).send_alert(case_alert())
+
+    assert outcome.result is SENT
+    assert len(transport.sent) == 1
+    [row] = await notifications(sessions)
+    assert (row.id, row.status, row.sent_at, row.error) == (
+        disabled.id,
+        NotificationStatus.SENT,
+        SENT_AT,
+        None,
+    )
+    assert [entry.action for entry in await email_audit(sessions)] == ["email.send"]
 
 
 async def test_a_switch_off_after_the_email_is_ready_stops_it(ready: Sessions) -> None:
@@ -303,16 +358,20 @@ async def test_a_switch_off_after_the_email_is_ready_stops_it(ready: Sessions) -
     assert "switched off by admin01" in outcome.error
     assert transport.connections == 1
     assert transport.attempts == 0
-    assert await notifications(ready) == []
+    [row] = await notifications(ready)
+    assert (row.status, row.error, row.level) == (NotificationStatus.DISABLED, None, Level.HIGH)
 
     await switch_writes(ready, True)
     transport.on_connect = None
     assert (await sender(ready, transport).send_alert(case_alert())).result is SENT
     assert len(transport.sent) == 1
+    [row] = await notifications(ready)
+    assert row.status is NotificationStatus.SENT
 
 
 async def test_the_domain_check_does_not_wait_for_writes(sessions: Sessions) -> None:
-    """A bad recipient list shows up in shadow mode already, before the canary starts."""
+    """A bad recipient list shows up in shadow mode already, before the canary starts: the
+    record is `rejected`, not `disabled`."""
     await allow_domains(sessions, "example.com")
     await add_recipients(sessions, "soc@example.net")
     transport = FakeTransport()
@@ -321,6 +380,8 @@ async def test_the_domain_check_does_not_wait_for_writes(sessions: Sessions) -> 
 
     assert outcome.result is REJECTED
     assert transport.connections == 0
+    [row] = await notifications(sessions)
+    assert (row.status, row.error) == (NotificationStatus.REJECTED, outcome.error)
 
 
 # --- criterion 6: re-evaluations ------------------------------------------------------------
@@ -418,6 +479,8 @@ async def test_an_evaluation_below_high_is_not_emailed(ready: Sessions) -> None:
 
 
 async def test_an_alert_that_was_not_sent_does_not_count(sessions: Sessions) -> None:
+    """A critical alert the kill switch held back is recorded as `disabled`; the level rule
+    counts only `sent` records, so the next evaluation's high alert goes out."""
     await operators_in_example_com(sessions)
     transport = FakeTransport()
     first = await sender(sessions, transport).send_alert(evaluation(1, "critical"))
@@ -426,6 +489,10 @@ async def test_an_alert_that_was_not_sent_does_not_count(sessions: Sessions) -> 
     second = await sender(sessions, transport).send_alert(evaluation(2, "high"))
 
     assert (first.result, second.result) == (WRITES_DISABLED, SENT)
+    assert [(row.status, row.level) for row in await notifications(sessions)] == [
+        (NotificationStatus.DISABLED, Level.CRITICAL),
+        (NotificationStatus.SENT, Level.HIGH),
+    ]
 
 
 async def test_the_levels_of_another_case_do_not_count(ready: Sessions) -> None:

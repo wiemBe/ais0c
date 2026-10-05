@@ -1,8 +1,9 @@
 """sync_analysis_catalog: QRadar's inventory through the gateway into the catalog (T-022).
 
-Criteria 1, 3, 5 and 6, and D-33's pseudo agent run. The gateway is the real one in process
-with the repository's configuration, and the database is real (catalog_gateway.py). The fork
-behind the gateway is replaced by `QRadarLists`; the lab test uses the fork itself.
+Criteria 1, 3, 5 and 6, and D-33's pseudo agent run; QRadar's enabled state and the missing
+marks of contracts v0.4 (T-041 criterion 6). The gateway is the real one in process with the
+repository's configuration, and the database is real (catalog_gateway.py). The fork behind the
+gateway is replaced by `QRadarLists`; the lab test uses the fork itself.
 """
 
 from collections.abc import Callable
@@ -93,6 +94,17 @@ async def sync_runs(sessions: SessionFactory) -> list[AgentRunRow]:
         return await list_agent_runs(session, case_id=KNOWLEDGE_SYNC_CONTEXT)
 
 
+async def missing(sessions: SessionFactory) -> tuple[list[int], list[int]]:
+    """The rules and log sources marked as no longer listed by QRadar."""
+    async with sessions() as session:
+        rules = await list_catalog_rules(session)
+        sources = await list_catalog_log_sources(session)
+    return (
+        [row.rule_id for row in rules if row.missing_since is not None],
+        [row.log_source_id for row in sources if row.missing_since is not None],
+    )
+
+
 async def catalog_ids(sessions: SessionFactory) -> tuple[list[int], list[int]]:
     async with sessions() as session:
         rules = await list_catalog_rules(session)
@@ -130,12 +142,16 @@ async def test_the_sync_reads_long_lists_in_full_and_adds_undefined_entries(
     assert counts == {
         "rules": 450,
         "rules_added": 450,
-        "rules_renamed": 0,
+        "rules_changed": 0,
         "rules_missing": 0,
+        "rules_marked_missing": 0,
+        "rules_returned": 0,
         "log_sources": 230,
         "log_sources_added": 230,
         "log_sources_changed": 0,
         "log_sources_missing": 0,
+        "log_sources_marked_missing": 0,
+        "log_sources_returned": 0,
         "log_sources_untyped": 0,
     }
     async with sessions() as session:
@@ -145,6 +161,10 @@ async def test_the_sync_reads_long_lists_in_full_and_adds_undefined_entries(
     assert {(row.defined, row.mode, row.min_level) for row in rules} == {
         (False, CatalogMode.ANALYZE, None)
     }
+    # QRadar's `enabled` (T-37); every fourth test rule is disabled.
+    listed_rules = {as_int(row["id"]): row["enabled"] for row in rule_rows(450)}
+    assert [row.qradar_enabled for row in rules] == [listed_rules[row.rule_id] for row in rules]
+    assert sum(not row.qradar_enabled for row in rules) == 113
     assert rules[0].rule_name == "AIS0C TEST - Rule 0000 ".ljust(LONG_NAME, "x")
     assert [row.log_source_id for row in sources] == list(range(2001, 2231))
     assert {(row.defined, row.in_scope) for row in sources} == {(False, True)}
@@ -231,6 +251,39 @@ async def test_a_second_run_changes_nothing(sessions: SessionFactory) -> None:
     assert [run.status for run in await sync_runs(sessions)] == [RunStatus.COMPLETED] * 2
 
 
+async def test_qradar_marks_follow_complete_reads_only(sessions: SessionFactory) -> None:
+    """T-37: entries QRadar no longer lists are marked by a complete read. A read that fails,
+    or that QRadar's data makes unreadable, changes no mark; the next complete one does."""
+    qradar = lab_like(rules=10, log_sources=5, extra_types=0)
+    gateway, profile = await inventory_client(sessions, qradar, now=lambda: NOW)
+    activities = sync_activities(sessions, gateway, profile)
+    await activities.sync_analysis_catalog()
+    # QRadar drops two rules and a log source.
+    qradar.lists["list_rules"] = rule_rows(8, name_length=LONG_NAME)
+    qradar.lists["list_log_sources"] = log_source_rows(4)
+
+    qradar.failing.add("list_log_source_types")
+    with pytest.raises(SystemRunError):
+        await activities.sync_analysis_catalog()
+    qradar.failing.clear()
+    qradar.lists["list_rules"] = [*rule_rows(8, name_length=LONG_NAME), {"id": 1, "name": None}]
+    with pytest.raises(ApplicationError, match="list_rules returned a row that cannot be read"):
+        await activities.sync_analysis_catalog()
+    assert await missing(sessions) == ([], [])
+
+    qradar.lists["list_rules"] = rule_rows(8, name_length=LONG_NAME)
+    counts = await activities.sync_analysis_catalog()
+
+    assert await missing(sessions) == ([100009, 100010], [2005])
+    assert (counts["rules_marked_missing"], counts["log_sources_marked_missing"]) == (2, 1)
+    assert [run.status for run in await sync_runs(sessions)] == [
+        RunStatus.COMPLETED,
+        RunStatus.FAILED,
+        RunStatus.FAILED,
+        RunStatus.COMPLETED,
+    ]
+
+
 async def test_a_failed_read_changes_nothing_and_is_retried(sessions: SessionFactory) -> None:
     qradar = lab_like(rules=10, log_sources=5, extra_types=0)
     qradar.failing.add("list_log_source_types")
@@ -245,7 +298,7 @@ async def test_a_failed_read_changes_nothing_and_is_retried(sessions: SessionFac
 
 
 async def test_unreadable_qradar_data_fails_for_good(sessions: SessionFactory) -> None:
-    rules: list[Row] = [{"id": 100001, "name": None}]
+    rules: list[Row] = [{"id": 100001, "name": None, "enabled": True}]
     qradar = QRadarLists(inventory_lists(rules, log_source_rows(2), type_rows(0)))
     gateway, profile = await inventory_client(sessions, qradar, now=lambda: NOW)
 

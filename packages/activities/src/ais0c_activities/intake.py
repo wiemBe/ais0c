@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Final
 
-from sqlalchemy import func, or_, select, update
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from temporalio import activity
 from temporalio.client import Client
@@ -199,23 +199,20 @@ class IntakeActivities:
 
         It goes through grouping like a new offense, so a rule taken off `skip` cannot start a
         storm of cases. It also counts as first seen now, because the hourly group limit counts
-        offenses by that time; `update_offense_seen` has no parameter for it, so one statement
-        changes the record here.
+        offenses by that time (T-30).
         """
         enrichment = await build_enrichment(session, offense, ioc_matcher=self._ioc_matcher)
         if catalog_mode(offense.rule_ids, enrichment.catalog.rules) is CatalogMode.SKIP:
             return
         analysis = await self._analysis(session, offense, enrichment, now)
-        await session.execute(
-            update(OffenseSeenRow)
-            .where(OffenseSeenRow.offense_id == offense.offense_id)
-            .values(
-                first_seen_at=now,
-                catalog_mode=CatalogMode.ANALYZE,
-                pre_priority=analysis.priority,
-                status=analysis.status,
-                group_id=analysis.grouping.group_id,
-            )
+        await update_offense_seen(
+            session,
+            offense.offense_id,
+            first_seen_at=now,
+            catalog_mode=CatalogMode.ANALYZE,
+            pre_priority=analysis.priority,
+            status=analysis.status,
+            group_id=analysis.grouping.group_id,
         )
         await _join_group(session, analysis.grouping, now)
 

@@ -14,13 +14,19 @@
 4. The recipients are the `operators` list (`notification_recipients`). If one of them is
    outside the allowed domains (`allowed_email_domains`), nobody gets the e-mail: it is
    recorded as `rejected` in `notifications` and as `email.reject` in `audit_log`. An empty
-   list is recorded as `failed`.
+   list is recorded as `failed`. Both checks run before the kill switch, so a bad list shows up
+   in shadow mode already.
 5. The kill switch is checked before the relay is called and again right before the e-mail
-   leaves. With writes off nothing is sent or recorded (`writes_disabled`).
+   leaves. With writes off nothing is sent; the attempt is recorded as `disabled`
+   (`writes_disabled`), which is not a failure (T-37).
 6. If the relay takes the e-mail, it is recorded as `sent` in `notifications` and as
-   `email.send` in `audit_log`. If not, it is recorded as `failed`. Every record carries the
-   alert's level. When a later attempt may succeed, the error is raised after the record is
-   committed, so Temporal retries the activity.
+   `email.send` in `audit_log`. If not, it is recorded as `failed`. When a later attempt may
+   succeed, the error is raised after the record is committed, so Temporal retries the
+   activity.
+
+Every record carries the alert's recipients, subject and level; a `failed` or `rejected` one
+also says why in `error`. Only `sent` counts as sent: a key recorded as `disabled`, `rejected`
+or `failed` is tried again by a later attempt, and the level rule counts none of them.
 
 A crash after the relay took the e-mail but before the record was committed leaves no record,
 so the next attempt sends the e-mail again; the copy has the same Message-ID.
@@ -138,18 +144,20 @@ class EmailSender:
         recipients = await _recipients(session, ALERT_RECIPIENTS)
         message = alert_message(request, recipients)
         if not recipients:
-            await _save(session, request, message, NotificationStatus.FAILED)
             error = f"the {ALERT_RECIPIENTS.value} recipient list is empty"
-            return _outcome(request, EmailResult.FAILED, error), None
+            outcome = _outcome(request, EmailResult.FAILED, error)
+            await _save(session, request, message, NotificationStatus.FAILED, error=outcome.error)
+            return outcome, None
         refused = refused_recipients(recipients, await _allowed_domains(session))
         if refused:
-            await _save(session, request, message, NotificationStatus.REJECTED)
-            await _audit(session, request, message, EMAIL_REJECT_ACTION, refused=refused)
             error = (
                 f"{len(refused)} of {len(recipients)} recipients are not plain addresses in the "
                 "allowed domains; the e-mail went to nobody"
             )
-            return _outcome(request, EmailResult.REJECTED, error), None
+            outcome = _outcome(request, EmailResult.REJECTED, error)
+            await _save(session, request, message, NotificationStatus.REJECTED, error=outcome.error)
+            await _audit(session, request, message, EMAIL_REJECT_ACTION, refused=refused)
+            return outcome, None
 
         body = render_body(message)
         try:
@@ -157,10 +165,12 @@ class EmailSender:
             async with self._transport.connect() as connection:
                 receipt = await self._kill_switch.guarded(lambda: connection.send(message, body))
         except WritesDisabled as error:
+            await _save(session, request, message, NotificationStatus.DISABLED)
             return _outcome(request, EmailResult.WRITES_DISABLED, str(error)), None
         except EmailTransportError as error:
-            await _save(session, request, message, NotificationStatus.FAILED)
-            return _outcome(request, EmailResult.FAILED, str(error)), error
+            outcome = _outcome(request, EmailResult.FAILED, str(error))
+            await _save(session, request, message, NotificationStatus.FAILED, error=outcome.error)
+            return outcome, error
         await _save(session, request, message, NotificationStatus.SENT, sent_at=self._clock())
         await _audit(session, request, message, EMAIL_SEND_ACTION, receipt=receipt)
         return _outcome(request, EmailResult.SENT), None
@@ -219,10 +229,12 @@ async def _save(
     status: NotificationStatus,
     *,
     sent_at: datetime | None = None,
+    error: str | None = None,
 ) -> None:
     """Insert the e-mail's `notifications` row, or update the one an earlier attempt made.
 
-    An update rewrites the recipients and the subject too: the list may have changed since.
+    An update rewrites the recipients, the subject and the error too: the list may have changed
+    since, and only the latest attempt's reason holds.
     """
     if await get_notification(session, message.idempotency_key) is None:
         group_id = request.group_id if isinstance(request, GroupAlert) else None
@@ -234,6 +246,7 @@ async def _save(
             case_id=request.case_id,
             group_id=group_id,
             sent_at=sent_at,
+            error=error,
         )
         return
     statement = (
@@ -244,6 +257,7 @@ async def _save(
             recipients=list(message.recipients),
             subject=message.subject,
             status=status,
+            error=error,
             sent_at=sent_at,
         )
     )

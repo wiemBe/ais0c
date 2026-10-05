@@ -1,6 +1,7 @@
 """`alembic upgrade head` and `alembic downgrade base` on an empty database (T-004 criterion
 1), revision 0002 on a database that holds runs (T-016 criterion 2), and revisions 0003
-(T-017 criterion 1), 0004 (T-020) and 0005 (T-021) on one that holds data.
+(T-017 criterion 1), 0004 (T-020), 0005 (T-021) and 0006 (T-041 criterion 3) on one that holds
+data.
 
 The tests run the real `alembic` command in packages/storage, so alembic.ini, env.py and the
 AIS0C_DATABASE_URL lookup are covered too.
@@ -9,6 +10,7 @@ AIS0C_DATABASE_URL lookup are covered too.
 import os
 import subprocess
 import sys
+from datetime import UTC, datetime
 from pathlib import Path
 
 from sqlalchemy import URL, inspect, text
@@ -61,7 +63,7 @@ def test_upgrade_head_then_downgrade_base(server: Server, empty_database: str) -
     upgraded = alembic("upgrade", "head", url=url)
     assert upgraded.returncode == 0, upgraded.stderr
     current = alembic("current", url=url)
-    assert "0005 (head)" in current.stdout
+    assert "0006 (head)" in current.stdout
     objects = public_objects(url)
     assert set(Base.metadata.tables) <= objects["relations"]
     assert objects["functions"] == {"audit_log_append_only"}
@@ -152,6 +154,163 @@ def test_offline_mode_prints_the_sql(server: Server, empty_database: str) -> Non
     assert "CREATE TRIGGER audit_log_append_only" in printed.stdout
     assert "ALTER TABLE agent_runs ADD COLUMN model_release JSONB" in printed.stdout
     assert "CREATE TABLE platform_flags" in printed.stdout
+    assert "ALTER TABLE notifications ADD COLUMN error TEXT" in printed.stdout
+    assert "UPDATE notes_written SET status='disabled'" in printed.stdout
+
+
+# Rows as revision 0005 holds them: a case, its notes as T-019 recorded them, two e-mails and
+# a catalog entry of each kind.
+CASE_AT_0005 = (
+    "INSERT INTO cases (case_id, source, offense_id, status, evaluation_no, sla_due_at,"
+    " workflow_id, run_id) VALUES ('case-12345', 'offense', 12345, 'running', 1, now(),"
+    " 'case-12345', 'case-12345-triage-1')"
+)
+NOTE_AT_0005 = (
+    "INSERT INTO notes_written (id, case_id, offense_id, evaluation_no, run_marker, status,"
+    " error, written_at) VALUES (gen_random_uuid(), 'case-12345', 12345, 1, :marker, :status,"
+    " :error, now())"
+)
+NOTES_AT_0005 = [
+    # Held back by the kill switch (T-019's form), with and without a reason.
+    {
+        "marker": "aaaaaa",
+        "status": "failed",
+        "error": "writes_disabled: external writes are off: writes_enabled was never switched on"
+        " (shadow mode)",
+    },
+    {"marker": "bbbbbb", "status": "failed", "error": "writes_disabled: the kill switch is off"},
+    # Real failures and a written note keep what they have.
+    {
+        "marker": "cccccc",
+        "status": "failed",
+        "error": "get_offense_notes: error: upstream_unavailable",
+    },
+    {
+        "marker": "dddddd",
+        "status": "failed",
+        "error": "writesXdisabled: the _ of the prefix is no wildcard",
+    },
+    {"marker": "eeeeee", "status": "written", "error": None},
+]
+EMAIL_AT_0005 = (
+    "INSERT INTO notifications (id, kind, level, case_id, recipients, subject, idempotency_key,"
+    " status, sent_at) VALUES (gen_random_uuid(), 'case_alert', 'high', 'case-12345',"
+    " ARRAY['soc-operators@example.com'], 'subject', :key, :status, :sent_at)"
+)
+EMAILS_AT_0005 = [
+    {"key": "case_alert:case-12345:1", "status": "failed", "sent_at": None},
+    {
+        "key": "case_alert:case-12345:2",
+        "status": "sent",
+        "sent_at": datetime(2026, 10, 5, tzinfo=UTC),
+    },
+]
+CATALOG_AT_0005 = [
+    "INSERT INTO catalog_rules (rule_id, rule_name, defined, has_automated_action, updated_by,"
+    " updated_at) VALUES (100201, 'Rule', false, false, 'knowledge-sync', now())",
+    "INSERT INTO catalog_log_sources (log_source_id, name, type_name, defined, in_scope,"
+    " updated_by, updated_at) VALUES (2001, 'DC-01', 'Microsoft Windows Security Event Log',"
+    " false, true, 'knowledge-sync', now())",
+]
+
+
+def test_revision_0006_records_held_back_writes_as_disabled_and_back(
+    server: Server, empty_database: str
+) -> None:
+    """0006 (T-37): a note T-019 recorded as `failed` with a `writes_disabled:` error becomes
+    `disabled` without the error; every other row keeps its status and error. The new catalog
+    columns start empty, `qradar_enabled` true. The downgrade turns `disabled` notes back into
+    T-019's form and `disabled` e-mails into `failed`, drops the columns and keeps every row."""
+    url = server.app_url(empty_database)
+    first = alembic("upgrade", "0005", url=url)
+    assert first.returncode == 0, first.stderr
+    notes = text("SELECT run_marker, status, error FROM notes_written ORDER BY run_marker")
+    emails = text("SELECT idempotency_key, status FROM notifications ORDER BY idempotency_key")
+    engine = create_sync_engine(url)
+    try:
+        with engine.begin() as connection:
+            connection.execute(text(CASE_AT_0005))
+            connection.execute(text(NOTE_AT_0005), NOTES_AT_0005)
+            connection.execute(text(EMAIL_AT_0005), EMAILS_AT_0005)
+            for statement in CATALOG_AT_0005:
+                connection.execute(text(statement))
+
+        upgraded = alembic("upgrade", "head", url=url)
+        assert upgraded.returncode == 0, upgraded.stderr
+        with engine.begin() as connection:
+            assert [tuple(row) for row in connection.execute(notes)] == [
+                ("aaaaaa", "disabled", None),
+                ("bbbbbb", "disabled", None),
+                ("cccccc", "failed", "get_offense_notes: error: upstream_unavailable"),
+                ("dddddd", "failed", "writesXdisabled: the _ of the prefix is no wildcard"),
+                ("eeeeee", "written", None),
+            ]
+            assert [
+                tuple(row)
+                for row in connection.execute(
+                    text("SELECT status, error FROM notifications ORDER BY idempotency_key")
+                )
+            ] == [("failed", None), ("sent", None)]
+            assert tuple(
+                connection.execute(
+                    text("SELECT qradar_enabled, missing_since FROM catalog_rules")
+                ).one()
+            ) == (True, None)
+            assert connection.scalar(text("SELECT missing_since FROM catalog_log_sources")) is None
+            # What the new code writes: a held-back e-mail, a missing and disabled rule.
+            connection.execute(
+                text(
+                    "INSERT INTO notifications (id, kind, level, case_id, recipients, subject,"
+                    " idempotency_key, status) VALUES (gen_random_uuid(), 'case_alert',"
+                    " 'critical', 'case-12345', ARRAY['soc-operators@example.com'], 'subject',"
+                    " 'case_alert:case-12345:3', 'disabled')"
+                )
+            )
+            connection.execute(
+                text("UPDATE catalog_rules SET qradar_enabled = false, missing_since = now()")
+            )
+            connection.execute(text("UPDATE catalog_log_sources SET missing_since = now()"))
+
+        downgraded = alembic("downgrade", "0005", url=url)
+        assert downgraded.returncode == 0, downgraded.stderr
+        with engine.connect() as connection:
+            assert [tuple(row) for row in connection.execute(notes)] == [
+                ("aaaaaa", "failed", "writes_disabled: the kill switch is off"),
+                ("bbbbbb", "failed", "writes_disabled: the kill switch is off"),
+                ("cccccc", "failed", "get_offense_notes: error: upstream_unavailable"),
+                ("dddddd", "failed", "writesXdisabled: the _ of the prefix is no wildcard"),
+                ("eeeeee", "written", None),
+            ]
+            assert [tuple(row) for row in connection.execute(emails)] == [
+                ("case_alert:case-12345:1", "failed"),
+                ("case_alert:case-12345:2", "sent"),
+                ("case_alert:case-12345:3", "failed"),
+            ]
+            inspector = inspect(connection)
+            columns = {
+                table: {column["name"] for column in inspector.get_columns(table)}
+                for table in ("notifications", "catalog_rules", "catalog_log_sources")
+            }
+            assert "error" not in columns["notifications"]
+            assert {"qradar_enabled", "missing_since"}.isdisjoint(columns["catalog_rules"])
+            assert "missing_since" not in columns["catalog_log_sources"]
+            assert connection.scalar(text("SELECT count(*) FROM catalog_rules")) == 1
+            assert connection.scalar(text("SELECT count(*) FROM catalog_log_sources")) == 1
+
+        # Up again: the held-back notes are `disabled` once more.
+        again = alembic("upgrade", "head", url=url)
+        assert again.returncode == 0, again.stderr
+        with engine.connect() as connection:
+            statuses = [tuple(row)[:2] for row in connection.execute(notes)]
+        assert statuses == [
+            ("aaaaaa", "disabled"),
+            ("bbbbbb", "disabled"),
+            ("cccccc", "failed"),
+            ("dddddd", "failed"),
+            ("eeeeee", "written"),
+        ]
+    finally:
+        engine.dispose()
 
 
 def test_revision_0002_adds_skill_and_model_release_to_recorded_runs(

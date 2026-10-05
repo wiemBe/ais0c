@@ -68,7 +68,8 @@ class CatalogContext(ContractModel):
 
 class CriticalAssetHit(ContractModel):
     value: str
-    label: str
+    # A one-line label such as "SWIFT" (v0.4, T-37).
+    label: ShortText
     level: Level
 
 
