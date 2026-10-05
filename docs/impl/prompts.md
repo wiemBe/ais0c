@@ -37,7 +37,7 @@ Her ajan prompt'u şu bölümlerden oluşur:
 1. **Role:** Ajan kim, hangi vakada çalışıyor
 2. **Objective:** Bu çalışmada ne üretmesi gerekiyor
 3. **Shared rules:** Manifest'in `shared_rules` alanının seçtiği `_shared/rules/v<N>.md` içeriği, olduğu gibi
-4. **Skill:** Workflow'un doğruladığı skill'in `instructions.md` içeriği, ardından `required_telemetry` ve `required_evidence` listeleri (T-36). Skill seçilmediyse bölümde yalnızca şu cümle bulunur: "No skill was selected for this case: investigate with the general method." (T-44). Skill içeriği onaylı ve taranmış olduğu için `untrusted_*` ile sarılmaz (architecture §7). Bölümü `ais0c_agents.render_skill` üretir (T-043); skill'li metnin biçimi şudur (T-47):
+4. **Skill:** Yalnızca skill'i uygulayan ajanda (bugün Investigation) bulunur; Orchestrator aday skill'leri kendi bölümünde görür, Verification ve Reporting skill görmez (T-49). Workflow'un doğruladığı skill'in `instructions.md` içeriği, ardından `required_telemetry` ve `required_evidence` listeleri (T-36). Skill seçilmediyse bölümde yalnızca şu cümle bulunur: "No skill was selected for this case: investigate with the general method." (T-44). Skill içeriği onaylı ve taranmış olduğu için `untrusted_*` ile sarılmaz (architecture §7). Bölümü `ais0c_agents.render_skill` üretir (T-043); skill'li metnin biçimi şudur (T-47):
 
    ```text
    <instructions.md, sondaki boş satırlar kırpılmış>
@@ -76,6 +76,7 @@ Bu türe şunlar girer: araç sonuçları, offense açıklaması, kural adları,
 - Etiketteki ek (`7f3a9c`) her ajan çalışması için rastgele üretilir (en az 6 hex karakter).
 - Araç sonucunun etiketindeki `evidence_id`, kanıtın çalışma içi takma adıdır: çalışmanın n'inci araç çağrısı için `ev_<n>` (T-27). Model gateway'in gerçek kimliğini görmez, takma adla atıf yapar; çıktı doğrulaması takma adı gerçek kimliğe çevirir. Kanıt olmayan bloklar (prompt bağlamı, reddedilen veya kanıtsız çağrılar) `ev_none` taşır ve atıf alamaz.
 - Önceki ajanlardan gelen kanıt prompt'a `ev_c<n>` takma adıyla girer (`n` girdideki sıra; T-38). Model bu kanıta da atıf yapabilir; çıktıdaki bütün kanıt alanları aynı doğrulamadan geçer.
+- Önceki ajanların model metni (claim metni, `investigation_focus`, data gap, acil event adayı, plan adımının hedefi) de güvenilmez veridir. `source` değeri `agent.<tür>` biçimindedir: `agent.claim`, `agent.focus`, `agent.data_gap`, `agent.urgent_event`, `agent.objective` (T-48). `qradar.*` yalnızca QRadar'dan gelen veriye, `kb.*` kurum bilgisine aittir.
 - Sarmalayıcı `packages/policy` içindedir. Sarmalamadan önce içerikteki `untrusted_` ve `org_context` geçen etiket benzeri ifadeler etkisiz hale getirilir. Böylece saldırgan log içine kapanış etiketi yazarak veri bölümünden çıkamaz.
 - Araç sonucu ajana başka bir yoldan, sarmalanmadan verilemez. Bunun için negatif test zorunludur.
 

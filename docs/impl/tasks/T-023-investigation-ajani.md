@@ -26,7 +26,6 @@ Ajan workflow'a T-026'da bağlanır. Bu görevde birim testleri ve lab'da Tempor
 - `prompts/investigation/`
 - `config/agents/investigation.yaml`
 - `tests/e2e/`: yalnızca bu görevin lab testi ve gerekirse ona ait yardımcı dosya
-- `config/models/registry.dev.yaml` ve `config/litellm/litellm.dev.yaml`: yalnızca `soc-reasoning` alias'ı ve yalnızca 7. kriterdeki durumda
 
 Bu dizinlerin dışında hiçbir dosya değiştirilmez.
 
@@ -101,7 +100,7 @@ Her madde en az bir testle gösterilir. Testler gerçek model ve gerçek QRadar 
      - AQL'lerin kaçının Guard'dan, kaçının QRadar'dan (422) döndüğü;
      - çift tırnaklı alan adlarının JSON'da bozulup bozulmadığı (T-36 (3));
      - token, süre ve sonuç.
-   - Dev'de `soc-reasoning` yapısal çıktıyı yine üretemezse (D-43), alias DeepSeek V4 Flash'a alınabilir (`registry.dev.yaml`, `litellm.dev.yaml`). Ölçüm ve gerekçe PR'a yazılır.
+   - Dev'de `soc-reasoning` DeepSeek V4 Flash'tır (D-44). Model config'i bu görevde değişmez; yapısal çıktı sorunu çıkarsa ölçüm PR'a yazılır.
 
 ## Kapsam dışı
 
@@ -122,3 +121,18 @@ Her madde en az bir testle gösterilir. Testler gerçek model ve gerçek QRadar 
 - Lab kimlik bilgileri `~/.config/ais0c/lab.env` dosyasındadır. Repoya, fixture'a veya PR'a kopyalanmaz.
 - Dev stack'in `.env`'i ve secret'ları `../ais0c-T-012/deploy/compose/` altındadır. Gateway token'ı `secrets/agents/gateway-token-qradar-investigate-read` dosyasındadır.
 - Lab offense'lerini yalnızca planner açar ve kapatır.
+
+## Devam (2026-10-06)
+
+İlk ajan (OpenCode, Space Bunny) görevi bitiremedi: model OpenRouter'dan kalktı (D-44). Yarım iş commit'lenmeden ana checkout'ta kalmıştı; planner onu ayrı bir worktree'ye taşıdı. Yedeği `../ais0c-prs/backups/` altında.
+
+- **Worktree:** `../ais0c-T-023`, branch `agent/opencode/T-023`. Değişiklikler commit'lenmemiştir. Yeni ajan bu worktree'den devam eder ve branch adını korur ya da `agent/<araç>/T-023` açıp dosyaları taşır.
+- **Durum:** `investigation.py`, manifest, prompt v1 ve yedi test dosyası yazılmış; 187 birim testi geçiyor. Ajan bir kez kuruluyor (doğru).
+- **Eksikler:**
+  - `ruff check`'te 65+, `pyright`'ta 28 hata var.
+  - Lab testi yanlış yerde: `packages/agents/tests/e2e/` ve yeni bir `__init__.py`. Test `tests/e2e/test_lab_investigation.py`'ye taşınır, `packages/agents/tests/e2e/` silinir. Lab testi `helpers`'ı içe aktaramıyor.
+  - Kaynak adları T-48'e göre değişir: `investigation_focus` → `agent.focus`, Triage'ın claim'leri → `agent.claim`. Bunun için T-046 birleşmiş olmalı; branch T-046'dan sonra `main`'e rebase edilir.
+  - Kriter 4'ün `rank` doğrulaması ve kriter 5'in skill rol kontrolü testlerle gösterilmeli; taslakta `output_validator` yok.
+  - PR metni `../ais0c-prs/PR-T-023.md`'ye yazılır.
+- **Lab:** `QRADAR_LAB_OFFENSE_ID=30` (kapalı, `svc_backup` DCSync). Test offense açmaz, kapatmaz, not yazmaz.
+
