@@ -97,7 +97,7 @@ tools:
       additionalProperties: false
       properties:
         fields: {type: string, maxLength: 1000, description: 'Comma-separated field names; omit to get all fields. Valid fields: assigned_to, categories, category_count, close_time, closing_reason_id, closing_user, credibility, description, destination_networks, device_count, domain_id, event_count, first_persisted_time, flow_count, follow_up, id, inactive, last_persisted_time, last_updated_time, local_destination_address_ids, local_destination_count, log_sources, magnitude, offense_source, offense_type, policy_category_count, protected, relevance, remote_destination_count, rules, security_category_count, severity, source_address_ids, source_count, source_network, start_time, status, username_count. Nested fields use parentheses, e.g. rules(id),log_sources(id).'}
-        filter: {type: string, maxLength: 1000, description: 'QRadar REST API filter, not AQL. Form: field operator value, with operators = != < > <= >=. Strings in double quotes, e.g. status = "OPEN". Lists use in with parentheses, e.g. id in (18,19); never square brackets. Combine conditions with and, or and parentheses. Use only the field names listed for the fields argument.'}
+        filter: {type: string, maxLength: 1000, description: "QRadar REST API filter, not AQL: field operator value, joined with and, or and parentheses. Operators: = != < > <= >= and in, which takes a list in parentheses, never square brackets. Strings and IP addresses always go in single quotes, which need no escaping in JSON; numbers and true/false do not. Use only the field names listed for the fields argument. A field that holds a list takes contains. description, offense_source and source_network cannot be filtered. Examples: `status = 'OPEN'`; `id in (18,19)`; `source_address_ids contains 13`; `rules contains id = 100001`."}
         limit: {type: integer, minimum: 1, maximum: 10000, default: 10, description: 'Maximum number of offenses to return (default: 10, max: 10000)'}
         offset: {type: integer, minimum: 0, default: 0, description: 'Number of offenses to skip for pagination (default: 0)'}
         sort: {type: string, maxLength: 1000, description: 'Comma-separated fields, each prefixed with + (ascending) or - (descending), e.g. -start_time,+id. No ASC or DESC keywords.'}
@@ -112,7 +112,7 @@ tools:
       additionalProperties: false
       properties:
         fields: {type: string, maxLength: 1000, description: 'Comma-separated field names; omit to get all fields. Valid fields: custom, database_type, id, name, property_name.'}
-        filter: {type: string, maxLength: 1000, description: 'QRadar REST API filter, not AQL. Form: field operator value, with operators = != < > <= >=. Strings in double quotes, e.g. status = "OPEN". Lists use in with parentheses, e.g. id in (18,19); never square brackets. Combine conditions with and, or and parentheses. Use only the field names listed for the fields argument.'}
+        filter: {type: string, maxLength: 1000, description: "QRadar REST API filter, not AQL: field operator value, joined with and, or and parentheses. Operators: = != < > <= >= and in, which takes a list in parentheses, never square brackets. Strings and IP addresses always go in single quotes, which need no escaping in JSON; numbers and true/false do not. Use only the field names listed for the fields argument. Examples: `id in (0,3)`; `property_name = 'sourceIP'`."}
         limit: {type: integer, minimum: 1, maximum: 10000, default: 10, description: 'Maximum number of results to return (default: 10)'}
         sort: {type: string, maxLength: 1000, description: 'Comma-separated fields, each prefixed with + (ascending) or - (descending), e.g. -start_time,+id. No ASC or DESC keywords.'}
   list_source_addresses:
@@ -125,7 +125,7 @@ tools:
       additionalProperties: false
       properties:
         fields: {type: string, maxLength: 1000, description: 'Comma-separated field names; omit to get all fields. Valid fields: domain_id, event_flow_count, first_event_flow_seen, id, last_event_flow_seen, local_destination_address_ids, magnitude, network, offense_ids, source_ip.'}
-        filter: {type: string, maxLength: 1000, description: 'QRadar REST API filter, not AQL. Form: field operator value, with operators = != < > <= >=. Strings in double quotes, e.g. status = "OPEN". Lists use in with parentheses, e.g. id in (18,19); never square brackets. Combine conditions with and, or and parentheses. Use only the field names listed for the fields argument.'}
+        filter: {type: string, maxLength: 1000, description: "QRadar REST API filter, not AQL: field operator value, joined with and, or and parentheses. Operators: = != < > <= >= and in, which takes a list in parentheses, never square brackets. Strings and IP addresses always go in single quotes, which need no escaping in JSON; numbers and true/false do not. Use only the field names listed for the fields argument. id is the numeric address ID from an offense's source_address_ids, never an IP address. Examples: `source_ip = '192.0.2.1'`; `source_ip in ('192.0.2.1','192.0.2.2')`; `id in (13,14)`."}
         limit: {type: integer, minimum: 1, maximum: 10000, default: 10, description: 'Maximum number of results to return (default: 10)'}
         offset: {type: integer, minimum: 0, description: Starting position for pagination (0-based)}
   list_local_destination_addresses:
@@ -138,7 +138,7 @@ tools:
       additionalProperties: false
       properties:
         fields: {type: string, maxLength: 1000, description: 'Comma-separated field names; omit to get all fields. Valid fields: domain_id, event_flow_count, first_event_flow_seen, id, last_event_flow_seen, local_destination_ip, magnitude, network, offense_ids, source_address_ids.'}
-        filter: {type: string, maxLength: 1000, description: 'QRadar REST API filter, not AQL. Form: field operator value, with operators = != < > <= >=. Strings in double quotes, e.g. status = "OPEN". Lists use in with parentheses, e.g. id in (18,19); never square brackets. Combine conditions with and, or and parentheses. Use only the field names listed for the fields argument.'}
+        filter: {type: string, maxLength: 1000, description: "QRadar REST API filter, not AQL: field operator value, joined with and, or and parentheses. Operators: = != < > <= >= and in, which takes a list in parentheses, never square brackets. Strings and IP addresses always go in single quotes, which need no escaping in JSON; numbers and true/false do not. Use only the field names listed for the fields argument. id is the numeric address ID from an offense's local_destination_address_ids, never an IP address. Examples: `local_destination_ip = '192.0.2.1'`; `local_destination_ip in ('192.0.2.1','192.0.2.2')`; `id in (13,14)`."}
         limit: {type: integer, minimum: 1, maximum: 10000, default: 10, description: 'Maximum number of results to return (default: 10)'}
   list_rules:
     description: 'List QRadar analytics rules: ID, name, type, enabled state and origin.'
@@ -150,7 +150,7 @@ tools:
       additionalProperties: false
       properties:
         fields: {type: string, maxLength: 1000, description: 'Comma-separated field names; omit to get all fields. Valid fields: average_capacity, base_capacity, base_host_id, capacity_timestamp, creation_date, enabled, id, identifier, linked_rule_identifier, modification_date, name, origin, owner, type.'}
-        filter: {type: string, maxLength: 1000, description: 'QRadar REST API filter, not AQL. Form: field operator value, with operators = != < > <= >=. Strings in double quotes, e.g. status = "OPEN". Lists use in with parentheses, e.g. id in (18,19); never square brackets. Combine conditions with and, or and parentheses. Use only the field names listed for the fields argument.'}
+        filter: {type: string, maxLength: 1000, description: "QRadar REST API filter, not AQL: field operator value, joined with and, or and parentheses. Operators: = != < > <= >= and in, which takes a list in parentheses, never square brackets. Strings and IP addresses always go in single quotes, which need no escaping in JSON; numbers and true/false do not. Use only the field names listed for the fields argument. ilike matches a string case-insensitively, with % as a wildcard. Examples: `id in (100001,100002)`; `enabled = true and origin = 'USER'`; `name ilike '%brute force%'`."}
         limit: {type: integer, minimum: 1, maximum: 10000, default: 10, description: 'Maximum number of rules to return (default: 10, max: 10000)'}
         offset: {type: integer, minimum: 0, default: 0, description: 'Number of rules to skip for pagination (default: 0)'}
   get_rule:
@@ -165,7 +165,7 @@ tools:
         fields: {type: string, maxLength: 1000, description: 'Comma-separated field names; omit to get all fields. Valid fields: average_capacity, base_capacity, base_host_id, capacity_timestamp, creation_date, enabled, id, identifier, linked_rule_identifier, modification_date, name, origin, owner, type.'}
         rule_id: {type: integer, minimum: 0, description: The ID of the analytics rule to retrieve}
   list_assets:
-    description: 'List assets from the QRadar asset model: IP addresses, host names, users and properties.'
+    description: 'List assets from the QRadar asset model: IP addresses, host names, users and properties. Look up an IP address or host name with filter instead of reading every asset.'
     cost_class: low
     result: {rows: items}
     page_size_argument: limit
@@ -174,7 +174,7 @@ tools:
       additionalProperties: false
       properties:
         fields: {type: string, maxLength: 1000, description: 'Comma-separated field names; omit to get all fields. Valid fields: domain_id, hostnames, id, interfaces, products, properties, risk_score_sum, vulnerability_count.'}
-        filter: {type: string, maxLength: 1000, description: 'QRadar REST API filter, not AQL. Form: field operator value, with operators = != < > <= >=. Strings in double quotes, e.g. status = "OPEN". Lists use in with parentheses, e.g. id in (18,19); never square brackets. Combine conditions with and, or and parentheses. Use only the field names listed for the fields argument.'}
+        filter: {type: string, maxLength: 1000, description: "QRadar REST API filter, not AQL: field operator value, joined with and, or and parentheses. Operators: = != < > <= >= and in, which takes a list in parentheses, never square brackets. Strings and IP addresses always go in single quotes, which need no escaping in JSON; numbers and true/false do not. Use only the field names listed for the fields argument. IP addresses and host names sit in lists of objects, so they are matched with contains as in the examples. id is the numeric asset ID, never an IP address. Examples: `interfaces contains ip_addresses contains value = '192.0.2.1'`; `interfaces contains ip_addresses contains value in ('192.0.2.1','192.0.2.2')`; `hostnames contains name = 'host01.example.com'`."}
         limit: {type: integer, minimum: 1, maximum: 10000, description: 'Maximum number of assets to return (default: 50, max: 10000)'}
         offset: {type: integer, minimum: 0, description: 'Number of assets to skip for pagination (default: 0)'}
         sort: {type: string, maxLength: 1000, description: 'Comma-separated fields, each prefixed with + (ascending) or - (descending), e.g. -start_time,+id. No ASC or DESC keywords.'}
@@ -188,7 +188,7 @@ tools:
       additionalProperties: false
       properties:
         fields: {type: string, maxLength: 1000, description: 'Comma-separated field names; omit to get all fields. Valid fields: auto_discovered, average_eps, coalesce_events, creation_date, credibility, description, enabled, gateway, group_ids, id, internal, language_id, last_event_time, modified_date, name, protocol_type_id, requires_deploy, status, store_event_payload, target_event_collector_id, type_id.'}
-        filter: {type: string, maxLength: 1000, description: 'QRadar REST API filter, not AQL. Form: field operator value, with operators = != < > <= >=. Strings in double quotes, e.g. status = "OPEN". Lists use in with parentheses, e.g. id in (18,19); never square brackets. Combine conditions with and, or and parentheses. Use only the field names listed for the fields argument.'}
+        filter: {type: string, maxLength: 1000, description: "QRadar REST API filter, not AQL: field operator value, joined with and, or and parentheses. Operators: = != < > <= >= and in, which takes a list in parentheses, never square brackets. Strings and IP addresses always go in single quotes, which need no escaping in JSON; numbers and true/false do not. Use only the field names listed for the fields argument. Examples: `id in (101,102)`; `type_id = 12 and enabled = true`."}
         limit: {type: integer, minimum: 1, maximum: 10000, default: 10, description: 'Maximum number of log sources to return (default: 10, max: 10000)'}
         offset: {type: integer, minimum: 0, default: 0, description: 'Number of log sources to skip for pagination (default: 0)'}
         sort: {type: string, maxLength: 1000, description: 'Comma-separated fields, each prefixed with + (ascending) or - (descending), e.g. -start_time,+id. No ASC or DESC keywords.'}
@@ -213,7 +213,7 @@ tools:
       additionalProperties: false
       properties:
         fields: {type: string, maxLength: 1000, description: 'Comma-separated field names; omit to get all fields. Valid fields: custom, default_protocol_id, id, internal, language_ids, log_source_extension_id, name, protocol_types, uuid.'}
-        filter: {type: string, maxLength: 1000, description: 'QRadar REST API filter, not AQL. Form: field operator value, with operators = != < > <= >=. Strings in double quotes, e.g. status = "OPEN". Lists use in with parentheses, e.g. id in (18,19); never square brackets. Combine conditions with and, or and parentheses. Use only the field names listed for the fields argument.'}
+        filter: {type: string, maxLength: 1000, description: "QRadar REST API filter, not AQL: field operator value, joined with and, or and parentheses. Operators: = != < > <= >= and in, which takes a list in parentheses, never square brackets. Strings and IP addresses always go in single quotes, which need no escaping in JSON; numbers and true/false do not. Use only the field names listed for the fields argument. Examples: `id in (12,13)`; `name = 'Microsoft Windows Security Event Log'`."}
         limit: {type: integer, minimum: 1, maximum: 10000, default: 10, description: 'Maximum number of types to return (default: 10)'}
         offset: {type: integer, minimum: 0, description: Starting index for pagination (0-based)}
   list_reference_sets:
@@ -226,7 +226,7 @@ tools:
       additionalProperties: false
       properties:
         fields: {type: string, maxLength: 1000, description: 'Comma-separated field names; omit to get all fields. Valid fields: description, entry_type, id, name, namespace.'}
-        filter: {type: string, maxLength: 1000, description: 'QRadar REST API filter, not AQL. Form: field operator value, with operators = != < > <= >=. Strings in double quotes, e.g. status = "OPEN". Lists use in with parentheses, e.g. id in (18,19); never square brackets. Combine conditions with and, or and parentheses. Use only the field names listed for the fields argument.'}
+        filter: {type: string, maxLength: 1000, description: "QRadar REST API filter, not AQL: field operator value, joined with and, or and parentheses. Operators: = != < > <= >= and in, which takes a list in parentheses, never square brackets. Strings and IP addresses always go in single quotes, which need no escaping in JSON; numbers and true/false do not. Use only the field names listed for the fields argument. Examples: `name = 'Web Servers'`; `entry_type = 'IP'`."}
         limit: {type: integer, minimum: 1, maximum: 10000, description: 'Maximum number of sets to return (default: 50, max: 10000)'}
         offset: {type: integer, minimum: 0, description: 'Number of sets to skip for pagination (default: 0)'}
         sort: {type: string, maxLength: 1000, description: 'Comma-separated fields, each prefixed with + (ascending) or - (descending), e.g. -start_time,+id. No ASC or DESC keywords.'}
@@ -251,7 +251,7 @@ tools:
       additionalProperties: false
       properties:
         fields: {type: string, maxLength: 1000, description: 'Comma-separated field names; omit to get all fields. Valid fields: creation_time, element_type, key_label, name, namespace, number_of_elements, time_to_live, timeout_type.'}
-        filter: {type: string, maxLength: 1000, description: 'QRadar REST API filter, not AQL. Form: field operator value, with operators = != < > <= >=. Strings in double quotes, e.g. status = "OPEN". Lists use in with parentheses, e.g. id in (18,19); never square brackets. Combine conditions with and, or and parentheses. Use only the field names listed for the fields argument.'}
+        filter: {type: string, maxLength: 1000, description: "QRadar REST API filter, not AQL: field operator value, joined with and, or and parentheses. Operators: = != < > <= >= and in, which takes a list in parentheses, never square brackets. Strings and IP addresses always go in single quotes, which need no escaping in JSON; numbers and true/false do not. Use only the field names listed for the fields argument. Examples: `name = 'Admin Accounts'`; `element_type = 'IP'`."}
         limit: {type: integer, minimum: 1, maximum: 10000, description: 'Maximum number of maps to return (default: 50, max: 10000)'}
         offset: {type: integer, minimum: 0, description: 'Number of maps to skip for pagination (default: 0)'}
         sort: {type: string, maxLength: 1000, description: 'Comma-separated fields, each prefixed with + (ascending) or - (descending), e.g. -start_time,+id. No ASC or DESC keywords.'}
@@ -281,7 +281,7 @@ tools:
       additionalProperties: false
       properties:
         fields: {type: string, maxLength: 1000, description: 'Comma-separated field names; omit to get all fields. Valid fields: creation_time, element_type, key_label, name, namespace, number_of_elements, time_to_live, timeout_type.'}
-        filter: {type: string, maxLength: 1000, description: 'QRadar REST API filter, not AQL. Form: field operator value, with operators = != < > <= >=. Strings in double quotes, e.g. status = "OPEN". Lists use in with parentheses, e.g. id in (18,19); never square brackets. Combine conditions with and, or and parentheses. Use only the field names listed for the fields argument.'}
+        filter: {type: string, maxLength: 1000, description: "QRadar REST API filter, not AQL: field operator value, joined with and, or and parentheses. Operators: = != < > <= >= and in, which takes a list in parentheses, never square brackets. Strings and IP addresses always go in single quotes, which need no escaping in JSON; numbers and true/false do not. Use only the field names listed for the fields argument. Examples: `name = 'Asset Owners'`; `element_type = 'ALN'`."}
         limit: {type: integer, minimum: 1, maximum: 10000, description: 'Maximum number of tables to return (default: 50, max: 10000)'}
         offset: {type: integer, minimum: 0, description: 'Number of tables to skip for pagination (default: 0)'}
         sort: {type: string, maxLength: 1000, description: 'Comma-separated fields, each prefixed with + (ascending) or - (descending), e.g. -start_time,+id. No ASC or DESC keywords.'}
