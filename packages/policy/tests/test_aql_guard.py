@@ -142,6 +142,42 @@ def test_rejects_limit_above_profile() -> None:
 @pytest.mark.parametrize(
     "time_clause",
     [
+        "LAST 5 MINUTES",
+        "last 5 minutes",
+        "START '2026-09-01 00:00' STOP '2026-09-01 01:00'",
+        "start '2026-09-01 00:00' stop '2026-09-01 01:00'",
+    ],
+)
+@pytest.mark.parametrize("literal", ["a", "LIMIT", "LIMIT 10"])
+def test_rejects_limit_after_time_bound(time_clause: str, literal: str) -> None:
+    query = f"SELECT * FROM events WHERE username = '{literal}' {time_clause} limit 10"
+    assert rejected_for(query) == (R.LIMIT_AFTER_TIME_BOUND,)
+
+
+@pytest.mark.parametrize(
+    "time_clause",
+    ["LAST 5 MINUTES", "START '2026-09-01 00:00' STOP '2026-09-01 01:00'"],
+)
+@pytest.mark.parametrize("literal", ["LIMIT", "LAST", "START", "it''s LAST 5 MINUTES LIMIT 10"])
+def test_clause_order_ignores_words_inside_literals(time_clause: str, literal: str) -> None:
+    query = f"SELECT * FROM events WHERE username = '{literal}' LIMIT 10 {time_clause}"
+    assert check(query).allowed
+
+
+def test_clause_order_ignores_quoted_field_names() -> None:
+    names = 'SELECT "LAST", "START" FROM events WHERE "LIMIT" = \'a\''
+    assert check(f"{names} LIMIT 10 LAST 5 MINUTES").allowed
+    assert rejected_for(f"{names} LAST 5 MINUTES LIMIT 10") == (R.LIMIT_AFTER_TIME_BOUND,)
+
+
+def test_limit_after_time_bound_is_reported_with_other_limit_reasons() -> None:
+    query = "SELECT * FROM events WHERE username = 'a' LAST 5 MINUTES LIMIT 1001"
+    assert rejected_for(query) == (R.LIMIT_EXCEEDS_PROFILE, R.LIMIT_AFTER_TIME_BOUND)
+
+
+@pytest.mark.parametrize(
+    "time_clause",
+    [
         "LAST 8 DAYS",
         "LAST 10081 MINUTES",
         "START '2026-09-01 00:00' STOP '2026-09-08 00:01'",

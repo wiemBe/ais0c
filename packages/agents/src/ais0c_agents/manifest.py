@@ -5,10 +5,17 @@ model alias or a capability the model lacks stops the agent with an error (fail 
 """
 
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated, Literal, Self
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints, ValidationError
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StringConstraints,
+    ValidationError,
+    model_validator,
+)
 
 from ais0c_agents._yaml import load_yaml
 from ais0c_agents.llm import ModelAlias
@@ -36,7 +43,7 @@ class Budgets(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     tokens: Annotated[int, Field(gt=0)]
-    tool_calls: Annotated[int, Field(gt=0)]
+    tool_calls: Annotated[int, Field(ge=0)]
     wall_clock_seconds: Annotated[int, Field(gt=0)]
 
 
@@ -67,6 +74,12 @@ class AgentManifest(BaseModel):
     # prompt hashes of past runs depend on them.
     shared_rules: SharedRulesPath
     eval_suites: Annotated[frozenset[Name], Field(min_length=1)]
+
+    @model_validator(mode="after")
+    def _tool_call_budget_matches_profile(self) -> Self:
+        if self.toolset_profile is not None and self.budgets.tool_calls == 0:
+            raise ValueError("budgets.tool_calls must be positive when toolset_profile is set")
+        return self
 
 
 def parse_manifest(data: object, registry: ModelRegistry) -> AgentManifest:

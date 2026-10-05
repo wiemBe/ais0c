@@ -6,7 +6,7 @@ clauses that matter for cost and scope at parenthesis depth 0:
 
 - the query is a single `SELECT` statement without nested `SELECT`s,
 - `FROM` names one allowed table,
-- `LIMIT` is present and within the profile,
+- `LIMIT` is present, within the profile, and precedes the time clause,
 - `LAST` or `START ... STOP` is present and the window is within the profile,
 - a wide window filters on at least one indexed field.
 
@@ -43,6 +43,7 @@ class AqlRejectReason(StrEnum):
     MISSING_LIMIT = "missing_limit"
     LIMIT_INVALID = "limit_invalid"
     LIMIT_EXCEEDS_PROFILE = "limit_exceeds_profile"
+    LIMIT_AFTER_TIME_BOUND = "limit_after_time_bound"
     MISSING_TIME_BOUND = "missing_time_bound"
     TIME_BOUND_INVALID = "time_bound_invalid"
     WINDOW_EXCEEDS_PROFILE = "window_exceeds_profile"
@@ -366,6 +367,9 @@ def _check_limit(tokens: list[_Token], profile: AqlProfile, reasons: list[AqlRej
         reasons.append(AqlRejectReason.LIMIT_EXCEEDS_PROFILE)
     elif int(value.text) < 1:
         reasons.append(AqlRejectReason.LIMIT_INVALID)
+    time_positions = _top_level(tokens, "LAST") + _top_level(tokens, "START")
+    if any(position < positions[0] for position in time_positions):
+        reasons.append(AqlRejectReason.LIMIT_AFTER_TIME_BOUND)
 
 
 def _is_integer(token: _Token) -> bool:

@@ -141,6 +141,35 @@ def test_agent_without_tools_has_a_null_profile() -> None:
     assert parse_manifest(data, registry()).toolset_profile is None
 
 
+def test_agent_without_tools_accepts_a_zero_tool_call_budget() -> None:
+    data = manifest_data()
+    data["toolset_profile"] = None
+    data["budgets"]["tool_calls"] = 0
+
+    manifest = parse_manifest(data, registry())
+
+    assert manifest.toolset_profile is None
+    assert manifest.budgets.tool_calls == 0
+
+
+def test_agent_with_tools_rejects_a_zero_tool_call_budget() -> None:
+    data = manifest_data()
+    data["budgets"]["tool_calls"] = 0
+
+    with pytest.raises(ManifestError, match=r"budgets\.tool_calls must be positive"):
+        parse_manifest(data, registry())
+
+
+@pytest.mark.parametrize("profile", [None, "qradar-triage-read"])
+def test_negative_tool_call_budget_is_rejected(profile: str | None) -> None:
+    data = manifest_data()
+    data["toolset_profile"] = profile
+    data["budgets"]["tool_calls"] = -1
+
+    with pytest.raises(ManifestError, match="tool_calls"):
+        parse_manifest(data, registry())
+
+
 # --- model alias and capabilities ---------------------------------------------------------
 
 

@@ -296,6 +296,8 @@ def _scan(directory: Path, data: object, instructions: str) -> None:
     problems = [f"{INSTRUCTIONS_FILE} {finding}" for finding in scan_instructions(instructions)]
     for where, value in _strings(data):
         # Names may be Turkish; the rest of the manifest is English, like the instructions.
+        # This includes every nested required_telemetry and required_evidence string because
+        # their contents also enter the prompt's trusted Skill section (T-36, T-44).
         scan = scan_text if where in _NAME_FIELDS else scan_instructions
         problems += [f"{MANIFEST_FILE} {where}: {finding.reason}" for finding in scan(value)]
     if problems:

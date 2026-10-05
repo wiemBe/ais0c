@@ -16,27 +16,21 @@ from dataclasses import dataclass
 from typing import Annotated, Final
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
-from pydantic_ai import Agent, AgentRetries, ToolOutput
+from pydantic_ai import Agent, AgentRetries
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.models import Model
 
+from ais0c_agents.builder import AgentSpec, check_agent_config, create_agent
 from ais0c_agents.gateway import GatewayClient
 from ais0c_agents.manifest import AgentManifest
 from ais0c_agents.prompts import (
-    SHARED_RULES_PLACEHOLDER,
     KnowledgeItem,
     PromptTemplate,
     render_knowledge,
     render_org_context,
     wrap_json_lines,
 )
-from ais0c_agents.runner import (
-    AgentRun,
-    check_cited_evidence,
-    prompt_tool_budget,
-    run_agent,
-    usage_limits,
-)
+from ais0c_agents.runner import AgentRun, prompt_tool_budget, run_agent, usage_limits
 from ais0c_agents.toolset import RunDeps, ToolsetProfile, build_gateway_toolset
 from ais0c_contracts import (
     AgentTask,
@@ -57,7 +51,6 @@ from ais0c_policy import neutralize_tags
 
 INPUT_SCHEMA: Final = "TriageTask"
 OUTPUT_SCHEMA: Final = "TriageResult"
-OUTPUT_TOOL: Final = "final_result"
 # Corrections the model gets for invalid tool calls and for invalid output.
 TOOL_RETRIES: Final = 2
 OUTPUT_RETRIES: Final = 2
@@ -103,6 +96,17 @@ class TriageOutput(BaseModel):
     claims: list[Claim]
     data_gaps: list[DataGap]
     injection_suspected: bool
+
+
+SPEC: Final = AgentSpec(
+    name="Triage",
+    input_schema=INPUT_SCHEMA,
+    output_schema=OUTPUT_SCHEMA,
+    placeholders=PLACEHOLDERS,
+    output_type=TriageOutput,
+    output_description="Return the TriageResult for this offense.",
+    retries=RETRIES,
+)
 
 
 @dataclass(frozen=True)
@@ -207,36 +211,13 @@ def build_triage_agent(
     agent, its prompt, shared rules or profile is not the one given, the prompt does not take
     this agent's inputs, or the profile is unknown.
     """
-    if (manifest.input_schema, manifest.output_schema) != (INPUT_SCHEMA, OUTPUT_SCHEMA):
-        raise ValueError(
-            f"manifest {manifest.id!r} declares {manifest.input_schema} -> "
-            f"{manifest.output_schema}, not {INPUT_SCHEMA} -> {OUTPUT_SCHEMA}"
-        )
-    if prompt.path != manifest.prompt:
-        raise ValueError(f"manifest {manifest.id!r} uses {manifest.prompt}, not {prompt.path}")
-    if prompt.shared_rules_path != manifest.shared_rules:
-        raise ValueError(
-            f"manifest {manifest.id!r} uses {manifest.shared_rules}, not {prompt.shared_rules_path}"
-        )
-    if (inputs := prompt.placeholders - {SHARED_RULES_PLACEHOLDER}) != PLACEHOLDERS:
-        raise ValueError(
-            f"{prompt.path} takes {', '.join(sorted(inputs))}; the Triage agent fills "
-            f"{', '.join(sorted(PLACEHOLDERS))}"
-        )
-    profile = profiles.get(manifest.toolset_profile or "")
-    if profile is None or profile.name != manifest.toolset_profile:
-        raise ValueError(f"unknown toolset profile {manifest.toolset_profile!r}")
-
-    agent = Agent(
-        model,
-        output_type=ToolOutput(
-            TriageOutput, name=OUTPUT_TOOL, description="Return the TriageResult for this offense."
-        ),
-        deps_type=RunDeps,
+    profile = check_agent_config(SPEC, manifest, prompt, profiles)
+    agent = create_agent(
+        SPEC,
+        manifest=manifest,
+        model=model,
         toolsets=[build_gateway_toolset(profile, gateway, agent_id=manifest.id)],
-        retries=RETRIES,
-        name=manifest.id,
-        capabilities=list(capabilities),
+        aql=None,
+        capabilities=capabilities,
     )
-    agent.output_validator(check_cited_evidence)
     return TriageAgent(manifest=manifest, prompt=prompt, profile=profile, agent=agent)

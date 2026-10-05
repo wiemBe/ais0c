@@ -49,6 +49,7 @@ from ais0c_agents.prompts import NO_EVIDENCE_ID, wrap_json_lines
 from ais0c_contracts import (
     SHORT_TEXT_MAX_LENGTH,
     CostClass,
+    EvidenceId,
     RunId,
     TimeWindow,
     ToolIntent,
@@ -141,6 +142,10 @@ class RunDeps(BaseModel):
     time_window: TimeWindow
     nonce: Annotated[str, StringConstraints(pattern=_NONCE.pattern)]
     """Suffix of this run's `untrusted_*` tags (prompts.md)."""
+    context_evidence: tuple[EvidenceId, ...] = ()
+    """The gateway's evidence IDs of the evidence from earlier agents that the prompt shows
+    (evidence.render_context_evidence), in its order: the model cites the n-th as `ev_c<n>`
+    (decision T-38)."""
 
 
 class GatewayCallRecord(BaseModel):

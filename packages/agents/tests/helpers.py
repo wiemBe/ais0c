@@ -14,7 +14,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from pydantic import JsonValue
+from pydantic import BaseModel, ConfigDict, JsonValue
 from pydantic_ai.messages import (
     ModelMessage,
     ModelRequest,
@@ -25,22 +25,34 @@ from pydantic_ai.messages import (
     ToolReturnPart,
     UserPromptPart,
 )
+from pydantic_ai.models import Model
 from pydantic_ai.models.function import AgentInfo, FunctionModel
+from pydantic_ai.toolsets import AbstractToolset
 
 from ais0c_agents import (
     AgentManifest,
     AgentRun,
+    AgentSpec,
+    AqlRules,
     FakeGatewayClient,
     KnowledgeItem,
     PromptTemplate,
+    RunDeps,
     ToolsetProfile,
     ToolSpec,
     TriageAgent,
     TriageTask,
     build_triage_agent,
+    check_agent_config,
+    create_agent,
     load_manifest,
     load_prompt,
+    render_context_evidence,
+    render_skill,
+    run_agent,
+    usage_limits,
 )
+from ais0c_agents.manifest import parse_manifest
 from ais0c_agents.registry import ModelRegistry, parse_model_registry
 from ais0c_contracts import (
     AgentTask,
@@ -49,19 +61,25 @@ from ais0c_contracts import (
     CatalogLogSource,
     CatalogMode,
     CatalogRule,
+    Claim,
     Confidence,
     CostClass,
     CriticalAssetHit,
     EnrichmentContext,
     EntityResolution,
+    EvidenceRef,
+    EvidenceSource,
     IocHit,
     Level,
     OffenseSnapshot,
+    ShortText,
     TimeWindow,
     ToolCoverage,
     ToolResult,
     ToolStatus,
     TriageResult,
+    UrgentEvent,
+    Usage,
 )
 from ais0c_policy import KnowledgeKind
 
@@ -445,3 +463,169 @@ def run_triage(
     return asyncio.run(
         agent.run(task or triage_task(), run_id=run_id, nonce=NONCE, clock=FakeClock())
     )
+
+
+# --- context evidence and an agent without tools (T-043) --------------------------------------
+
+# The gateway's evidence IDs of evidence earlier agents collected (a UUIDv7 after `ev_`).
+CONTEXT_EVIDENCE = ("ev_0199a1b2c3d47e8f9a0b1c2d3e4f5a61", "ev_0199a1b2c3d47e8f9a0b1c2d3e4f5a62")
+CONTEXT_QUERY = (
+    "SELECT username, sourceip FROM events WHERE username = 'svc_backup_7731' "
+    "LIMIT 50 START '2026-10-02 13:00' STOP '2026-10-02 14:00'"
+)
+
+
+def evidence_ref(
+    evidence_id: str,
+    *,
+    source: EvidenceSource = EvidenceSource.QRADAR,
+    excerpt: str = '[{"sourceip":"203.0.113.77","username":"svc_backup_7731"}]',
+    identifiers: Mapping[str, str] | None = None,
+) -> EvidenceRef:
+    """Evidence as the gateway recorded it: query, window, identifiers and masked excerpt."""
+    return EvidenceRef(
+        evidence_id=evidence_id,
+        source=source,
+        query_hash="9f" * 32,
+        query_text=CONTEXT_QUERY,
+        time_start=START,
+        time_end=END,
+        identifiers=dict(identifiers or {"tool": "create_ariel_search", "rows": "1"}),
+        excerpt=excerpt,
+        retrieved_at=END,
+    )
+
+
+def context_evidence() -> list[EvidenceRef]:
+    return [
+        evidence_ref(CONTEXT_EVIDENCE[0]),
+        evidence_ref(
+            CONTEXT_EVIDENCE[1],
+            source=EvidenceSource.FALCON,
+            excerpt='[{"ComputerName":"ws-17","UserName":"svc_backup_7731"}]',
+            identifiers={"tool": "ngsiem_search", "rows": "1"},
+        ),
+    ]
+
+
+# What the agent without tools returns: a summary, claims and urgent events. No docstring, as in
+# the real agents' output models.
+class SummaryOutput(BaseModel):
+    model_config = ConfigDict(extra="forbid", title="CaseSummary")
+
+    summary: ShortText
+    claims: list[Claim]
+    urgent_events: list[UrgentEvent] = []
+
+
+SUMMARY_PROMPT = PromptTemplate(
+    path="prompts/summary/v1.md",
+    template=(
+        "# Shared rules\n{{ shared_rules }}\n\n# Evidence\n{{ evidence }}\n\n"
+        "# Skill\n{{ skill }}\n\n# Output\nReturn a CaseSummary.\n"
+    ),
+    shared_rules_path=SHARED_RULES,
+    shared_rules="Cite only the evidence_ids on the evidence blocks.\n",
+    sha256="a" * 64,
+)
+SUMMARY_RUN_ID = "case-4711-summary-1"
+SUMMARY_BUDGET = Budget(tokens=60000, tool_calls=0, seconds=120)
+
+
+def summary_spec(*, output_retries: int = 2) -> AgentSpec[SummaryOutput]:
+    return AgentSpec(
+        name="Summary",
+        input_schema="SummaryTask",
+        output_schema="CaseSummary",
+        placeholders=frozenset({"evidence", "skill"}),
+        output_type=SummaryOutput,
+        output_description="Return the CaseSummary for this case.",
+        retries={"tools": 0, "output": output_retries},
+    )
+
+
+def summary_manifest(*, max_steps: int = 4, toolset_profile: str | None = None) -> AgentManifest:
+    """An agent manifest like Reporting's: no toolset profile and no tool calls."""
+    data = triage_manifest().model_dump(mode="json")
+    data.update(
+        id="summary",
+        role="Summarize the structured case data.",
+        model_alias="soc-report",
+        required_model_capabilities=["structured_output"],
+        input_schema="SummaryTask",
+        output_schema="CaseSummary",
+        toolset_profile=toolset_profile,
+        max_steps=max_steps,
+        prompt=SUMMARY_PROMPT.path,
+    )
+    data["budgets"] = {
+        "tokens": 60000,
+        "tool_calls": 0 if toolset_profile is None else 4,
+        "wall_clock_seconds": 120,
+    }
+    return parse_manifest(data, registry())
+
+
+def run_summary(
+    model: Model,
+    *,
+    evidence: Sequence[EvidenceRef] = (),
+    manifest: AgentManifest | None = None,
+    spec: AgentSpec[SummaryOutput] | None = None,
+    budget: Budget = SUMMARY_BUDGET,
+    toolsets: Sequence[AbstractToolset[RunDeps]] = (),
+    aql: AqlRules | None = None,
+) -> AgentRun[SummaryOutput]:
+    """Build and run the agent without tools once, as Reporting will: its context evidence in
+    the prompt as `ev_c<n>` and its IDs in RunDeps."""
+    manifest = manifest or summary_manifest()
+    spec = spec or summary_spec()
+    if not toolsets:
+        check_agent_config(spec, manifest, SUMMARY_PROMPT)
+    agent = create_agent(spec, manifest=manifest, model=model, toolsets=toolsets, aql=aql)
+    deps = RunDeps(
+        run_id=SUMMARY_RUN_ID,
+        case_id="case-4711",
+        hunt_id=None,
+        time_window=TimeWindow(start=START, end=END),
+        nonce=NONCE,
+        context_evidence=tuple(ref.evidence_id for ref in evidence),
+    )
+    instructions = SUMMARY_PROMPT.render(
+        {
+            "evidence": render_context_evidence(evidence, nonce=NONCE) or "No evidence.",
+            "skill": render_skill(None),
+        }
+    )
+
+    def finalize(output: SummaryOutput, usage: Usage) -> SummaryOutput:
+        return output
+
+    return asyncio.run(
+        run_agent(
+            agent,
+            user_prompt="Summarize case 4711.",
+            instructions=instructions,
+            deps=deps,
+            limits=usage_limits(manifest, budget),
+            prompt=SUMMARY_PROMPT,
+            finalize=finalize,
+            clock=FakeClock(),
+        )
+    )
+
+
+def summary_output(*evidence_ids: str, **overrides: object) -> dict[str, object]:
+    """A valid CaseSummary whose single claim cites `evidence_ids` (no claim if none)."""
+    claims: list[object] = (
+        [
+            {
+                "text": "svc_backup_7731 logged on from 203.0.113.77.",
+                "evidence_ids": list(evidence_ids),
+            }
+        ]
+        if evidence_ids
+        else []
+    )
+    output: dict[str, object] = {"summary": "Logon failures, then a logon.", "claims": claims}
+    return output | overrides
