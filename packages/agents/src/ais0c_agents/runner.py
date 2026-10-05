@@ -10,9 +10,9 @@ The wall-clock budget is not enforced here: the Temporal activity and workflow t
 """
 
 import time
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Final, Protocol
+from typing import Any, Final, Protocol, Self
 
 from pydantic_ai import Agent, ModelRetry, RunContext, capture_run_messages
 from pydantic_ai.exceptions import AgentRunError, UsageLimitExceeded
@@ -22,11 +22,14 @@ from pydantic_ai.usage import RunUsage, UsageLimits
 from ais0c_agents.gateway import GatewayError
 from ais0c_agents.manifest import AgentManifest
 from ais0c_agents.prompts import PromptTemplate
-from ais0c_agents.toolset import RunDeps, returned_evidence_ids
+from ais0c_agents.toolset import RunDeps, evidence_aliases
 from ais0c_contracts import Budget, Claim, RunStatus, Usage
 from ais0c_policy import neutralize_tags
 
 MAX_ERROR_LENGTH: Final = 1000
+# How much of the evidence IDs a rejected output cited goes back to the model.
+MAX_SHOWN_CITATIONS: Final = 5
+MAX_SHOWN_CITATION_LENGTH: Final = 80
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -45,6 +48,10 @@ class AgentRun[ResultT]:
 class _HasClaims(Protocol):
     @property
     def claims(self) -> Sequence[Claim]: ...
+
+    def model_copy(
+        self, *, update: Mapping[str, Any] | None = None, deep: bool = False
+    ) -> Self: ...
 
 
 def usage_limits(manifest: AgentManifest, budget: Budget) -> UsageLimits:
@@ -67,18 +74,33 @@ def prompt_tool_budget(manifest: AgentManifest, budget: Budget) -> int:
 def check_cited_evidence[OutputT: _HasClaims](ctx: RunContext[RunDeps], output: OutputT) -> OutputT:
     """Output validator: every claim cites only evidence the gateway returned in this run.
 
-    A rejected output goes back to the model for another try (Pydantic AI output retries).
+    The model cites the evidence aliases it saw on its tool results (T-27); the validated
+    output carries the gateway's evidence IDs instead. A rejected output goes back to the
+    model for another try (Pydantic AI output retries).
     """
-    returned = returned_evidence_ids(ctx.messages)
-    uncited = sorted({eid for claim in output.claims for eid in claim.evidence_ids} - returned)
-    if uncited:
-        shown = ", ".join(eid[:80] for eid in uncited[:5])
-        raise ModelRetry(
-            "These evidence_ids were not returned by your tool calls in this run: "
-            f"{neutralize_tags(shown)}. Cite only evidence_ids from your tool results, "
-            "or remove the claim."
-        )
-    return output
+    aliases = evidence_aliases(ctx.messages)
+    cited = {alias for claim in output.claims for alias in claim.evidence_ids}
+    if unknown := sorted(cited - aliases.keys()):
+        raise ModelRetry(_rejection(unknown, aliases))
+    claims = [
+        Claim(text=claim.text, evidence_ids=[aliases[alias] for alias in claim.evidence_ids])
+        for claim in output.claims
+    ]
+    return output.model_copy(update={"claims": claims})
+
+
+def _rejection(unknown: Sequence[str], aliases: Mapping[str, str]) -> str:
+    """What the model is told about citations it may not make: its own rejected citations,
+    tag-neutralized and cut short, and the aliases it may cite. No gateway evidence ID."""
+    shown = ", ".join(cited[:MAX_SHOWN_CITATION_LENGTH] for cited in unknown[:MAX_SHOWN_CITATIONS])
+    rejected = (
+        "These evidence_ids were not returned by your tool calls in this run: "
+        f"{neutralize_tags(shown)}."
+    )
+    if not aliases:
+        return f"{rejected} Your tool calls returned no evidence you can cite: remove the claim."
+    citable = ", ".join(sorted(aliases, key=lambda alias: int(alias.removeprefix("ev_"))))
+    return f"{rejected} You can cite only {citable}. Cite one of them or remove the claim."
 
 
 async def run_agent[OutputT, ResultT](

@@ -46,6 +46,7 @@ from temporalio.service import RPCError, RPCStatusCode
 from worker_support import (  # pyright: ignore[reportMissingImports]
     model_requests,
     run_nonce,
+    tool_returns,
     unwrapped_tool_returns,
 )
 
@@ -224,6 +225,11 @@ async def test_a_lab_offense_is_triaged_end_to_end(
     assert calls, "the Triage agent made no tool call"
     assert {call.policy_decision for call in calls} <= {PolicyDecision.ALLOW, PolicyDecision.DENY}
     assert [row for row in evidence if row.query_hash], "no evidence with a query hash"
+    # T-038: the model cited evidence aliases, and the result carries evidence the gateway
+    # recorded for this run's calls.
+    recorded = {row.evidence_id for row in evidence}
+    cited = {evidence_id for claim in run.result.claims for evidence_id in claim.evidence_ids}
+    assert cited <= recorded, f"cited evidence the run did not record: {cited - recorded}"
     # Criterion 6: the model was called by its alias.
     assert run.model_alias == "soc-fast"
     # Criterion 5: every tool result in the recorded model requests is wrapped.
@@ -232,6 +238,9 @@ async def test_a_lab_offense_is_triaged_end_to_end(
     assert requests
     for messages in requests:
         assert unwrapped_tool_returns(messages, nonce) == []
+        # T-038: tool results show aliases, never the gateway's evidence IDs.
+        for part in tool_returns(messages):
+            assert not any(evidence_id in str(part.content) for evidence_id in recorded)
     # Criterion 4: one run of the Triage workflow, one agent run, the open request retried.
     assert description.status is not None
     assert description.status.name == "COMPLETED"

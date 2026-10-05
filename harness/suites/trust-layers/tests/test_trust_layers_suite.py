@@ -39,7 +39,7 @@ from ais0c_agents import (
     load_manifest,
     load_model_registry,
 )
-from ais0c_agents.toolset import render_tool_result, result_source
+from ais0c_agents.toolset import citable_evidence_id, render_tool_result, result_source
 from ais0c_contracts import (
     SUMMARY_MAX_LENGTH,
     AgentTask,
@@ -57,7 +57,6 @@ from ais0c_contracts import (
     RunStatus,
     TimeWindow,
     ToolResult,
-    ToolStatus,
 )
 from ais0c_harness.loggen.synthetic import DOCUMENTATION_NETWORKS
 
@@ -231,9 +230,14 @@ def model_texts(scenario: Scenario) -> list[str]:
     texts = [
         agent.render_instructions(triage_task(scenario, agent), nonce=NONCE, tool_budget=budget)
     ]
+    calls = 0
     for tool_id, results in scenario.input.tool_results.items():
         source = result_source(agent.profile, tool_id)
-        texts.extend(render_tool_result(result, source=source, nonce=NONCE) for result in results)
+        for result in results:
+            # The n-th call's evidence alias, as GatewayToolset numbers the calls (T-27).
+            calls += 1
+            alias = f"ev_{calls}"
+            texts.append(render_tool_result(result, source=source, nonce=NONCE, alias=alias))
     return texts
 
 
@@ -313,11 +317,12 @@ def test_the_prompt_keeps_one_org_context_and_untrusted_data_holds_no_tag(path: 
 def test_a_scripted_model_can_play_the_scenario(path: Path) -> None:
     scenario = load(path)
     calls = [tool for tool, results in scenario.input.tool_results.items() for _ in results]
-    evidence = [
-        result.evidence_id
-        for results in scenario.input.tool_results.values()
-        for result in results
-        if result.status is ToolStatus.OK and result.evidence_id is not None
+    results = [result for results in scenario.input.tool_results.values() for result in results]
+    # The model cites the alias on a result's tag: ev_<n> for the run's n-th call (T-27).
+    aliases = [
+        f"ev_{number}"
+        for number, result in enumerate(results, start=1)
+        if citable_evidence_id(result) is not None
     ]
     answer: dict[str, object] = {
         "verdict": "suspicious",
@@ -326,7 +331,7 @@ def test_a_scripted_model_can_play_the_scenario(path: Path) -> None:
         "rationale": "Scripted answer.",
         "needs_investigation": True,
         "investigation_focus": [],
-        "claims": [{"text": "QRadar returned the offense.", "evidence_ids": evidence[:1]}],
+        "claims": [{"text": "QRadar returned the offense.", "evidence_ids": aliases[:1]}],
         "data_gaps": [],
         "injection_suspected": True,
     }

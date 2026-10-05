@@ -28,6 +28,7 @@ Test `@pytest.mark.lab` ile işaretlidir. `QRADAR_LAB_URL` ve `QRADAR_LAB_TOKEN`
 | 4 | Triage workflow'u tek çalışmadır (tek `WorkflowExecutionStarted`), tek `agent_runs` satırı vardır ve kesilen model isteği en az ikinci denemesiyle tamamlanmıştır |
 | 5 | Çalışmanın Temporal geçmişindeki model isteği activity'lerinin girdisi, modele giden mesajların tamamıdır. Bu mesajlardaki her araç sonucu, çalışmanın nonce'lu `untrusted_*` sarmalayıcısının içindedir. |
 | 6 | Çalışma `soc-fast` alias'ıyla kaydedilmiştir. Model çağrıları LiteLLM'in dev konfigürasyonundan geçer. |
+| T-038 | Modele giden araç sonuçlarında gateway'in kanıt kimlikleri geçmez; etiketler çağrının takma adını (`ev_<n>`) taşır. Kararın atıf yaptığı her kanıt kimliği bu çalışmanın `evidence` tablosunda kayıtlıdır. |
 
 ## Ön koşullar
 

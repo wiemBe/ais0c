@@ -333,6 +333,14 @@ def answer(output: Mapping[str, object]) -> Step:
     return step
 
 
+def alias(call_no: int) -> str:
+    """The evidence alias on the result of the run's `call_no`-th tool call (decision T-27).
+
+    The model sees and cites the alias; the run's result carries the gateway's evidence ID.
+    """
+    return f"ev_{call_no}"
+
+
 def triage_output(*evidence_ids: str, **overrides: object) -> dict[str, object]:
     """A valid model output whose single claim cites `evidence_ids` (no claim if none)."""
     claims: list[object] = (

@@ -5,8 +5,9 @@ and activities, a fake offense source).
 The Triage agent is the real one (config/agents/triage.yaml, prompts/triage/v2.md) with Pydantic
 AI's TemporalDurability; only its model and its gateway are stand-ins. The model is a
 FunctionModel that reads the offense through the gateway once and then answers, citing what the
-gateway returned. Its calls run inside the agent's model activities, so a test can see the
-activity attempt and make a request wait or fail.
+gateway returned by the evidence alias on the result's tag, as a real model does (decision T-27).
+Its calls run inside the agent's model activities, so a test can see the activity attempt and
+make a request wait or fail.
 
 IPs are from the RFC 5737 ranges.
 """
@@ -201,13 +202,11 @@ class TriageModel:
                     )
                 ]
             )
-        metadata = returned[-1].metadata
-        evidence_id = metadata.get("evidence_id") if isinstance(metadata, dict) else None
         return ModelResponse(
-            parts=[ToolCallPart(info.output_tools[0].name, self._output(evidence_id))]
+            parts=[ToolCallPart(info.output_tools[0].name, self._output(cited_alias(returned[-1])))]
         )
 
-    def _output(self, evidence_id: object) -> dict[str, object]:
+    def _output(self, evidence_id: str) -> dict[str, object]:
         return {
             "verdict": "suspicious",
             "confidence": "medium",
@@ -221,6 +220,18 @@ class TriageModel:
             "data_gaps": [],
             "injection_suspected": True,
         }
+
+
+_TAG_ALIAS = re.compile(r'\A<untrusted_[0-9a-f]{8,64} source="[^"]+" evidence_id="([^"]+)">\n')
+
+
+def cited_alias(part: ToolReturnPart) -> str:
+    """The evidence_id on a tool result's wrapper tag: what a model sees and cites."""
+    content = part.content if isinstance(part.content, str) else ""
+    found = _TAG_ALIAS.match(content)
+    if found is None:
+        raise AssertionError(f"tool result without a wrapper tag: {content[:200]!r}")
+    return found[1]
 
 
 def tool_returns(messages: Sequence[ModelMessage]) -> list[ToolReturnPart]:

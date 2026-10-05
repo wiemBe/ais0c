@@ -4,9 +4,15 @@ import asyncio
 
 import pytest
 from pydantic import ValidationError
+from pydantic_ai.toolsets import FunctionToolset
 
 from ais0c_agents import ToolsetProfile, ToolSpec, build_triage_agent
-from ais0c_agents.toolset import build_gateway_toolset, result_source, tool_parameters_schema
+from ais0c_agents.toolset import (
+    GatewayToolset,
+    build_gateway_toolset,
+    result_source,
+    tool_parameters_schema,
+)
 from ais0c_contracts import CostClass, RunStatus
 
 from .helpers import (
@@ -120,7 +126,11 @@ def test_model_that_keeps_calling_a_tool_outside_the_profile_fails_the_run() -> 
 def test_gateway_toolset_has_an_id_for_temporal_activities() -> None:
     toolset = build_gateway_toolset(TRIAGE_PROFILE, gateway(), agent_id="triage")
 
-    assert toolset.id == "gateway-qradar-triage-read"
+    # TemporalDurability turns the calls of the wrapped FunctionToolset into activities named
+    # after its ID; the wrapper that numbers the calls stays in workflow code (T-27).
+    assert isinstance(toolset, GatewayToolset)
+    assert isinstance(toolset.wrapped, FunctionToolset)
+    assert toolset.wrapped.id == "gateway-qradar-triage-read"
 
 
 def test_unknown_profile_stops_the_build() -> None:

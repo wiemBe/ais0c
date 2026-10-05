@@ -13,6 +13,7 @@ from ais0c_contracts import RunStatus, TriageResult
 from .helpers import (
     OFFENSE_EVIDENCE,
     ScriptedModel,
+    alias,
     answer,
     build,
     call,
@@ -27,17 +28,17 @@ RUN_FIELDS = {"task_id", "status", "usage"}
 
 
 def without(field: str) -> dict[str, object]:
-    output = triage_output(OFFENSE_EVIDENCE)
+    output = triage_output(alias(1))
     del output[field]
     return output
 
 
 INVALID_OUTPUTS = [
-    pytest.param(triage_output(OFFENSE_EVIDENCE, verdict="maybe"), id="unknown verdict"),
-    pytest.param(triage_output(OFFENSE_EVIDENCE, ai_level="severe"), id="unknown level"),
-    pytest.param(triage_output(OFFENSE_EVIDENCE, rationale="x" * 601), id="rationale too long"),
+    pytest.param(triage_output(alias(1), verdict="maybe"), id="unknown verdict"),
+    pytest.param(triage_output(alias(1), ai_level="severe"), id="unknown level"),
+    pytest.param(triage_output(alias(1), rationale="x" * 601), id="rationale too long"),
     pytest.param(
-        triage_output(OFFENSE_EVIDENCE, investigation_focus=["Check logons."] * 6),
+        triage_output(alias(1), investigation_focus=["Check logons."] * 6),
         id="six focus items",
     ),
     pytest.param(
@@ -50,9 +51,9 @@ INVALID_OUTPUTS = [
     ),
     pytest.param(without("rationale"), id="missing rationale"),
     pytest.param(without("injection_suspected"), id="missing injection flag"),
-    pytest.param(triage_output(OFFENSE_EVIDENCE, status="completed"), id="sets run status"),
+    pytest.param(triage_output(alias(1), status="completed"), id="sets run status"),
     pytest.param(
-        triage_output(OFFENSE_EVIDENCE, usage={"tokens": 0, "tool_calls": 0, "seconds": 0}),
+        triage_output(alias(1), usage={"tokens": 0, "tool_calls": 0, "seconds": 0}),
         id="sets usage",
     ),
 ]
@@ -63,7 +64,7 @@ def test_invalid_output_goes_back_to_the_model(invalid: dict[str, object]) -> No
     script = ScriptedModel(
         call("get_offense", offense_id=4711),
         answer(invalid),
-        answer(triage_output(OFFENSE_EVIDENCE)),
+        answer(triage_output(alias(1))),
     )
 
     run = run_triage(build(script, gateway()))
@@ -89,9 +90,7 @@ def test_output_that_stays_invalid_fails_the_run(invalid: dict[str, object]) -> 
 
 
 def test_completed_run_returns_a_triage_result() -> None:
-    script = ScriptedModel(
-        call("get_offense", offense_id=4711), answer(triage_output(OFFENSE_EVIDENCE))
-    )
+    script = ScriptedModel(call("get_offense", offense_id=4711), answer(triage_output(alias(1))))
 
     run = run_triage(build(script, gateway()))
 

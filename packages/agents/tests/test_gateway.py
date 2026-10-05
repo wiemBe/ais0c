@@ -17,10 +17,10 @@ from ais0c_contracts import CostClass, RunStatus, TimeWindow, ToolIntent, ToolRe
 from .helpers import (
     END,
     OFFENSE_EVIDENCE,
-    RULE_EVIDENCE,
     RUN_ID,
     START,
     ScriptedModel,
+    alias,
     answer,
     build,
     call,
@@ -140,7 +140,7 @@ def test_every_intent_the_agent_sends_conforms_to_the_contract() -> None:
             expected_evidence="The rule's tests and thresholds.",
             rule_id=100234,
         ),
-        answer(triage_output(OFFENSE_EVIDENCE, RULE_EVIDENCE)),
+        answer(triage_output(alias(1), alias(2))),
     )
 
     run = run_triage(build(script, fake))
@@ -165,7 +165,7 @@ def test_every_intent_carries_the_run_id_the_run_was_given() -> None:
     script = ScriptedModel(
         call("get_offense", offense_id=4711),
         call("get_rule", rule_id=100234),
-        answer(triage_output(OFFENSE_EVIDENCE, RULE_EVIDENCE)),
+        answer(triage_output(alias(1), alias(2))),
     )
 
     run = run_triage(build(script, fake), run_id="case-4711-triage-7")

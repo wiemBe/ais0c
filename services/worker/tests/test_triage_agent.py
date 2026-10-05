@@ -21,6 +21,7 @@ from worker_support import (
     Platform,
     RecordingGateway,
     TriageModel,
+    cited_alias,
     eventually,
     model_requests,
     offense,
@@ -148,6 +149,27 @@ async def test_tool_results_reach_the_model_only_inside_the_wrapper(
     assert returned.content.count(f"</untrusted_{nonce}>") == 1
     assert ESCAPE not in returned.content
     assert "<org_context>" not in returned.content
+
+
+async def test_the_model_cites_an_alias_and_never_sees_the_evidence_id(
+    env: WorkflowEnvironment, sessions: SessionFactory
+) -> None:
+    """T-038: the tool result shows the call's evidence alias; the model cites it, and the run's
+    result carries the gateway's evidence ID."""
+    async with running_platform(env, sessions) as platform:
+        await decided_case(platform, 73)
+        history = await env.client.get_workflow_handle("case-73-triage-1").fetch_history()
+        [run] = await platform.agent_runs("case-73")
+
+    requests = model_requests(history)
+    [returned] = tool_returns(requests[-1])
+    assert cited_alias(returned) == "ev_1"
+    for messages in requests:
+        for part in tool_returns(messages):
+            assert isinstance(part.content, str)
+            assert OFFENSE_EVIDENCE not in part.content
+    assert isinstance(run.result, TriageResult)
+    assert [claim.evidence_ids for claim in run.result.claims] == [[OFFENSE_EVIDENCE]]
 
 
 def test_the_wrapper_check_finds_unwrapped_tool_results() -> None:
@@ -286,3 +308,9 @@ async def test_a_worker_restart_resumes_the_triage_run(
         (run_id, RunStatus.COMPLETED, 1)
     ]
     assert (case.evaluation_no, case.verdict) == (1, CaseVerdict.SUSPICIOUS)
+    # T-038: the second worker's model cited the alias the first worker's call returned, and
+    # the mapping read from the replayed history turned it into the evidence ID.
+    [replayed] = tool_returns(model_requests(history)[-1])
+    assert cited_alias(replayed) == "ev_1"
+    assert isinstance(runs[0].result, TriageResult)
+    assert [claim.evidence_ids for claim in runs[0].result.claims] == [[OFFENSE_EVIDENCE]]

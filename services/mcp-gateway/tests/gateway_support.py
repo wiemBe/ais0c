@@ -8,6 +8,7 @@ instructions on purpose; the gateway must never pass them on (criterion 5).
 
 import copy
 import importlib.util
+import re
 import secrets
 import socket
 import threading
@@ -34,7 +35,7 @@ from pydantic_ai.models.function import AgentInfo
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from starlette.types import ASGIApp, Receive, Scope, Send
 
-from ais0c_agents import AgentRun, build_triage_agent
+from ais0c_agents import NO_EVIDENCE_ID, AgentRun, build_triage_agent
 from ais0c_agents.gateway_http import HttpGatewayClient
 from ais0c_contracts import AgentTask, Budget, RunStatus, TimeWindow, ToolResult, TriageResult
 from ais0c_mcp_gateway.app import create_app
@@ -477,6 +478,10 @@ def agent_helpers() -> ModuleType:
     return module
 
 
+# The evidence_id on a tool result's wrapper tag: the call's evidence alias (decision T-27).
+_TAG_EVIDENCE = re.compile(r'\A<untrusted_[0-9a-f]{8,64} source="[^"]+" evidence_id="([^"]+)">\n')
+
+
 @dataclass
 class TriageThroughGateway:
     run: AgentRun[TriageResult]
@@ -490,7 +495,8 @@ async def triage_through_gateway(harness: Harness) -> TriageThroughGateway:
     """Run T-009's Triage agent with a scripted model, the HTTP client and this gateway.
 
     The tools come from the gateway's tool list; the model reads the offense, then answers
-    with a claim citing the evidence ID the gateway returned.
+    with a claim citing the evidence alias on the result's tag, as a real model does (T-27).
+    The evidence IDs the gateway returned are collected from the results' metadata.
     """
     helpers = agent_helpers()
     await harness.start_run(
@@ -507,7 +513,9 @@ async def triage_through_gateway(harness: Harness) -> TriageThroughGateway:
             for part in returned
             if isinstance(part.metadata, dict) and part.metadata.get("evidence_id")
         )
-        output = helpers.triage_output(*evidence_ids)
+        tags = [_TAG_EVIDENCE.match(part.model_response_str()) for part in returned]
+        aliases = [tag[1] for tag in tags if tag is not None and tag[1] != NO_EVIDENCE_ID]
+        output = helpers.triage_output(*aliases)
         return ModelResponse(parts=[ToolCallPart(info.output_tools[0].name, output)])
 
     script = helpers.ScriptedModel(

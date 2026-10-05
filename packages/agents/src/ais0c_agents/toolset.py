@@ -5,15 +5,22 @@ ToolIntent for the gateway (architecture §13.2); the model supplies the tool's 
 reason for the call and the evidence it expects, and the run supplies the rest. That includes
 the run's own ID, under which the gateway records the call (T-19). The result reaches the model
 only inside the `untrusted_*` wrapper, as JSON lines: a header with the status and coverage,
-then one line per row. The wrapper tag carries the evidence ID.
+then one line per row.
+
+The wrapper tag carries the call's evidence alias, `ev_<n>` for the run's n-th tool call, not
+the gateway's evidence ID (decision T-27): models miscopy 32-character IDs. The model cites the
+alias; the evidence ID stays in the tool return's metadata, which the model never sees, and
+the output validator maps the alias back.
 
 The tools form a FunctionToolset with an `id`, so TemporalDurability can run each call as an
-activity (T-012). The gateway client is bound when the agent is built; per-run values travel
-in RunDeps, which serializes.
+activity (T-012). GatewayToolset wraps it and stays in workflow code, where the message
+history is: it numbers each call and hands the alias to the tool as an argument. The gateway
+client is bound when the agent is built; per-run values travel in RunDeps, which serializes.
 """
 
 import re
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
+from dataclasses import dataclass
 from typing import Annotated, Any, Final, Literal, Self
 
 from pydantic import (
@@ -25,10 +32,17 @@ from pydantic import (
     ValidationError,
     model_validator,
 )
-from pydantic_ai import ModelRetry, RunContext
-from pydantic_ai.messages import ModelMessage, ModelRequest, ToolReturn, ToolReturnPart
+from pydantic_ai import ModelRetry, RunContext, UnexpectedModelBehavior
+from pydantic_ai.messages import (
+    ModelMessage,
+    ModelRequest,
+    ModelResponse,
+    ToolCallPart,
+    ToolReturn,
+    ToolReturnPart,
+)
 from pydantic_ai.tools import Tool
-from pydantic_ai.toolsets import FunctionToolset
+from pydantic_ai.toolsets import FunctionToolset, ToolsetTool, WrapperToolset
 
 from ais0c_agents.gateway import GatewayClient, GatewayError
 from ais0c_agents.prompts import NO_EVIDENCE_ID, wrap_json_lines
@@ -53,6 +67,14 @@ TOOLSET_ID_PREFIX: Final = "gateway-"
 # The policy package's wrapper accepts the same nonces; checking early fails a run before any
 # model request.
 _NONCE = re.compile(r"^[0-9a-f]{8,64}$")
+# The evidence IDs the policy package's wrapper accepts. The model sees only aliases, but a
+# gateway evidence ID must still fit: claims carry it into storage, notes and e-mails.
+_GATEWAY_EVIDENCE_ID = re.compile(r"^ev_[A-Za-z0-9_.:-]{1,128}$")
+
+EVIDENCE_ALIAS_ARG: Final = "evidence_alias"
+"""The argument GatewayToolset adds to every call: the call's evidence alias."""
+_EVIDENCE_ALIAS = re.compile(r"^ev_[1-9][0-9]{0,5}$")
+EvidenceAlias = Annotated[str, StringConstraints(pattern=_EVIDENCE_ALIAS.pattern)]
 
 
 class ToolSpec(BaseModel):
@@ -129,6 +151,16 @@ class GatewayCallRecord(BaseModel):
     tool_id: str
     status: ToolStatus
     evidence_id: str | None
+    """The gateway's evidence ID, when the model may cite the result."""
+    evidence_alias: EvidenceAlias | None
+    """What the model saw on the result's tag and cites instead; set exactly when
+    `evidence_id` is."""
+
+    @model_validator(mode="after")
+    def _alias_with_evidence(self) -> Self:
+        if (self.evidence_id is None) != (self.evidence_alias is None):
+            raise ValueError("evidence_alias is set exactly when evidence_id is")
+        return self
 
 
 class _ToolCallArgs(BaseModel):
@@ -139,11 +171,57 @@ class _ToolCallArgs(BaseModel):
     arguments: dict[str, JsonValue]
 
 
+@dataclass
+class GatewayToolset(WrapperToolset[RunDeps]):
+    """The gateway tools of one profile; numbers each call with its evidence alias (T-27).
+
+    Under TemporalDurability only the wrapped FunctionToolset's calls become activities, so
+    this wrapper runs in workflow code and sees the run's message history. Each call gets
+    `ev_<n>` for the run's n-th tool call, under EVIDENCE_ALIAS_ARG, which overwrites an
+    argument of that name from the model. History is the only state, so a replay after a
+    worker restart numbers every call the same way.
+    """
+
+    async def call_tool(
+        self,
+        name: str,
+        tool_args: dict[str, Any],
+        ctx: RunContext[RunDeps],
+        tool: ToolsetTool[RunDeps],
+    ) -> object:
+        alias = evidence_alias_of_call(ctx.messages, ctx.tool_call_id)
+        return await super().call_tool(name, {**tool_args, EVIDENCE_ALIAS_ARG: alias}, ctx, tool)
+
+
 def build_gateway_toolset(
     profile: ToolsetProfile, gateway: GatewayClient, *, agent_id: str
-) -> FunctionToolset[RunDeps]:
+) -> GatewayToolset:
     tools = [_gateway_tool(spec, profile, gateway, agent_id) for spec in profile.tools]
-    return FunctionToolset(tools, id=f"{TOOLSET_ID_PREFIX}{profile.name}")
+    return GatewayToolset(FunctionToolset(tools, id=f"{TOOLSET_ID_PREFIX}{profile.name}"))
+
+
+def evidence_alias_of_call(messages: Sequence[ModelMessage], tool_call_id: str | None) -> str:
+    """The evidence alias of a tool call in the model's latest response.
+
+    `ev_<n>` for the run's n-th tool call: every tool call of every response counts, in order,
+    output tool calls included, so aliases stay unique whatever toolsets a run has. Raises
+    UnexpectedModelBehavior when the call is not in the latest response exactly once, since
+    two calls would then share an alias.
+    """
+    responses = [message for message in messages if isinstance(message, ModelResponse)]
+    latest = (
+        [part.tool_call_id for part in responses[-1].parts if isinstance(part, ToolCallPart)]
+        if responses
+        else []
+    )
+    if tool_call_id is None or latest.count(tool_call_id) != 1:
+        raise UnexpectedModelBehavior(
+            f"tool call {tool_call_id!r:.80} is not in the model's latest response exactly once"
+        )
+    earlier = sum(
+        isinstance(part, ToolCallPart) for response in responses[:-1] for part in response.parts
+    )
+    return f"ev_{earlier + latest.index(tool_call_id) + 1}"
 
 
 def tool_parameters_schema(spec: ToolSpec) -> dict[str, Any]:
@@ -179,22 +257,16 @@ def tool_parameters_schema(spec: ToolSpec) -> dict[str, Any]:
     return schema
 
 
-def render_tool_result(result: ToolResult, *, source: str, nonce: str) -> str:
-    """The wrapped text the model sees for a tool result.
+def render_tool_result(result: ToolResult, *, source: str, nonce: str, alias: str) -> str:
+    """The wrapped text the model sees for a tool result of the call with evidence `alias`.
 
-    Only an `ok` result carries its evidence ID; every other block carries NO_EVIDENCE_ID.
+    The tag carries the alias only when the result has evidence to cite; every other block
+    carries NO_EVIDENCE_ID. The gateway's evidence ID is never part of the text.
     """
-    # The evidence ID is on the wrapper tag, and only when the model may cite it.
     header: dict[str, JsonValue] = result.model_dump(mode="json", exclude={"data", "evidence_id"})
     header["rows"] = len(result.data)
-    evidence_id = citable_evidence_id(result) or NO_EVIDENCE_ID
-    try:
-        return wrap_json_lines(
-            [header, *result.data], source=source, nonce=nonce, evidence_id=evidence_id
-        )
-    except ValueError as error:
-        # The source and nonce are validated earlier; this is a malformed evidence ID.
-        raise GatewayError(f"gateway returned an unusable evidence_id: {error}") from error
+    evidence = alias if citable_evidence_id(result) is not None else NO_EVIDENCE_ID
+    return wrap_json_lines([header, *result.data], source=source, nonce=nonce, evidence_id=evidence)
 
 
 def result_source(profile: ToolsetProfile, tool_id: str) -> str:
@@ -203,14 +275,26 @@ def result_source(profile: ToolsetProfile, tool_id: str) -> str:
 
 
 def citable_evidence_id(result: ToolResult) -> str | None:
-    if result.status is ToolStatus.OK and result.evidence_id not in (None, NO_EVIDENCE_ID):
-        return result.evidence_id
-    return None
+    """The evidence ID of an `ok` result, or None when the result has no evidence to cite.
+
+    Raises GatewayError for an evidence ID the wrapper would not accept: the contract allows
+    any non-space text after `ev_`, quotes and angle brackets included.
+    """
+    if result.status is not ToolStatus.OK or result.evidence_id in (None, NO_EVIDENCE_ID):
+        return None
+    if not _GATEWAY_EVIDENCE_ID.fullmatch(result.evidence_id):
+        raise GatewayError(f"gateway returned an unusable evidence_id: {result.evidence_id!r:.80}")
+    return result.evidence_id
 
 
-def returned_evidence_ids(messages: Iterable[ModelMessage]) -> frozenset[str]:
-    """Evidence IDs that gateway tools returned with an `ok` status in these messages."""
-    found: set[str] = set()
+def evidence_aliases(messages: Iterable[ModelMessage]) -> dict[str, str]:
+    """The evidence a model may cite in a run: evidence alias -> the gateway's evidence ID.
+
+    Read from the metadata of the run's gateway tool returns with an `ok` status. An alias
+    bound to two different evidence IDs is left out; GatewayToolset never makes one.
+    """
+    found: dict[str, str] = {}
+    clashing: set[str] = set()
     for message in messages:
         if not isinstance(message, ModelRequest):
             continue
@@ -221,9 +305,15 @@ def returned_evidence_ids(messages: Iterable[ModelMessage]) -> frozenset[str]:
                 record = GatewayCallRecord.model_validate(part.metadata)
             except ValidationError:
                 continue
-            if record.status is ToolStatus.OK and record.evidence_id not in (None, NO_EVIDENCE_ID):
-                found.add(record.evidence_id)
-    return frozenset(found)
+            if (
+                record.status is not ToolStatus.OK
+                or record.evidence_id in (None, NO_EVIDENCE_ID)
+                or record.evidence_alias is None
+            ):
+                continue
+            if found.setdefault(record.evidence_alias, record.evidence_id) != record.evidence_id:
+                clashing.add(record.evidence_alias)
+    return {alias: evidence_id for alias, evidence_id in found.items() if alias not in clashing}
 
 
 def _gateway_tool(
@@ -232,6 +322,10 @@ def _gateway_tool(
     source = result_source(profile, spec.id)
 
     async def call_gateway(ctx: RunContext[RunDeps], **raw_args: object) -> ToolReturn:
+        alias = raw_args.pop(EVIDENCE_ALIAS_ARG, None)
+        if not isinstance(alias, str) or not _EVIDENCE_ALIAS.fullmatch(alias):
+            # Only GatewayToolset knows the run's history; without it no call is made.
+            raise GatewayError(f"{spec.id} was called without an evidence alias")
         try:
             args = _ToolCallArgs.model_validate(raw_args)
         except ValidationError as error:
@@ -251,11 +345,17 @@ def _gateway_tool(
             cost_class=spec.cost_class,
         )
         result = await gateway.call(intent)
+        evidence_id = citable_evidence_id(result)
         record = GatewayCallRecord(
-            tool_id=spec.id, status=result.status, evidence_id=citable_evidence_id(result)
+            tool_id=spec.id,
+            status=result.status,
+            evidence_id=evidence_id,
+            evidence_alias=None if evidence_id is None else alias,
         )
         return ToolReturn(
-            return_value=render_tool_result(result, source=source, nonce=ctx.deps.nonce),
+            return_value=render_tool_result(
+                result, source=source, nonce=ctx.deps.nonce, alias=alias
+            ),
             metadata=record.model_dump(mode="json"),
         )
 

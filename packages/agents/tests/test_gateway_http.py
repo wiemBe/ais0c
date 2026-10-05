@@ -29,6 +29,7 @@ from .helpers import (
     RUN_ID,
     START,
     ScriptedModel,
+    alias,
     answer,
     call,
     denied,
@@ -197,9 +198,7 @@ def build_agent(script: ScriptedModel, client: HttpGatewayClient) -> TriageAgent
 
 def test_a_triage_run_completes_through_the_client() -> None:
     recorder = Recorder()
-    script = ScriptedModel(
-        call("get_offense", offense_id=4711), answer(triage_output(OFFENSE_EVIDENCE))
-    )
+    script = ScriptedModel(call("get_offense", offense_id=4711), answer(triage_output(alias(1))))
     agent = build_agent(script, recorder.client())
 
     run = run_triage(agent, run_id="case-4711-triage-2")

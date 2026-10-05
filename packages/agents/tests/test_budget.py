@@ -7,9 +7,9 @@ from ais0c_agents.runner import prompt_tool_budget, usage_limits
 from ais0c_contracts import Budget, RunStatus
 
 from .helpers import (
-    OFFENSE_EVIDENCE,
     ScriptedModel,
     Step,
+    alias,
     answer,
     build,
     call,
@@ -27,7 +27,7 @@ def offense_calls(count: int) -> list[Step]:
 
 def test_tool_call_limit_of_the_manifest_ends_the_run_as_budget_exhausted() -> None:
     fake = gateway()
-    script = ScriptedModel(*offense_calls(3), answer(triage_output(OFFENSE_EVIDENCE)))
+    script = ScriptedModel(*offense_calls(3), answer(triage_output(alias(1))))
 
     run = run_triage(build(script, fake, triage_manifest(tool_calls=2)))
 
@@ -41,7 +41,7 @@ def test_tool_call_limit_of_the_manifest_ends_the_run_as_budget_exhausted() -> N
 
 def test_run_within_the_tool_call_limit_completes() -> None:
     fake = gateway()
-    script = ScriptedModel(*offense_calls(2), answer(triage_output(OFFENSE_EVIDENCE)))
+    script = ScriptedModel(*offense_calls(2), answer(triage_output(alias(1))))
 
     run = run_triage(build(script, fake, triage_manifest(tool_calls=2)))
 
@@ -51,7 +51,7 @@ def test_run_within_the_tool_call_limit_completes() -> None:
 
 def test_smaller_task_budget_applies() -> None:
     fake = gateway()
-    script = ScriptedModel(*offense_calls(2), answer(triage_output(OFFENSE_EVIDENCE)))
+    script = ScriptedModel(*offense_calls(2), answer(triage_output(alias(1))))
 
     run = run_triage(build(script, fake), triage_task(tool_calls=1))
 
@@ -60,7 +60,7 @@ def test_smaller_task_budget_applies() -> None:
 
 
 def test_step_limit_ends_the_run_as_budget_exhausted() -> None:
-    script = ScriptedModel(*offense_calls(2), answer(triage_output(OFFENSE_EVIDENCE)))
+    script = ScriptedModel(*offense_calls(2), answer(triage_output(alias(1))))
 
     run = run_triage(build(script, gateway(), triage_manifest(max_steps=2)))
 
@@ -71,7 +71,7 @@ def test_step_limit_ends_the_run_as_budget_exhausted() -> None:
 
 
 def test_token_limit_ends_the_run_as_budget_exhausted() -> None:
-    script = ScriptedModel(*offense_calls(1), answer(triage_output(OFFENSE_EVIDENCE)))
+    script = ScriptedModel(*offense_calls(1), answer(triage_output(alias(1))))
 
     run = run_triage(build(script, gateway(), triage_manifest(tokens=100)))
 
