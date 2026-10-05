@@ -1,15 +1,15 @@
 {#- The e-mail of a case whose notify level is high or critical (architecture §9, "E-posta
     bildirimi"): the fields of the case's QRadar note and the link to the platform. Every field is
-    one cleaned line built by ais0c_executor.email.render; raw log text never comes in. -#}
-{% import "parts/labels.txt" as labels %}
+    one cleaned line built by ais0c_executor.email.render, contract values with their Turkish
+    labels; raw log text never comes in. -#}
 {% from "parts/events.txt" import events %}
-AI-SOC: bildirim seviyesi {{ labels.level(fields.level) }} olan bir offense var.
+AI-SOC: bildirim seviyesi {{ fields.level }} olan bir offense var.
 
 Offense: #{{ fields.offense_id }} · {{ fields.offense_name }}
 Değerlendirme: #{{ fields.evaluation_no }} · {{ fields.evaluated_at }}
-Karar: {{ labels.verdict(fields.verdict) }} · Güven: {{ labels.confidence(fields.confidence) }} · Bildirim seviyesi: {{ labels.level(fields.level) }}
-{% if fields.verdict == "fp" %}
-AI bu offense'i yanlış pozitif olarak değerlendirdi, ancak bildirim seviyesi {{ labels.level(fields.level) }} olduğu için operatörün bakması gerekir.
+Karar: {{ fields.verdict }} · Güven: {{ fields.confidence }} · Bildirim seviyesi: {{ fields.level }}
+{% if fields.verdict_is_fp %}
+AI bu offense'i yanlış pozitif olarak değerlendirdi, ancak bildirim seviyesi {{ fields.level }} olduğu için operatörün bakması gerekir.
 {% endif %}
 
 Özet: {{ fields.summary }}

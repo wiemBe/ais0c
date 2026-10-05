@@ -1,17 +1,17 @@
-{#- The e-mail of a group of offenses in storm state whose notify level is high or critical, one
-    per group (architecture §9, "Offense gruplama ve fırtına koruması"). Every field is one
-    cleaned line built by ais0c_executor.email.render; raw log text never comes in. -#}
-{% import "parts/labels.txt" as labels %}
+{#- The e-mail of a group of offenses in storm state whose notify level is high or critical; a
+    new one goes out only when its level rises above the group's sent alerts (D-42). Every field is
+    one cleaned line built by ais0c_executor.email.render, contract values with their Turkish
+    labels; raw log text never comes in. -#}
 {% from "parts/events.txt" import events %}
-AI-SOC: bildirim seviyesi {{ labels.level(fields.level) }} olan bir offense fırtınası var.
+AI-SOC: bildirim seviyesi {{ fields.level }} olan bir offense fırtınası var.
 
 Grup: {{ fields.group_id }} · {{ fields.offense_count }} offense · {{ fields.title }}
 Grup değerlendirmesi: #{{ fields.evaluation_no }} · {{ fields.evaluated_at }}
-Karar: {{ labels.verdict(fields.verdict) }} · Güven: {{ labels.confidence(fields.confidence) }} · Bildirim seviyesi: {{ labels.level(fields.level) }}
-{% if fields.verdict == "fp" %}
-AI bu grubu yanlış pozitif olarak değerlendirdi, ancak bildirim seviyesi {{ labels.level(fields.level) }} olduğu için operatörün bakması gerekir.
+Karar: {{ fields.verdict }} · Güven: {{ fields.confidence }} · Bildirim seviyesi: {{ fields.level }}
+{% if fields.verdict_is_fp %}
+AI bu grubu yanlış pozitif olarak değerlendirdi, ancak bildirim seviyesi {{ fields.level }} olduğu için operatörün bakması gerekir.
 {% endif %}
-Gruptaki offense'ler tek tek değil, grup olarak değerlendirildi. Gruba sonradan eklenen offense'lerin QRadar notunda bu karar yer alır; bu grup için yeniden e-posta gönderilmez.
+Gruptaki offense'ler tek tek değil, grup olarak değerlendirildi. Gruba sonradan eklenen offense'lerin QRadar notunda bu karar yer alır; bu grup için yeni bir e-posta ancak seviye yükselirse gider.
 
 Özet: {{ fields.summary }}
 

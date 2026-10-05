@@ -29,7 +29,6 @@ from ais0c_activities import (
     load_smtp_settings,
 )
 from ais0c_activities.email import (
-    EXECUTOR_SECRETS_DIR_ENV,
     SMTP_CA_FILE_ENV,
     SMTP_FROM_ENV,
     SMTP_HOST_ENV,
@@ -46,6 +45,7 @@ from ais0c_contracts import (
     Level,
     NoteContent,
 )
+from ais0c_executor.common import EXECUTOR_SECRETS_DIR_ENV
 from ais0c_executor.email import (
     CaseAlert,
     EmailOutcome,
@@ -56,7 +56,7 @@ from ais0c_executor.email import (
     SendReceipt,
     TlsMode,
 )
-from ais0c_storage import ActorKind, NotificationStatus, PlatformFlag, RecipientList
+from ais0c_storage import ActorKind, NotificationStatus, PlatformFlag
 from ais0c_storage.models import (
     AllowedEmailDomainRow,
     NotificationRecipientRow,
@@ -144,7 +144,7 @@ async def activities(sessions: SessionFactory, relay: Relay) -> EmailActivities:
         await session.execute(insert(AllowedEmailDomainRow), [{"domain": "example.com"}])
         await session.execute(
             insert(NotificationRecipientRow),
-            [{"list_name": RecipientList.OPERATORS, "email": email} for email in OPERATORS],
+            [{"list_name": "operators", "email": email} for email in OPERATORS],
         )
         await set_platform_flag(
             session,

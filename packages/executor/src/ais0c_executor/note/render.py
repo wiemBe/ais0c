@@ -38,7 +38,7 @@ from typing import Final
 from zoneinfo import ZoneInfo
 
 from ais0c_contracts import ActionType, DataGap, NoteContent, UrgentEvent
-from ais0c_executor.common import FieldValue, Templates, clean_text
+from ais0c_executor.common import FieldValue, Templates, clean_text, label
 from ais0c_executor.note.errors import InvalidNote
 from ais0c_executor.note.request import (
     RUN_MARKER,
@@ -131,7 +131,7 @@ def render_note(request: NoteRequest) -> str:
             "group_note.txt",
             **_header(content.evaluation_no, request.evaluated_at, content.run_marker),
             group_id=content.group_id,
-            verdict=content.verdict.value,
+            verdict=label("verdict", content.verdict),
             case_url=content.case_url,
         )
     else:
@@ -189,9 +189,9 @@ def _render_evaluation(
     return NOTE_TEMPLATES.render(
         "offense_note.txt",
         **_header(content.evaluation_no, request.evaluated_at, content.run_marker),
-        verdict=content.verdict.value,
-        confidence=content.confidence.value,
-        notify_level=content.notify_level.value,
+        verdict=label("verdict", content.verdict),
+        confidence=label("confidence", content.confidence),
+        notify_level=label("level", content.notify_level),
         summary=clean_text(content.summary_tr, shape.summary) or "-",
         events=[_event(event, shape, day) for event in events[:shown]],
         omitted=len(events) - shown,
@@ -229,7 +229,7 @@ def _event(event: UrgentEvent, shape: _Shape, day: date) -> dict[str, FieldValue
 def _gap(gap: DataGap, shape: _Shape, day: date) -> dict[str, FieldValue]:
     return {
         "source": clean_text(gap.source, shape.gap_source) or "-",
-        "reason": gap.reason.value,
+        "reason": label("gap_reason", gap.reason),
         "start": _gap_time(gap.period_start, day),
         "end": _gap_time(gap.period_end, day),
     }
@@ -237,7 +237,7 @@ def _gap(gap: DataGap, shape: _Shape, day: date) -> dict[str, FieldValue]:
 
 def _actions(actions: Sequence[ActionType]) -> list[FieldValue]:
     """The recommended action types, each once, in the order given."""
-    return list(dict.fromkeys(action.value for action in actions))
+    return list(dict.fromkeys(label("action", action) for action in actions))
 
 
 def _optional(value: str | None, max_length: int) -> str | None:

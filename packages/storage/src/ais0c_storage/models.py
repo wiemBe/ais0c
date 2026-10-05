@@ -16,6 +16,7 @@ from datetime import datetime
 from pydantic import JsonValue, TypeAdapter
 from sqlalchemy import (
     BigInteger,
+    CheckConstraint,
     Double,
     ForeignKey,
     Index,
@@ -72,7 +73,6 @@ from ais0c_storage.enums import (
     PlatformFlag,
     PolicyDecision,
     QAStatus,
-    RecipientList,
     SliceStatus,
     TuningProposalStatus,
 )
@@ -381,9 +381,27 @@ class NotificationRecipientRow(Base):
     __tablename__ = "notification_recipients"
 
     # Not in data-model.md: the primary key (list_name, email).
-    list_name: Mapped[RecipientList] = mapped_column(EnumText(RecipientList), primary_key=True)
+    list_name: Mapped[str] = mapped_column(primary_key=True)
     # Allowed company domains only.
     email: Mapped[str] = mapped_column(primary_key=True)
+
+    __table_args__ = (CheckConstraint("list_name ~ '^[a-z][a-z0-9-]{0,62}$'", name="list_name"),)
+
+
+class NotificationRouteRow(Base):
+    """Named recipient groups for each notification kind and level (D-41, T-43)."""
+
+    __tablename__ = "notification_routes"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    kind: Mapped[EmailKind] = mapped_column(EnumText(EmailKind))
+    level: Mapped[Level | None] = mapped_column(EnumText(Level))
+    list_name: Mapped[str]
+
+    __table_args__ = (
+        UniqueConstraint("kind", "level", "list_name", postgresql_nulls_not_distinct=True),
+        CheckConstraint("list_name ~ '^[a-z][a-z0-9-]{0,62}$'", name="list_name"),
+    )
 
 
 class AllowedEmailDomainRow(Base):

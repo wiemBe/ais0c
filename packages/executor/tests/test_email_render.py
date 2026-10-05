@@ -64,7 +64,7 @@ AI-SOC: bildirim seviyesi yüksek olan bir offense fırtınası var.
 Grup: G-0123456789ab-20261002T110000Z · 37 offense · Multiple Login Failures for the Same User
 Grup değerlendirmesi: #1 · 2026-10-02 14:05
 Karar: Şüpheli · Güven: orta · Bildirim seviyesi: yüksek
-Gruptaki offense'ler tek tek değil, grup olarak değerlendirildi. Gruba sonradan eklenen offense'lerin QRadar notunda bu karar yer alır; bu grup için yeniden e-posta gönderilmez.
+Gruptaki offense'ler tek tek değil, grup olarak değerlendirildi. Gruba sonradan eklenen offense'lerin QRadar notunda bu karar yer alır; bu grup için yeni bir e-posta ancak seviye yükselirse gider.
 
 Özet: Aynı kural 37 farklı kaynak için offense açtı.
 
@@ -106,7 +106,7 @@ def test_a_group_alert_names_the_group_and_its_size() -> None:
 
     assert message.kind is EmailKind.GROUP_ALERT
     assert message.template_id == "group_alert"
-    assert message.idempotency_key == "group_alert:G-0123456789ab-20261002T110000Z"
+    assert message.idempotency_key == "group_alert:G-0123456789ab-20261002T110000Z:1"
     assert message.subject == GROUP_SUBJECT
     assert render_body(message) == GROUP_BODY
 
@@ -272,7 +272,6 @@ def test_every_template_compiles_and_is_clean() -> None:
         "parts/event.txt",
         "parts/events.txt",
         "parts/footer.txt",
-        "parts/labels.txt",
         "subject/case_alert.txt",
         "subject/group_alert.txt",
     ]
@@ -342,11 +341,16 @@ def test_a_request_built_without_validation_is_checked_again() -> None:
     assert "exfil" not in str(raised.value)
 
 
-def test_one_key_per_evaluation_and_one_per_group() -> None:
+def test_one_key_per_evaluation_of_a_case_and_of_a_group() -> None:
+    """D-42: the key of a group alert carries the evaluation too, so a re-evaluation that raises
+    the level is a new e-mail rather than the one already sent."""
     assert case_alert(content=note_content(evaluation_no=3)).idempotency_key == (
         "case_alert:case-12345:3"
     )
     assert (
-        group_alert(evaluation_no=1).idempotency_key == group_alert(evaluation_no=2).idempotency_key
+        group_alert(evaluation_no=1).idempotency_key != group_alert(evaluation_no=2).idempotency_key
+    )
+    assert group_alert(evaluation_no=2).idempotency_key == (
+        "group_alert:G-0123456789ab-20261002T110000Z:2"
     )
     assert OFFENSE_NAME in body_of(case_alert())

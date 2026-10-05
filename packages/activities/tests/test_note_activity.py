@@ -51,8 +51,8 @@ from ais0c_contracts import (
     ToolResult,
     ToolStatus,
 )
+from ais0c_executor.common import EXECUTOR_ID
 from ais0c_executor.note import (
-    EXECUTOR_ID,
     MAX_NOTE_LENGTH,
     EvaluationNote,
     NoDecisionNote,

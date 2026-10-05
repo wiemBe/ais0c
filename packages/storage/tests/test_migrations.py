@@ -1,7 +1,7 @@
 """`alembic upgrade head` and `alembic downgrade base` on an empty database (T-004 criterion
 1), revision 0002 on a database that holds runs (T-016 criterion 2), and revisions 0003
-(T-017 criterion 1), 0004 (T-020), 0005 (T-021) and 0006 (T-041 criterion 3) on one that holds
-data.
+(T-017 criterion 1), 0004 (T-020), 0005 (T-021), 0006 (T-041 criterion 3) and 0007 (T-036
+criterion 1) on one that holds data.
 
 The tests run the real `alembic` command in packages/storage, so alembic.ini, env.py and the
 AIS0C_DATABASE_URL lookup are covered too.
@@ -13,7 +13,9 @@ import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
+import pytest
 from sqlalchemy import URL, inspect, text
+from sqlalchemy.exc import IntegrityError
 from storage_postgres import Server
 
 from ais0c_storage.db import DATABASE_URL_ENV, create_sync_engine
@@ -63,7 +65,7 @@ def test_upgrade_head_then_downgrade_base(server: Server, empty_database: str) -
     upgraded = alembic("upgrade", "head", url=url)
     assert upgraded.returncode == 0, upgraded.stderr
     current = alembic("current", url=url)
-    assert "0006 (head)" in current.stdout
+    assert "0007 (head)" in current.stdout
     objects = public_objects(url)
     assert set(Base.metadata.tables) <= objects["relations"]
     assert objects["functions"] == {"audit_log_append_only"}
@@ -156,6 +158,107 @@ def test_offline_mode_prints_the_sql(server: Server, empty_database: str) -> Non
     assert "CREATE TABLE platform_flags" in printed.stdout
     assert "ALTER TABLE notifications ADD COLUMN error TEXT" in printed.stdout
     assert "UPDATE notes_written SET status='disabled'" in printed.stdout
+    assert "CREATE TABLE notification_routes" in printed.stdout
+    assert "NULLS NOT DISTINCT" in printed.stdout
+
+
+# The recipient rows as revision 0006 holds them: the three groups T-020 knew about, plus one an
+# admin added after the storage enum was replaced by a name (T-43).
+RECIPIENTS_AT_0007 = sorted(
+    [
+        ("operators", "soc-1@example.com"),
+        ("operators", "soc-2@example.com"),
+        ("hunters", "hunter@example.com"),
+        ("soc-on-call-2", "duty@example.com"),
+    ]
+)
+
+
+def test_revision_0007_names_the_groups_and_routes_each_alert(
+    server: Server, empty_database: str
+) -> None:
+    """0007 (T-43, D-41): the existing recipient rows keep their group and address, the name is
+    checked from now on, and `notification_routes` arrives with the seeded routes. The downgrade
+    drops the routing table and the name check and keeps every recipient row, including a custom
+    group: 0006 stored the name as plain text too."""
+    url = server.app_url(empty_database)
+    first = alembic("upgrade", "0006", url=url)
+    assert first.returncode == 0, first.stderr
+    engine = create_sync_engine(url)
+    routes = text(
+        "SELECT kind, level, list_name FROM notification_routes"
+        " ORDER BY kind, level NULLS FIRST, list_name"
+    )
+    recipients = text(
+        "SELECT list_name, email FROM notification_recipients ORDER BY list_name, email"
+    )
+    try:
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "INSERT INTO notification_recipients (list_name, email) VALUES (:list_name,"
+                    " :email)"
+                ),
+                [{"list_name": name, "email": email} for name, email in RECIPIENTS_AT_0007],
+            )
+
+        upgraded = alembic("upgrade", "head", url=url)
+        assert upgraded.returncode == 0, upgraded.stderr
+        with engine.connect() as connection:
+            assert [tuple(row) for row in connection.execute(routes)] == [
+                ("case_alert", "critical", "analyst-eng"),
+                ("case_alert", "critical", "exec"),
+                ("case_alert", "critical", "operators"),
+                ("case_alert", "high", "operators"),
+                ("group_alert", "critical", "analyst-eng"),
+                ("group_alert", "critical", "exec"),
+                ("group_alert", "critical", "operators"),
+                ("group_alert", "high", "operators"),
+                ("hunt_report", None, "hunters"),
+            ]
+            assert [tuple(row) for row in connection.execute(recipients)] == RECIPIENTS_AT_0007
+        with engine.begin() as connection:
+            # A new name outside the pattern is refused by the database, not only by the code.
+            with pytest.raises(IntegrityError):
+                connection.execute(
+                    text(
+                        "INSERT INTO notification_recipients (list_name, email) VALUES"
+                        " ('SOC Ops', 'soc-3@example.com')"
+                    )
+                )
+        with engine.begin() as connection:
+            # The hunt report's empty level is one value: a second NULL row is a duplicate.
+            with pytest.raises(IntegrityError):
+                connection.execute(
+                    text(
+                        "INSERT INTO notification_routes (id, kind, level, list_name) VALUES"
+                        " (gen_random_uuid(), 'hunt_report', NULL, 'hunters')"
+                    )
+                )
+
+        downgraded = alembic("downgrade", "0006", url=url)
+        assert downgraded.returncode == 0, downgraded.stderr
+        with engine.connect() as connection:
+            assert "notification_routes" not in inspect(connection).get_table_names()
+            assert [tuple(row) for row in connection.execute(recipients)] == RECIPIENTS_AT_0007
+            assert (
+                connection.scalar(
+                    text(
+                        "SELECT count(*) FROM pg_constraint WHERE conname ="
+                        " 'ck_notification_recipients_list_name'"
+                    )
+                )
+                == 0
+            )
+
+        # Up again: the routes come back and the custom group is still there.
+        again = alembic("upgrade", "head", url=url)
+        assert again.returncode == 0, again.stderr
+        with engine.connect() as connection:
+            assert connection.scalar(text("SELECT count(*) FROM notification_routes")) == 9
+            assert [tuple(row) for row in connection.execute(recipients)] == RECIPIENTS_AT_0007
+    finally:
+        engine.dispose()
 
 
 # Rows as revision 0005 holds them: a case, its notes as T-019 recorded them, two e-mails and

@@ -41,7 +41,7 @@ from ais0c_executor.email import (
     render_body,
 )
 from ais0c_executor.email.smtp import message_id
-from ais0c_storage import ActorKind, NotificationStatus, PlatformFlag, RecipientList
+from ais0c_storage import ActorKind, NotificationStatus, PlatformFlag
 from ais0c_storage.models import AllowedEmailDomainRow, NotificationRecipientRow
 from ais0c_storage.repositories import get_notification, set_platform_flag
 
@@ -119,10 +119,12 @@ async def writable(sessions: SessionFactory) -> SessionFactory:
 
 
 async def operators(sessions: SessionFactory, *addresses: str) -> None:
+    """Members of `operators`; a critical case alert is routed to that group by the seed of
+    migration 0007 (D-41), and the other two seeded groups stay empty."""
     async with sessions.begin() as session:
         await session.execute(
             insert(NotificationRecipientRow),
-            [{"list_name": RecipientList.OPERATORS, "email": address} for address in addresses],
+            [{"list_name": "operators", "email": address} for address in addresses],
         )
 
 

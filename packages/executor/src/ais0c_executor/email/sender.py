@@ -1,4 +1,4 @@
-"""Sending an alert e-mail once (architecture §9, "E-posta bildirimi"; D-22, T-23).
+"""Sending an alert e-mail once (architecture §9, "E-posta bildirimi"; D-22, D-41, D-42).
 
 `EmailSender.send_alert` decides whether an alert goes out, builds it and sends it:
 
@@ -8,14 +8,15 @@
 2. An e-mail that `notifications` records as sent under the same idempotency key is not sent
    again (`already_sent`).
 3. The level rule (`alert_needed`): only high and critical, and after a re-evaluation only a
-   level above every level already e-mailed about the case, as its `sent` case alerts in
-   `notifications` record them (`level`). Otherwise the result is `not_needed` and nothing is
+   level above every level already e-mailed about the same case or group, as its `sent` alerts
+   in `notifications` record them (`level`). Otherwise the result is `not_needed` and nothing is
    recorded.
-4. The recipients are the `operators` list (`notification_recipients`). If one of them is
-   outside the allowed domains (`allowed_email_domains`), nobody gets the e-mail: it is
-   recorded as `rejected` in `notifications` and as `email.reject` in `audit_log`. An empty
-   list is recorded as `failed`. Both checks run before the kill switch, so a bad list shows up
-   in shadow mode already.
+4. The recipients are the members of the groups `notification_routes` routes to the alert's
+   kind and level: every address once, in ascending order (D-41). If one of them is outside the
+   allowed domains (`allowed_email_domains`), nobody gets the e-mail: it is recorded as
+   `rejected` in `notifications` and as `email.reject` in `audit_log`. An alert that routes to
+   no group, or to groups without members, is recorded as `failed`. Both checks run before the
+   kill switch, so a bad list shows up in shadow mode already.
 5. The kill switch is checked before the relay is called and again right before the e-mail
    leaves. With writes off nothing is sent; the attempt is recorded as `disabled`
    (`writes_disabled`), which is not a failure (T-37).
@@ -33,7 +34,7 @@ so the next attempt sends the e-mail again; the copy has the same Message-ID.
 """
 
 import hashlib
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from contextlib import AbstractAsyncContextManager
 from datetime import UTC, datetime
 from typing import Final, Protocol
@@ -43,7 +44,7 @@ from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from ais0c_contracts import EmailKind, EmailMessage, Level
-from ais0c_executor.common import KillSwitch, WritesDisabled, clean_text
+from ais0c_executor.common import EXECUTOR_ID, KillSwitch, WritesDisabled, clean_text
 from ais0c_executor.email.addresses import RefusedRecipient, refused_recipients
 from ais0c_executor.email.errors import EmailTransportError
 from ais0c_executor.email.levels import alert_needed
@@ -57,24 +58,21 @@ from ais0c_executor.email.request import (
     validated,
 )
 from ais0c_executor.email.smtp import SendReceipt
-from ais0c_storage import ActorKind, NotificationStatus, RecipientList
+from ais0c_storage import ActorKind, NotificationStatus
 from ais0c_storage.models import AllowedEmailDomainRow, NotificationRecipientRow, NotificationRow
 from ais0c_storage.repositories import (
     append_audit,
     get_notification,
+    list_notification_route_groups,
     list_notifications,
     record_notification,
 )
 
-# Who sends e-mails, in audit_log.
-EXECUTOR_ID: Final = "action-executor"
 EMAIL_SEND_ACTION: Final = "email.send"
 EMAIL_REJECT_ACTION: Final = "email.reject"
 # The audit entry's object: the case of a case alert, the group of a group alert.
 CASE_OBJECT_TYPE: Final = "case"
 GROUP_OBJECT_TYPE: Final = "offense_group"
-# Who gets alerts (architecture §9: "SOC operatörleri").
-ALERT_RECIPIENTS: Final = RecipientList.OPERATORS
 MAX_ERROR_LENGTH: Final = 500
 _MAX_AUDIT_ADDRESS_LENGTH: Final = 320
 
@@ -141,10 +139,10 @@ class EmailSender:
         if not alert_needed(request.level, await _sent_levels(session, request)):
             return _outcome(request, EmailResult.NOT_NEEDED), None
 
-        recipients = await _recipients(session, ALERT_RECIPIENTS)
+        groups, recipients = await _recipients(session, request)
         message = alert_message(request, recipients)
         if not recipients:
-            error = f"the {ALERT_RECIPIENTS.value} recipient list is empty"
+            error = _no_recipients_error(request, groups)
             outcome = _outcome(request, EmailResult.FAILED, error)
             await _save(session, request, message, NotificationStatus.FAILED, error=outcome.error)
             return outcome, None
@@ -193,15 +191,22 @@ async def _take_turn(session: AsyncSession, case_id: str) -> None:
 
 
 async def _sent_levels(session: AsyncSession, request: EmailRequest) -> list[Level]:
-    """The levels of the case alerts sent about the case. A group alert has its own key: one
-    per group."""
-    if not isinstance(request, CaseAlert):
-        return []
-    rows = await list_notifications(session, case_id=request.case_id)
+    """The levels of the alerts sent about the same case or group (D-42).
+
+    A case alert counts the `sent` case alerts of its case; a group alert the `sent` group alerts
+    of its group. The `group_alert:<group>` records T-020 wrote before the key carried an
+    evaluation number carry the same `group_id`, so the old keys need no rule of their own.
+    """
+    if isinstance(request, CaseAlert):
+        kind = EmailKind.CASE_ALERT
+        rows = await list_notifications(session, case_id=request.case_id)
+    else:
+        kind = EmailKind.GROUP_ALERT
+        rows = await list_notifications(session, group_id=request.group_id)
     return [
         row.level
         for row in rows
-        if row.kind is EmailKind.CASE_ALERT
+        if row.kind is kind
         and row.status is NotificationStatus.SENT
         # Empty only on a row written before the column existed (migration 0004). Skipping it
         # can send one e-mail too many, never one too few.
@@ -209,13 +214,33 @@ async def _sent_levels(session: AsyncSession, request: EmailRequest) -> list[Lev
     ]
 
 
-async def _recipients(session: AsyncSession, list_name: RecipientList) -> list[str]:
+async def _recipients(session: AsyncSession, request: EmailRequest) -> tuple[list[str], list[str]]:
+    """The groups routed to the alert's kind and level, and their members.
+
+    Every address of every routed group, each one once: two routed groups may share a member,
+    and the address is written to the envelope a single time.
+    """
+    groups = await list_notification_route_groups(
+        session, kind=request.email_kind, level=request.level
+    )
+    if not groups:
+        return [], []
     statement = (
         select(NotificationRecipientRow.email)
-        .where(NotificationRecipientRow.list_name == list_name)
+        .where(NotificationRecipientRow.list_name.in_(groups))
+        .distinct()
         .order_by(NotificationRecipientRow.email)
     )
-    return list(await session.scalars(statement))
+    return groups, list(await session.scalars(statement))
+
+
+def _no_recipients_error(request: EmailRequest, groups: Sequence[str]) -> str:
+    """Why nobody was found for `request`: either no group is routed to it, or the routed
+    groups hold no member. Both are the admin's routing table and groups to fix."""
+    routed = f"a {request.level.value} {request.email_kind.value}"
+    if not groups:
+        return f"no recipient group is routed to {routed}"
+    return f"the recipient groups routed to {routed} ({', '.join(groups)}) have no members"
 
 
 async def _allowed_domains(session: AsyncSession) -> list[str]:

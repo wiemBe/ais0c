@@ -1,7 +1,8 @@
 """The activity that sends alert e-mails (architecture §9, "E-posta bildirimi"; D-22).
 
 `send_email` runs the executor's `EmailSender` (`ais0c_executor.email`). The sender decides
-whether the alert goes out and takes the recipients from the `operators` list. It refuses
+whether the alert goes out, takes the recipients from the groups `notification_routes` routes to
+the alert's kind and level, and their members in `notification_recipients` (D-41). It refuses
 addresses outside the allowed domains, checks the kill switch right before sending and records
 the outcome in `notifications` and `audit_log`. The e-mail goes to the company's SMTP relay
 directly: the relay is not a security product, so no gateway is involved (AGENTS.md hard
@@ -27,7 +28,7 @@ from temporalio.exceptions import ApplicationError
 from ais0c_activities.db import SessionFactory
 from ais0c_activities.gateway import utc_now
 from ais0c_activities.runtime import RuntimeConfigError
-from ais0c_executor.common import KillSwitch
+from ais0c_executor.common import DEFAULT_SECRETS_DIR, EXECUTOR_SECRETS_DIR_ENV, KillSwitch
 from ais0c_executor.email import (
     EmailOutcome,
     EmailRequest,
@@ -49,8 +50,6 @@ SMTP_USERNAME_ENV: Final = "AIS0C_SMTP_USERNAME"
 SMTP_CA_FILE_ENV: Final = "AIS0C_SMTP_CA_FILE"
 SMTP_TIMEOUT_ENV: Final = "AIS0C_SMTP_TIMEOUT"
 # Where the executor's secrets are: here `smtp-password`, when the relay wants a login.
-EXECUTOR_SECRETS_DIR_ENV: Final = "AIS0C_EXECUTOR_SECRETS_DIR"
-DEFAULT_SECRETS_DIR: Final = "/run/secrets"
 SMTP_PASSWORD_FILE: Final = "smtp-password"  # noqa: S105 - a file name, not a password
 
 

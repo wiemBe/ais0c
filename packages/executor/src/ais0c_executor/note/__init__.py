@@ -32,7 +32,6 @@ from ais0c_executor.note.request import (
     NoteResult,
 )
 from ais0c_executor.note.writer import (
-    EXECUTOR_ID,
     NOTE_AUDIT_ACTION,
     NOTE_OBJECT_TYPE,
     NoteWriter,
@@ -41,7 +40,6 @@ from ais0c_executor.note.writer import (
 )
 
 __all__ = [
-    "EXECUTOR_ID",
     "MAX_NOTE_LENGTH",
     "NOTE_AUDIT_ACTION",
     "NOTE_OBJECT_TYPE",

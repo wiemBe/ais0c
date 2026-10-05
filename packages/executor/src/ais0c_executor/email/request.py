@@ -11,14 +11,13 @@ Two requests make the two kinds of alert (`EmailKind`):
 Each request names its e-mail's idempotency key, the same on every attempt:
 
 - case alert: `case_alert:<case_id>:<evaluation_no>`, at most one e-mail per evaluation;
-- group alert: `group_alert:<group_id>`, at most one e-mail per group.
+- group alert: `group_alert:<group_id>:<evaluation_no>`, at most one e-mail per evaluation.
 
 Identifiers and the case link are platform values, checked here so they cannot change the
 e-mail's layout. Names and texts come from QRadar or a model and may carry text from a log; the
 renderer cleans and cuts them.
 """
 
-import re
 from enum import StrEnum
 from typing import Annotated, Final, Literal, Self
 
@@ -43,19 +42,15 @@ from ais0c_contracts import (
     UrgentEvent,
     UtcDatetime,
 )
+from ais0c_executor.common import (
+    check_case_id,
+    check_case_url,
+    check_evaluation_no,
+    check_group_id,
+    check_offense_id,
+)
 from ais0c_executor.email.errors import InvalidEmail
 
-# Workflow-derived IDs: `case-12345`, `group-<id>` (the policy package's context ID form).
-CASE_ID: Final = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,199}")
-# `G-<key>-<time>` (ais0c_activities.grouping).
-GROUP_ID: Final = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,63}")
-# The platform's case page: http(s), a host name or address, an optional port and a path.
-CASE_URL: Final = re.compile(
-    r"https?://[A-Za-z0-9.-]+(?::[0-9]{1,5})?(?:/[A-Za-z0-9._~%/?#=&+-]*)?"
-)
-MAX_CASE_URL_LENGTH: Final = 200
-MAX_EVALUATION_NO: Final = 99_999
-MAX_OFFENSE_ID: Final = 2**63 - 1
 # An offense's description or a group's title as it arrives; the e-mail shows a shorter cut.
 MAX_NAME_LENGTH: Final = 2000
 MAX_SUMMARY_LENGTH: Final = 400
@@ -83,8 +78,7 @@ class CaseAlert(BaseModel):
             raise ValueError(
                 "an offense evaluated within its group is e-mailed with the group's alert"
             )
-        if not 0 <= content.offense_id <= MAX_OFFENSE_ID:
-            raise ValueError("offense_id must be a QRadar offense ID")
+        check_offense_id(content.offense_id)
         check_evaluation_no(content.evaluation_no)
         check_case_url(content.case_url)
         return self
@@ -107,8 +101,7 @@ class CaseAlert(BaseModel):
 
 
 class GroupAlert(BaseModel):
-    """The e-mail of a group in storm state whose notify level is high or critical; one per
-    group."""
+    """A group's alert for an evaluation whose level rises above its sent alerts."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -134,8 +127,7 @@ class GroupAlert(BaseModel):
     @model_validator(mode="after")
     def _check(self) -> Self:
         check_case_id(self.case_id)
-        if not GROUP_ID.fullmatch(self.group_id):
-            raise ValueError("group_id must be 1-64 letters, digits, '.', '_', ':' and '-'")
+        check_group_id(self.group_id)
         check_evaluation_no(self.evaluation_no)
         check_case_url(self.case_url)
         return self
@@ -150,7 +142,7 @@ class GroupAlert(BaseModel):
 
     @property
     def idempotency_key(self) -> str:
-        return f"group_alert:{self.group_id}"
+        return f"group_alert:{self.group_id}:{self.evaluation_no}"
 
 
 type EmailRequest = Annotated[CaseAlert | GroupAlert, Field(discriminator="kind")]
@@ -206,20 +198,3 @@ class EmailOutcome(BaseModel):
     idempotency_key: str
     error: str | None = None
     """Why the e-mail was not sent, for `rejected`, `writes_disabled` and `failed`."""
-
-
-def check_case_id(case_id: str) -> None:
-    if not CASE_ID.fullmatch(case_id):
-        raise ValueError("case_id must be a workflow-derived ID such as case-12345")
-
-
-def check_evaluation_no(evaluation_no: int) -> None:
-    if not 1 <= evaluation_no <= MAX_EVALUATION_NO:
-        raise ValueError(f"evaluation_no must be between 1 and {MAX_EVALUATION_NO}")
-
-
-def check_case_url(case_url: str) -> None:
-    if len(case_url) > MAX_CASE_URL_LENGTH or not CASE_URL.fullmatch(case_url):
-        raise ValueError(
-            f"case_url must be an http(s) link of at most {MAX_CASE_URL_LENGTH} characters"
-        )

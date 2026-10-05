@@ -1,3 +1,2 @@
-{#- The recommended actions on one line. -#}
-{% import "parts/labels.txt" as labels %}
-{% for action in actions %}{{ labels.action(action) }}{% if not loop.last %}, {% endif %}{% else %}yok{% endfor %}
+{#- The recommended actions on one line, each already carrying its Turkish label. -#}
+{% for action in actions %}{{ action }}{% if not loop.last %}, {% endif %}{% else %}yok{% endfor %}

@@ -24,21 +24,17 @@ import pydantic_core
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError, model_validator
 
 from ais0c_contracts import NoteContent, UtcDatetime
+from ais0c_executor.common import (
+    check_case_id,
+    check_case_url,
+    check_evaluation_no,
+    check_group_id,
+    check_offense_id,
+)
 from ais0c_executor.note.errors import InvalidNote
 
 # The marker ends the note's first line: `run:<marker>`.
 RUN_MARKER: Final = re.compile(r"[A-Za-z0-9][A-Za-z0-9-]{0,63}")
-# Workflow-derived IDs: `case-12345`, `group-<id>` (the policy package's context ID form).
-CASE_ID: Final = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,199}")
-# `G-<key>-<time>` (ais0c_activities.grouping).
-GROUP_ID: Final = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,63}")
-# The platform's case page: http(s), a host name or address, an optional port and a path.
-CASE_URL: Final = re.compile(
-    r"https?://[A-Za-z0-9.-]+(?::[0-9]{1,5})?(?:/[A-Za-z0-9._~%/?#=&+-]*)?"
-)
-MAX_CASE_URL_LENGTH: Final = 200
-MAX_EVALUATION_NO: Final = 99_999
-MAX_OFFENSE_ID: Final = 2**63 - 1
 
 
 class NoteKind(StrEnum):
@@ -69,8 +65,8 @@ class EvaluationNote(BaseModel):
             run_marker=content.run_marker,
             case_url=content.case_url,
         )
-        if content.group_id is not None and not GROUP_ID.fullmatch(content.group_id):
-            raise ValueError("group_id must be 1-64 letters, digits, '.', '_', ':' and '-'")
+        if content.group_id is not None:
+            check_group_id(content.group_id)
         return self
 
     @property
@@ -167,15 +163,9 @@ def check_identity(
     *, case_id: str, offense_id: int, evaluation_no: int, run_marker: str, case_url: str
 ) -> None:
     """Raise ValueError unless the note's identifiers and case link are usable."""
-    if not CASE_ID.fullmatch(case_id):
-        raise ValueError("case_id must be a workflow-derived ID such as case-12345")
-    if not 0 <= offense_id <= MAX_OFFENSE_ID:
-        raise ValueError("offense_id must be a QRadar offense ID")
-    if not 1 <= evaluation_no <= MAX_EVALUATION_NO:
-        raise ValueError(f"evaluation_no must be between 1 and {MAX_EVALUATION_NO}")
+    check_case_id(case_id)
+    check_offense_id(offense_id)
+    check_evaluation_no(evaluation_no)
     if not RUN_MARKER.fullmatch(run_marker):
         raise ValueError("run_marker must be 1-64 letters, digits and hyphens")
-    if len(case_url) > MAX_CASE_URL_LENGTH or not CASE_URL.fullmatch(case_url):
-        raise ValueError(
-            f"case_url must be an http(s) link of at most {MAX_CASE_URL_LENGTH} characters"
-        )
+    check_case_url(case_url)

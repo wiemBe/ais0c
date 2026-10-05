@@ -43,8 +43,8 @@ from ais0c_contracts import (
     TimeWindow,
     UrgentEvent,
 )
+from ais0c_executor.common import EXECUTOR_ID
 from ais0c_executor.note import (
-    EXECUTOR_ID,
     EvaluationNote,
     NoteResult,
     note_run_marker,

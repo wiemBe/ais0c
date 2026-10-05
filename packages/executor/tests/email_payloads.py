@@ -9,16 +9,24 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 
-from sqlalchemy import insert, select
+from sqlalchemy import delete, insert, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from ais0c_contracts import DataGap, DataGapReason, EmailMessage, NoteContent, UrgentEvent
+from ais0c_contracts import (
+    DataGap,
+    DataGapReason,
+    EmailKind,
+    EmailMessage,
+    NoteContent,
+    UrgentEvent,
+)
 from ais0c_executor.email import CaseAlert, EmailTransportError, GroupAlert, SendReceipt
-from ais0c_storage import ActorKind, PlatformFlag, RecipientList
+from ais0c_storage import ActorKind, PlatformFlag
 from ais0c_storage.models import (
     AllowedEmailDomainRow,
     AuditLogRow,
     NotificationRecipientRow,
+    NotificationRouteRow,
     NotificationRow,
 )
 from ais0c_storage.repositories import get_notification, list_audit, set_platform_flag
@@ -124,14 +132,31 @@ async def allow_domains(sessions: Sessions, *domains: str) -> None:
         await session.execute(insert(AllowedEmailDomainRow), [{"domain": d} for d in domains])
 
 
-async def add_recipients(
-    sessions: Sessions, *addresses: str, list_name: RecipientList = RecipientList.OPERATORS
-) -> None:
+async def add_recipients(sessions: Sessions, *addresses: str, list_name: str = "operators") -> None:
     async with sessions.begin() as session:
         await session.execute(
             insert(NotificationRecipientRow),
             [{"list_name": list_name, "email": address} for address in addresses],
         )
+
+
+async def route(sessions: Sessions, *list_names: str, kind: EmailKind, level: str | None) -> None:
+    """Point a notification kind and level at the named groups, as the admin does.
+
+    The migration seeds `case_alert`/`group_alert` at high and critical and `hunt_report`, so a
+    test changes what it needs instead of starting from nothing.
+    """
+    async with sessions.begin() as session:
+        await session.execute(
+            delete(NotificationRouteRow).where(
+                NotificationRouteRow.kind == kind, NotificationRouteRow.level == level
+            )
+        )
+        if list_names:
+            await session.execute(
+                insert(NotificationRouteRow),
+                [{"kind": kind, "level": level, "list_name": name} for name in list_names],
+            )
 
 
 async def operators_in_example_com(sessions: Sessions) -> None:

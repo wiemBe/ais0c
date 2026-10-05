@@ -83,14 +83,6 @@ class CriticalAssetKind(StrEnum):
     USER = "user"
 
 
-class RecipientList(StrEnum):
-    """`notification_recipients.list_name`."""
-
-    OPERATORS = "operators"
-    HUNTERS = "hunters"
-    ADMINS = "admins"
-
-
 class HuntPackStatus(StrEnum):
     """`hunt_packs.status`."""
 

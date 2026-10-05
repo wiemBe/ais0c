@@ -26,7 +26,6 @@ from ais0c_storage.enums import (
     PlatformFlag,
     PolicyDecision,
     QAStatus,
-    RecipientList,
     SliceStatus,
     TuningProposalStatus,
 )
@@ -51,7 +50,6 @@ __all__ = [
     "PlatformFlag",
     "PolicyDecision",
     "QAStatus",
-    "RecipientList",
     "SliceStatus",
     "StorageError",
     "TuningProposalStatus",

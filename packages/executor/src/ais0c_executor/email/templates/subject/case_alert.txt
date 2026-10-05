@@ -1,4 +1,4 @@
 {#- The subject of a case alert: the level, the AI's verdict and the offense. At most 150
-    characters; ais0c_executor.email.render cuts the offense's name until it fits. -#}
-{% import "parts/labels.txt" as labels %}
-[AI-SOC] {{ labels.level_tag(level) }} · AI kararı: {{ labels.verdict_short(verdict) }} · Offense #{{ offense_id }}: {{ offense_name }}
+    characters; ais0c_executor.email.render cuts the offense's name until it fits and labels the
+    level and the verdict. -#}
+[AI-SOC] {{ level }} · AI kararı: {{ verdict }} · Offense #{{ offense_id }}: {{ offense_name }}

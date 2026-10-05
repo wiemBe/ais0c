@@ -267,6 +267,14 @@ DOC: dict[str, Table] = {
     ),
     # Not in data-model.md: the primary key.
     "notification_recipients": table("list_name text", "email text", pk=("list_name", "email")),
+    "notification_routes": table(
+        "id uuid",
+        "kind text",
+        "level text?",
+        "list_name text",
+        pk=("id",),
+        unique=(("kind", "level", "list_name"),),
+    ),
     "allowed_email_domains": table("domain text", pk=("domain",)),
     # --- Hunt
     "hunt_packs": table(

@@ -31,7 +31,7 @@ from sqlalchemy import insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from ais0c_executor.common import KillSwitch, WritesDisabled, clean_text
+from ais0c_executor.common import EXECUTOR_ID, KillSwitch, WritesDisabled, clean_text
 from ais0c_executor.note.errors import OffenseNotesError
 from ais0c_executor.note.render import note_run_marker, render_note
 from ais0c_executor.note.request import (
@@ -45,8 +45,6 @@ from ais0c_storage import ActorKind, NoteStatus
 from ais0c_storage.models import NoteWrittenRow
 from ais0c_storage.repositories import append_audit, get_note, update_note_status
 
-# Who writes notes, in audit_log and agent_runs.
-EXECUTOR_ID: Final = "action-executor"
 NOTE_AUDIT_ACTION: Final = "note.write"
 NOTE_OBJECT_TYPE: Final = "offense"
 MAX_ERROR_LENGTH: Final = 500

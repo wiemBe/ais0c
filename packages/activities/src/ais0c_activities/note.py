@@ -36,9 +36,13 @@ from ais0c_activities.runtime import GATEWAY_URL_ENV, RuntimeConfigError, read_t
 from ais0c_agents import GatewayClient, GatewayError
 from ais0c_agents.gateway_http import TOOLS_PATH, HttpGatewayClient
 from ais0c_contracts import Budget, CostClass, TimeWindow, ToolResult, ToolStatus
-from ais0c_executor.common import KillSwitch
-from ais0c_executor.note import (
+from ais0c_executor.common import (
+    DEFAULT_SECRETS_DIR,
     EXECUTOR_ID,
+    EXECUTOR_SECRETS_DIR_ENV,
+    KillSwitch,
+)
+from ais0c_executor.note import (
     InvalidNote,
     NoteOutcome,
     NoteRequest,
@@ -52,9 +56,7 @@ WRITE_OFFENSE_NOTE: Final = "write_offense_note"
 NOTE_PROFILE: Final = "qradar-note-write"
 ADD_NOTE: Final = "add_offense_note"
 READ_NOTES: Final = "get_offense_notes"
-# Where the executor's gateway token is: `gateway-token-qradar-note-write`.
-EXECUTOR_SECRETS_DIR_ENV: Final = "AIS0C_EXECUTOR_SECRETS_DIR"
-DEFAULT_SECRETS_DIR: Final = "/run/secrets"
+# Where the executor's gateway token is: `gateway-token-qradar-note-write` (ais0c_executor.common).
 # The window a note call declares: at most this long (the profile allows 31 days).
 NOTE_WINDOW: Final = timedelta(days=30)
 # Declared, not enforced: one note takes a page or two of reads and one write.

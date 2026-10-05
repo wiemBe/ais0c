@@ -13,8 +13,10 @@ templates in `templates/` alone decide the layout.
 
 The contract's `fields` are plain strings, so lists are spread over fields. `event_1` to
 `event_5` hold the urgent events, one line each, rendered by `templates/parts/event.txt`; the
-recommended actions and the data gaps are one line each. Enum values (`level`, `verdict`,
-`confidence`) stay as they are, and the templates show their Turkish labels.
+recommended actions and the data gaps are one line each. The contract values the e-mail shows
+(`level`, `verdict`, `confidence`, an action type, a data gap reason) go in with their Turkish
+labels from `ais0c_executor.common.label`, the same table the QRadar note uses; `verdict_is_fp`
+tells the template whether to add the false-positive line. A value without a label is an error.
 
 Times are shown in Europe/Istanbul time.
 """
@@ -27,8 +29,8 @@ from zoneinfo import ZoneInfo
 
 from pydantic import ValidationError
 
-from ais0c_contracts import ActionType, DataGap, EmailKind, EmailMessage, UrgentEvent
-from ais0c_executor.common import FieldValue, TemplateError, Templates, clean_text, is_clean
+from ais0c_contracts import ActionType, CaseVerdict, DataGap, EmailKind, EmailMessage, UrgentEvent
+from ais0c_executor.common import FieldValue, TemplateError, Templates, clean_text, is_clean, label
 from ais0c_executor.email.errors import InvalidEmail
 from ais0c_executor.email.request import CaseAlert, EmailRequest, GroupAlert, validated
 
@@ -70,8 +72,8 @@ def alert_message(request: EmailRequest, recipients: Sequence[str]) -> EmailMess
             "subject/case_alert.txt",
             name_field="offense_name",
             name=request.offense_name,
-            level=content.notify_level.value,
-            verdict=content.verdict.value,
+            level=label("level_tag", content.notify_level),
+            verdict=label("verdict_short", content.verdict),
             offense_id=content.offense_id,
         )
     else:
@@ -80,8 +82,8 @@ def alert_message(request: EmailRequest, recipients: Sequence[str]) -> EmailMess
             "subject/group_alert.txt",
             name_field="title",
             name=request.title,
-            level=request.notify_level.value,
-            verdict=request.verdict.value,
+            level=label("level_tag", request.notify_level),
+            verdict=label("verdict_short", request.verdict),
             offense_count=request.offense_count,
         )
     try:
@@ -161,9 +163,10 @@ def _case_fields(request: CaseAlert) -> dict[str, str]:
         "offense_name": clean_text(request.offense_name, _NAME) or "-",
         "evaluation_no": str(content.evaluation_no),
         "evaluated_at": f"{_local(request.evaluated_at):%Y-%m-%d %H:%M}",
-        "level": content.notify_level.value,
-        "verdict": content.verdict.value,
-        "confidence": content.confidence.value,
+        "level": label("level", content.notify_level),
+        "verdict": label("verdict", content.verdict),
+        "verdict_is_fp": _is_fp(content.verdict),
+        "confidence": label("confidence", content.confidence),
         "summary": clean_text(content.summary_tr, _SUMMARY) or "-",
         **_events(content.urgent_events, day),
         "actions": _actions(content.recommended_actions),
@@ -180,14 +183,20 @@ def _group_fields(request: GroupAlert) -> dict[str, str]:
         "offense_count": str(request.offense_count),
         "evaluation_no": str(request.evaluation_no),
         "evaluated_at": f"{_local(request.evaluated_at):%Y-%m-%d %H:%M}",
-        "level": request.notify_level.value,
-        "verdict": request.verdict.value,
-        "confidence": request.confidence.value,
+        "level": label("level", request.notify_level),
+        "verdict": label("verdict", request.verdict),
+        "verdict_is_fp": _is_fp(request.verdict),
+        "confidence": label("confidence", request.confidence),
         "summary": clean_text(request.summary_tr, _SUMMARY) or "-",
         **_events(request.urgent_events, day),
         "actions": _actions(request.recommended_actions),
         "case_url": request.case_url,
     }
+
+
+def _is_fp(verdict: CaseVerdict) -> str:
+    """Whether the template adds its false-positive line; a field is text."""
+    return "yes" if verdict is CaseVerdict.FP else ""
 
 
 def _events(events: Sequence[UrgentEvent], day: date) -> dict[str, str]:
@@ -215,7 +224,7 @@ def _event(event: UrgentEvent, day: date) -> str:
 
 def _actions(actions: Sequence[ActionType]) -> str:
     """The recommended actions, each once, in the order given."""
-    unique: list[FieldValue] = list(dict.fromkeys(action.value for action in actions))
+    unique: list[FieldValue] = list(dict.fromkeys(label("action", action) for action in actions))
     return _render_part("parts/actions.txt", actions=unique)
 
 
@@ -226,7 +235,7 @@ def _data_gaps(gaps: Sequence[DataGap], day: date) -> str:
     shown: list[FieldValue] = [
         {
             "source": clean_text(gap.source, _GAP_SOURCE) or "-",
-            "reason": gap.reason.value,
+            "reason": label("gap_reason", gap.reason),
             "start": _gap_time(gap.period_start, day),
             "end": _gap_time(gap.period_end, day),
         }

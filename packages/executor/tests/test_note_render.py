@@ -32,7 +32,7 @@ from ais0c_contracts import (
     Level,
     NoteContent,
 )
-from ais0c_executor.common import ELLIPSIS
+from ais0c_executor.common import ELLIPSIS, label
 from ais0c_executor.note import (
     MAX_NOTE_LENGTH,
     NOTE_TEMPLATES,
@@ -83,7 +83,7 @@ def test_an_evaluation_note_has_the_layout_of_architecture_9() -> None:
     assert render_note(evaluation_note()) == "\n".join(
         [
             "[AI-SOC] Değerlendirme #2 · 2026-10-02 14:05 · run:7f3a9c",
-            "Karar: Şüpheli · Güven: orta · Bildirim seviyesi: high",
+            "Karar: Şüpheli · Güven: orta · Bildirim seviyesi: yüksek",
             "Özet: 203.0.113.7 adresinden DMZ'deki dosya sunucusuna SMB erişimi; ardından "
             "ayrıcalıklı oturum açıldı.",
             "Acil bakılması gereken event'ler:",
@@ -91,7 +91,7 @@ def test_an_evaluation_note_has_the_layout_of_architecture_9() -> None:
             "neden: Dış adresten iç sunucuya SMB erişimi.",
             " 2. 13:54:02 · DC-LAB-01 · An account was successfully logged on (QID 5000830) · "
             "kullanıcı: svc_backup · neden: Erişimden iki dakika sonra ayrıcalıklı oturum.",
-            "Önerilen adımlar: investigate_further, block_ioc_manual",
+            "Önerilen adımlar: Ayrıntılı inceleme, IOC'yi engelle (manuel)",
             f"Veri eksikleri: Proxy (veri yok, 12:00{EN_DASH}14:00)",
             f"Ayrıntılı rapor: {CASE_URL}",
         ]
@@ -174,7 +174,7 @@ def test_actions_are_listed_once_and_gaps_after_three_are_counted() -> None:
 
     text = lines(render_note(note))
 
-    assert text[6] == "Önerilen adımlar: tune_rule, close_as_fp"
+    assert text[6] == "Önerilen adımlar: Kuralı ayarla (tuning), FP olarak kapat"
     period = f"12:05{EN_DASH}14:05"
     assert text[7] == (
         f"Veri eksikleri: Proxy (ayrıştırılmamış, {period}); Proxy (ayrıştırılmamış, {period}); "
@@ -187,20 +187,11 @@ def test_actions_are_listed_once_and_gaps_after_three_are_counted() -> None:
 def test_every_verdict_and_confidence_has_a_turkish_label(
     verdict: CaseVerdict, confidence: Confidence
 ) -> None:
-    labels = {
-        CaseVerdict.TP: "Gerçek pozitif (TP)",
-        CaseVerdict.FP: "Yanlış pozitif (FP)",
-        CaseVerdict.SUSPICIOUS: "Şüpheli",
-        Confidence.LOW: "düşük",
-        Confidence.MEDIUM: "orta",
-        Confidence.HIGH: "yüksek",
-    }
-
     text = lines(render_note(evaluation_note(verdict=verdict, confidence=confidence)))
 
-    assert (
-        text[1]
-        == f"Karar: {labels[verdict]} · Güven: {labels[confidence]} · Bildirim seviyesi: high"
+    assert text[1] == (
+        f"Karar: {label('verdict', verdict)} · Güven: {label('confidence', confidence)}"
+        " · Bildirim seviyesi: yüksek"
     )
 
 
@@ -213,12 +204,22 @@ def test_every_data_gap_reason_has_a_turkish_label(reason: DataGapReason) -> Non
     text = render_note(evaluation_note(data_gaps=[gap]))
 
     assert f"Proxy ({reason.value}," not in text
-    assert re.search(r"Veri eksikleri: Proxy \([^,_]+, 13:05", text)
+    assert f"Proxy ({label('gap_reason', reason)}," in text
+
+
+@pytest.mark.parametrize("action", list(ActionType))
+def test_every_action_type_has_a_turkish_label(action: ActionType) -> None:
+    note = evaluation_note(recommended_actions=[action])
+
+    assert lines(render_note(note))[6] == f"Önerilen adımlar: {label('action', action)}"
 
 
 @pytest.mark.parametrize("level", list(Level))
-def test_the_level_is_written_as_it_is(level: Level) -> None:
-    assert f"Bildirim seviyesi: {level.value}\n" in render_note(evaluation_note(notify_level=level))
+def test_the_level_is_written_with_its_turkish_label(level: Level) -> None:
+    text = render_note(evaluation_note(notify_level=level))
+
+    assert f"Bildirim seviyesi: {label('level', level)}\n" in text
+    assert f"Bildirim seviyesi: {level.value}" not in text
 
 
 # --- criterion 5: the kinds of note --------------------------------------------------------
@@ -259,7 +260,6 @@ def test_the_templates_compile() -> None:
         "no_decision_note.txt",
         "offense_note.txt",
         "parts/header.txt",
-        "parts/labels.txt",
     ]
 
 

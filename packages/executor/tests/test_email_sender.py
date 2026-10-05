@@ -22,6 +22,7 @@ from email_payloads import (
     notification,
     notifications,
     operators_in_example_com,
+    route,
     switch_writes,
 )
 from sqlalchemy import delete, text
@@ -272,7 +273,8 @@ async def test_a_rejected_alert_goes_out_once_the_list_is_fixed(sessions: Sessio
     ]
 
 
-async def test_an_empty_recipient_list_is_a_failure(sessions: Sessions) -> None:
+async def test_an_alert_with_no_recipients_is_a_failure(sessions: Sessions) -> None:
+    """No group member to write to: `failed` with the reason in `error` (T-33 (7))."""
     await allow_domains(sessions, "example.com")
     await switch_writes(sessions, True)
     transport = FakeTransport()
@@ -280,15 +282,99 @@ async def test_an_empty_recipient_list_is_a_failure(sessions: Sessions) -> None:
     outcome = await sender(sessions, transport).send_alert(case_alert())
 
     assert outcome.result is FAILED
-    assert outcome.error == "the operators recipient list is empty"
+    assert outcome.error == (
+        "the recipient groups routed to a high case_alert (operators) have no members"
+    )
     assert transport.connections == 0
     row = await notification(sessions, KEY)
     assert row is not None
     assert (row.status, row.recipients, row.error) == (
         NotificationStatus.FAILED,
         [],
-        "the operators recipient list is empty",
+        outcome.error,
     )
+
+
+async def test_an_alert_that_is_not_routed_to_any_group_is_a_failure(sessions: Sessions) -> None:
+    """The admin removed the route: nobody is addressed, and the record says so."""
+    await operators_in_example_com(sessions)
+    await route(sessions, kind=EmailKind.CASE_ALERT, level="high")
+    await switch_writes(sessions, True)
+    transport = FakeTransport()
+
+    outcome = await sender(sessions, transport).send_alert(case_alert())
+
+    assert outcome.result is FAILED
+    assert outcome.error == "no recipient group is routed to a high case_alert"
+    assert transport.connections == 0
+
+
+# --- criterion 3: the routing table ----------------------------------------------------------
+
+
+async def test_the_routed_groups_decide_who_gets_the_alert(sessions: Sessions) -> None:
+    """D-41: high goes to `operators` alone, critical also to `exec` and `analyst-eng`. The
+    shared member is written once, and every address in order."""
+    await allow_domains(sessions, "example.com")
+    await add_recipients(sessions, *OPERATORS)
+    await add_recipients(sessions, "chief@example.com", *OPERATORS, list_name="exec")
+    await add_recipients(sessions, "eng@example.com", list_name="analyst-eng")
+    await add_recipients(sessions, "hunter@example.com", list_name="hunters")
+    await switch_writes(sessions, True)
+    transport = FakeTransport()
+
+    high = await sender(sessions, transport).send_alert(case_alert())
+    critical = await sender(sessions, transport).send_alert(
+        case_alert(content=note_content(evaluation_no=2, notify_level="critical"))
+    )
+
+    assert (high.result, critical.result) == (SENT, SENT)
+    assert transport.messages[0].recipients == list(OPERATORS)
+    assert transport.messages[1].recipients == [
+        "chief@example.com",
+        "eng@example.com",
+        *OPERATORS,
+    ]
+    assert len(transport.messages[1].recipients) == len(set(transport.messages[1].recipients))
+
+
+async def test_the_routing_table_is_read_per_level_not_per_kind(sessions: Sessions) -> None:
+    """A group's own route is separate from a case's: routing `group_alert` away leaves the case
+    alerts untouched."""
+    await allow_domains(sessions, "example.com")
+    await add_recipients(sessions, *OPERATORS)
+    await add_recipients(sessions, "chief@example.com", list_name="exec")
+    await route(sessions, "exec", kind=EmailKind.GROUP_ALERT, level="high")
+    await route(sessions, "operators", kind=EmailKind.GROUP_ALERT, level="critical")
+    await switch_writes(sessions, True)
+    transport = FakeTransport()
+
+    await sender(sessions, transport).send_alert(group_alert())
+    await sender(sessions, transport).send_alert(
+        group_alert(evaluation_no=2, notify_level="critical")
+    )
+    await sender(sessions, transport).send_alert(case_alert())
+
+    assert [message.recipients for message in transport.messages] == [
+        ["chief@example.com"],
+        list(OPERATORS),
+        list(OPERATORS),
+    ]
+
+
+async def test_a_group_that_is_in_two_routed_groups_gets_one_address(sessions: Sessions) -> None:
+    await allow_domains(sessions, "example.com")
+    await add_recipients(sessions, "soc-1@example.com", list_name="operators")
+    await add_recipients(sessions, "soc-1@example.com", "chief@example.com", list_name="exec")
+    await switch_writes(sessions, True)
+    transport = FakeTransport()
+
+    outcome = await sender(sessions, transport).send_alert(
+        case_alert(content=note_content(notify_level="critical"))
+    )
+
+    assert outcome.result is SENT
+    assert transport.messages[0].recipients == ["chief@example.com", "soc-1@example.com"]
 
 
 # --- criterion 5: the kill switch -----------------------------------------------------------
@@ -509,16 +595,18 @@ async def test_the_levels_of_another_case_do_not_count(ready: Sessions) -> None:
 # --- group alerts ---------------------------------------------------------------------------
 
 
-async def test_a_group_is_emailed_once(ready: Sessions) -> None:
+# --- criterion 4: a group alert per evaluation whose level went up ----------------------------
+
+
+async def test_a_group_is_emailed_once_per_evaluation(ready: Sessions) -> None:
     transport = FakeTransport()
 
     first = await sender(ready, transport).send_alert(group_alert())
-    again = await sender(ready, transport).send_alert(
-        group_alert(evaluation_no=2, notify_level="critical")
-    )
+    again = await sender(ready, transport).send_alert(group_alert(evaluation_no=1))
 
     assert (first.result, again.result) == (SENT, ALREADY_SENT)
     assert first.kind is EmailKind.GROUP_ALERT
+    assert first.idempotency_key == f"group_alert:{GROUP_ID}:1"
     assert len(transport.sent) == 1
     [row] = await notifications(ready)
     assert (row.kind, row.case_id, row.group_id, row.level) == (
@@ -530,6 +618,68 @@ async def test_a_group_is_emailed_once(ready: Sessions) -> None:
     [entry] = await email_audit(ready)
     assert (entry.object_type, entry.object_id) == ("offense_group", GROUP_ID)
     assert entry.details["group_id"] == GROUP_ID
+
+
+async def test_a_group_is_emailed_again_only_when_its_level_goes_up(ready: Sessions) -> None:
+    """D-42: high after high goes nowhere, critical after high goes out, high after critical
+    does not."""
+    transport = FakeTransport()
+    steps = [(1, "high"), (2, "high"), (3, "critical"), (4, "critical"), (5, "high")]
+
+    results = [
+        (
+            await sender(ready, transport).send_alert(group_alert(evaluation_no=n, notify_level=lv))
+        ).result
+        for n, lv in steps
+    ]
+
+    assert results == [SENT, NOT_NEEDED, SENT, NOT_NEEDED, NOT_NEEDED]
+    assert [message.subject[:24] for message in transport.messages] == [
+        "[AI-SOC] YÜKSEK · AI kar",
+        "[AI-SOC] KRİTİK · AI kar",
+    ]
+    assert [(row.idempotency_key, row.level) for row in await notifications(ready)] == [
+        (f"group_alert:{GROUP_ID}:1", Level.HIGH),
+        (f"group_alert:{GROUP_ID}:3", Level.CRITICAL),
+    ]
+
+
+async def test_a_group_alert_recorded_before_the_evaluation_key_counts(ready: Sessions) -> None:
+    """T-020 wrote `group_alert:<group>` with no evaluation number. It carries the same
+    `group_id`, so a re-evaluation's high alert does not go out a second time."""
+    async with ready.begin() as session:
+        await session.execute(
+            text(
+                "INSERT INTO notifications (id, kind, level, case_id, group_id, recipients,"
+                " subject, idempotency_key, status, sent_at) VALUES (gen_random_uuid(),"
+                " 'group_alert', 'critical', :case_id, :group_id, ARRAY['soc-1@example.com'],"
+                " 'subject', :key, 'sent', now())"
+            ),
+            {
+                "case_id": f"group-{GROUP_ID}",
+                "group_id": GROUP_ID,
+                "key": f"group_alert:{GROUP_ID}",
+            },
+        )
+
+    high = await sender(ready, FakeTransport()).send_alert(group_alert())
+    higher = await sender(ready, FakeTransport()).send_alert(
+        group_alert(evaluation_no=2, notify_level="critical")
+    )
+
+    assert (high.result, higher.result) == (NOT_NEEDED, NOT_NEEDED)
+
+
+async def test_a_cases_alerts_do_not_count_for_a_group(ready: Sessions) -> None:
+    """The group's case is e-mailed on its own; that level is not the group's."""
+    transport = FakeTransport()
+    await sender(ready, transport).send_alert(case_alert(content=note_content(notify_level="high")))
+
+    outcome = await sender(ready, transport).send_alert(
+        group_alert(case_id="case-12345", notify_level="critical")
+    )
+
+    assert outcome.result is SENT
 
 
 async def test_a_group_below_high_is_not_emailed(ready: Sessions) -> None:
