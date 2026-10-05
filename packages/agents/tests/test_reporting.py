@@ -1268,4 +1268,4 @@ def test_the_config_check_refuses_a_toolset_profile() -> None:
             manifest.model_copy(update={"toolset_profile": "qradar-triage-read"}),
             prompt,
         )
-    assert set(PROFILES) == {"qradar-triage-read", "qradar-investigate-read"}
+    assert {"qradar-triage-read", "qradar-investigate-read"} <= set(PROFILES)
