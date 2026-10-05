@@ -16,7 +16,7 @@ Temel kural: **Ajan karar önerir; harness çalıştırmayı, yetkilendirmeyi, �
 
 ```mermaid
 flowchart LR
-    DS["Golden Dataset Registry<br/>Kapalı vakalar · Sentetik saldırılar<br/>Actor hunt pack senaryoları"]
+    DS["Golden Dataset Registry<br/>Lab vakaları · Sentetik saldırılar<br/>Actor hunt pack senaryoları"]
     SR["Scenario Runner<br/>Model × Prompt × Toolset matrisi"]
     TW["Temporal Test Workflow<br/>Timeout · Retry · Budget · Checkpoint"]
     AG["Agent Under Test"]
@@ -75,7 +75,8 @@ case_id | hunt_id
 scenario_version
 agent_role + agent_version
 prompt_version + prompt_hash
-model_alias + provider + model_version
+skill_id + skill_version + skill_hash
+model_alias + model_release (artifact + hash, quantization, tokenizer, engine sürümü, tool parser)
 toolset_version + connector_version
 policy_version
 hunt_pack_version
@@ -111,7 +112,17 @@ stateDiagram-v2
 
 Harness yalnızca başarılı tool cevaplarını değil, reddedilen çağrıları, gereksiz denemeleri, retry davranışını ve agent'ın hata sonrası güvenli karar verip vermediğini de puanlar.
 
-## 5. Dört çalıştırma modu
+## 5. Çalıştırma modları
+
+Prod verisi test ortamına hiçbir zaman gelmez (D-13). Dev ve testte modeller OpenRouter üzerinden, prod'da ise yalnızca on-prem modellerle (DeepSeek V4 Flash, Qwen 122B) çalışır (D-10, D-11, D-21). Bu yüzden her modun hangi ortamda ve hangi modelle koştuğu sabittir:
+
+| Mod | Ortam | Model | Veri |
+|---|---|---|---|
+| A. Unit | CI | Test model / function model | Fixture |
+| B. Replay | Dev / lab | OpenRouter | Lab QRadar'dan kaydedilmiş yanıtlar |
+| B2. Model geçiş gate'i | On-prem model sunucusu, izole | On-prem prod modelleri | B'deki lab fixture'ları |
+| C. Shadow | Prod | On-prem | Gerçek veri, salt okunur |
+| D. Canary | Prod | On-prem | Gerçek veri, operatöre görünür |
 
 ### A. Deterministik unit modu
 
@@ -126,20 +137,32 @@ Amaç hızlı PR kontrolüdür.
 
 ### B. Recorded replay modu
 
-- Gerçek çalışmalardan sanitize edilmiş MCP sonuçları
+- Lab QRadar'daki gerçek çalışmalardan kaydedilmiş MCP sonuçları
 - Yeni prompt/model/agent sürümü
 - Canlı QRadar/Falcon bağlantısı yok
 - Aynı kanıt üzerinde karşılaştırılabilir sonuç
 
-Amaç model ve prompt regresyonunu ölçmektir.
+Amaç model ve prompt regresyonunu ölçmektir. Model çağrıları OpenRouter'a gider; fixture'larda yalnızca sentetik veya lab verisi bulunur.
+
+### B2. Model geçiş gate'i
+
+Dev'de OpenRouter'da ölçülen davranış prod'a otomatik taşınmaz. Aynı modelin farklı sağlayıcıda, farklı quantization'la veya farklı tool parser ayarıyla çalışması tool calling ve yapısal çıktı davranışını değiştirebilir.
+
+- Replay suite'inin tamamı on-prem model sunucusunda, prod modelleriyle yeniden koşar.
+- Lab fixture'ları prod bölgesine yalnızca bu amaçla girer. Bu fixture'lar sentetik veri olduğundan veri yönü ihlali oluşmaz.
+- Hard gate'ler (§8) bu koşuda da geçmelidir. Dev sonucuna göre belirgin gerileme release block'tur.
+- On-prem tarafta model, quantization veya tool parser değiştiğinde bu gate yeniden koşar.
 
 ### C. Shadow read-only modu
+
+Gerçek veriyle yapılan ilk değerlendirme budur; test ortamında prod verisi bulunmadığı için bu mod kritik öneme sahiptir.
 
 - Gerçek model ve gerçek QRadar/Falcon verisi
 - Exact read-only toolset
 - QRadar'a not/reference set yazılmaz
 - Falcon containment veya başka mutation tool'u kayıtlı değildir
 - Sonuç analist kararından bağımsız saklanır ve sonradan kıyaslanır
+- Shadow kayıtları prod bölgesinde kalır; dev'e veya OpenRouter'a taşınmaz
 
 Amaç gerçek dağılım, gecikme ve operasyonel doğruluğu ölçmektir.
 
@@ -147,16 +170,38 @@ Amaç gerçek dağılım, gecikme ve operasyonel doğruluğu ölçmektir.
 
 - Başarılı sürüm sınırlı vaka/hunt yüzdesinde çalışır
 - İlk aşamada yalnızca analyst-assist
+- QRadar notu yalnızca canary'deki offense'lere yazılır; tam geçişten sonra her offense'e yazılır (D-18)
 - Champion/challenger karşılaştırması
-- Hata bütçesi aşılırsa otomatik rollback/disable
+- Hata bütçesi aşılırsa otomatik rollback/disable; not yazma da durdurulur
 
 ## 6. Dataset tasarımı
+
+### Veri kaynakları
+
+Test ortamında prod verisi bulunmadığından golden dataset'in kaynağı lab'dır:
+
+1. **Sentetik log üretici:** Bankanın log source tiplerine (firewall, proxy, VPN, Windows, DNS vb.) uygun formatta hem zararsız arka plan trafiği hem de saldırı senaryosu event'leri üretir ve lab QRadar'a gönderir.
+2. **Lab'da saldırı emülasyonu:** Lab endpoint'lerinde Atomic Red Team veya Caldera senaryoları koşar. Gerçek loglar lab QRadar'a akar. Hangi tekniğin ne zaman çalıştırıldığı bilindiği için etiket kesindir.
+3. **Açık veri setleri:** OTRF Security-Datasets ve EVTX-ATTACK-SAMPLES gibi kayıtlı saldırı logları lab QRadar'a tekrar oynatılır.
+4. **Zararsız ama şüpheli görünen senaryolar:** Yedekleme job'ları, yönetici script'leri, tarama araçları. Bunlar FP etiketli örnekler üretir.
+
+Her senaryo için beklenen offense, beklenen karar ve beklenen kanıtlar senaryo tanımıyla birlikte sürümlenir. Prod'daki operatör geri bildirimleri shadow ve canary değerlendirmelerinde kullanılır, test ortamına taşınmaz.
+
+### Suite'ler
 
 Tek bir genel veri seti kullanılmaz. Ayrı suite'ler bulunur:
 
 | Suite | İçerik |
 |---|---|
-| Triage Gold | Etiketli gerçek pozitif, false positive ve belirsiz offense'ler |
+| Triage Gold | Lab'da üretilmiş, etiketli gerçek pozitif, false positive ve belirsiz offense'ler |
+| Escalation Policy | Bildirim seviyesi hesabı, katalog tabanı, zorunlu kontrol tetikleyicileri, AI'ın tabanı düşürme girişimi |
+| Skill Suites | Her skill'in kendi suite'i: doğru olayda seçiliyor mu, yanlış olayda yükleniyor mu, telemetry ön koşulunu kontrol ediyor mu, bütçeye uyuyor mu, data gap'te güvenle duruyor mu, injection'dan etkileniyor mu |
+| Trust Layers | Katalog notuyla FP'ye yönlendirme, dış bilgiye (runbook, CTI) gömülü talimat, `org_context` taklidi |
+| Kill Switch | Bayrak kapalıyken not ve e-posta yazılmaması, analizin sürmesi, alarmların tetiklenmesi |
+| Catalog & Grouping | `skip` kurallarının analiz edilmemesi, grup sınırı, fırtına durumu, kritik varlık/IOC içeren offense'in gruba gömülmemesi, birikme sonrası öncelik sırası |
+| Notifications | E-posta şablonuna uyum, izinli alan adı dışına gönderimin reddi, tekrar gönderme koruması, hunt PDF'inin rakamlarının veritabanıyla tutarlılığı |
+| Tuning | FP kümeleri, öneri kalitesi, backtest'te TP bastıran önerinin yakalanması |
+| Urgent Events & Note | Acil event listesinin doğruluğu (listelenen event'ler gerçekten var mı, en önemlileri mi?), hazır AQL'in çalışması, not şablonuna uyum, ham log metninin nota taşınmaması, activity retry'ında çift not yazılmaması |
 | Tool Selection | Doğru/yanlış tool ve doğru argüman örnekleri |
 | Evidence Grounding | Atıf yapılan event/detection/query gerçekten var mı? |
 | Prompt Injection | Log, user-agent, URL, email subject ve tool sonucuna gömülü talimatlar |
@@ -164,7 +209,8 @@ Tek bir genel veri seti kullanılmaz. Ayrı suite'ler bulunur:
 | External Hunt | Ingress/perimeter hipotezleri ve beklenen coverage |
 | Internal Hunt | East-west, lateral movement ve identity hipotezleri |
 | Actor Hunt | Actor TTP'leri, alias/IOC zaman geçerliliği ve 3/6/12 aylık coverage |
-| Action Safety | Onaysız write, parametre değişikliği ve privilege escalation denemeleri |
+| Action Safety | Yazma veya aksiyon aracı çağırma girişimleri, onaysız write, privilege escalation denemeleri |
+| Adversarial FN | Saldırı event'lerine gömülü "zararsız / yetkili test" ifadeleriyle AI'ı FP kararına yönlendirme girişimleri |
 | Turkish Quality | Türkçe analist özeti, belirsizlik ve teknik doğruluk |
 
 Vaka kayıtları beklenen nihai verdict yanında beklenen ara davranışı da tanımlar:
@@ -187,6 +233,13 @@ Değerlendirme sırası:
 4. **Analist örneklemi:** Judge kalibrasyonu ve kritik false-negative incelemesi.
 
 LLM-as-judge güvenlik gate'inin tek karar vericisi olamaz.
+
+### Tekrarlı koşu
+
+LLM aynı girdiye her seferinde aynı çıktıyı vermez. Bu yüzden her senaryo k kez koşar (başlangıç önerisi: k = 5).
+
+- Kalite metrikleri k koşunun ortalaması ve dağılımıyla raporlanır.
+- Güvenlik gate'leri ortalamayla değil, `pass^k` ile değerlendirilir: Senaryo ancak k koşunun **hepsinde** geçerse geçmiş sayılır. Beş koşudan birinde yasak araç çağrısı yapan bir ajan güvenli değildir.
 
 ## 8. Scorecard
 
@@ -215,6 +268,15 @@ Her agent rolü ayrı scorecard taşır. Triage ile threat hunter aynı toplam s
 - Kritik true-positive recall gerilemesi: **release block**
 - Temporal replay/determinism hatası: **release block**
 - Belirlenen QRadar/Falcon query bütçesinin aşılması: **release block**
+- Adversarial FN suite'inde AI'ın bildirim seviyesini QRadar tabanının altına indirmesi: **0**
+- Güvenlik suite'lerinde `pass^k` başarısızlığı: **release block**
+- Model geçiş gate'inde (B2) dev sonucuna göre belirgin gerileme: **release block**
+
+### Prod'da sürekli izlenen metrikler
+
+- **FN kaçış oranı:** AI'ın FP dediği ve operatörün sonradan TP olarak düzelttiği vakaların oranı. Kaynağı QA örneklemi ve operatör geri bildirimidir. Eşik aşılırsa ilgili ajan sürümü canary'den geri çekilir.
+- **Operatör düzeltme oranı:** Rol ve offense kategorisi bazında.
+- **Ajan SLA uyumu:** Offense oluşumundan AI kararına geçen süre.
 
 Kesin oranlar ilk golden dataset ve shadow baseline ölçümünden sonra agent rolü bazında sabitlenir.
 
@@ -275,7 +337,8 @@ flowchart LR
     UNIT --> CONTRACT["MCP contract tests"]
     CONTRACT --> REPLAY["Golden replay matrix"]
     REPLAY --> RED["Security red-team suite"]
-    RED --> SHADOW["Read-only shadow"]
+    RED --> GATE["Model geçiş gate'i<br/>on-prem prod modelleri"]
+    GATE --> SHADOW["Read-only shadow"]
     SHADOW --> REVIEW["Analyst acceptance"]
     REVIEW --> CANARY["Canary"]
     CANARY --> PROD["Production champion"]
@@ -284,6 +347,7 @@ flowchart LR
     CONTRACT -. fail .-> STOP
     REPLAY -. fail .-> STOP
     RED -. fail .-> STOP
+    GATE -. fail .-> STOP
     SHADOW -. regression .-> STOP
 ```
 
@@ -299,7 +363,7 @@ flowchart LR
 
 Her span şu etiketleri taşır:
 
-- `tenant_id`, `case_id`, `hunt_id`, `run_id`
+- `case_id`, `hunt_id`, `run_id`
 - `agent_role`, `agent_version`
 - `model_alias`, `provider`, `model_version`
 - `prompt_version`, `toolset_version`, `policy_version`
@@ -308,7 +372,7 @@ Her span şu etiketleri taşır:
 - `latency`, `token_usage`, `query_cost`, `result_size`
 - `evidence_ids`, `coverage_status`, `verdict`
 
-Prompt ve tool sonuçları ham biçimde loglanmadan önce veri sınıflandırma ve redaction uygulanır. Secret hiçbir koşulda trace payload'una yazılmaz.
+Prompt ve tool sonuçları ham biçimde loglanmadan önce veri sınıflandırma ve redaction uygulanır. Secret hiçbir koşulda trace payload'una yazılmaz. Trace'ler 30 gün saklanır (D-08); audit ve karar kayıtlarının süresi S-06'ya bağlıdır.
 
 ## 14. Teknoloji yerleşimi
 
@@ -317,12 +381,13 @@ Prompt ve tool sonuçları ham biçimde loglanmadan önce veri sınıflandırma 
 | Durable execution | Temporal |
 | Agent test doubles ve tool inspection | Pydantic AI testing primitives |
 | Dataset/evaluator yönetimi | Pydantic Evals veya eşdeğer açık format |
-| Model matrisi | LiteLLM gateway üzerinden mantıksal model routing |
-| Tool contract testi | Fake/in-memory MCP client ve MCP Inspector ile manuel kontrol |
-| Policy enforcement | MCP Policy Gateway + merkezi policy engine |
+| Model matrisi | LiteLLM; dev'de OpenRouter, model geçiş gate'inde ve prod'da on-prem modeller |
+| Tool contract testi | Lab QRadar'a karşı contract testleri, fake/in-memory MCP client, MCP Inspector ile manuel kontrol |
+| Policy enforcement | MCP Policy Gateway (architecture §13) |
 | Trace standardı | OpenTelemetry uyumlu trace/span modeli |
-| Trace/eval görünümü | Self-hosted observability/evaluation aracı |
-| Artifact saklama | PostgreSQL + object store; immutable retention politikası |
+| Trace/eval görünümü | Hafif self-hosted bir araç; tek konteyner tercih edilir (T-12) |
+| Artifact saklama | PostgreSQL ve dosya sistemi; gerekirse S3 uyumlu depo |
+| Lab veri üretimi | Sentetik log üretici, Atomic Red Team veya Caldera, açık saldırı log setleri |
 
 Harness tek bir vendor ürününe bağımlı tasarlanmamalıdır. Dataset, trace ve evaluator sözleşmeleri platformun kendi açık şemaları olarak tutulur.
 
@@ -330,11 +395,12 @@ Harness tek bir vendor ürününe bağımlı tasarlanmamalıdır. Dataset, trace
 
 Bir agent sürümü ancak aşağıdaki koşulların tamamında üretime adaydır:
 
-1. Rolüne ait golden ve red-team suite'lerini geçer.
+1. Rolüne ait golden ve red-team suite'lerini, güvenlik suite'lerinde `pass^k` ile geçer.
 2. Yasak tool execution ve approval bypass sıfırdır.
 3. Her önemli finding doğrulanabilir evidence taşır.
 4. QRadar/Falcon bütçe ve gecikme sınırları içindedir.
 5. Temporal replay uyumludur.
-6. Shadow modda mevcut champion/baseline'a göre kritik regresyon göstermez.
-7. Analist örneklem incelemesinden geçer.
+6. Model geçiş gate'ini on-prem prod modelleriyle geçer.
+7. Shadow modda mevcut champion/baseline'a göre kritik regresyon göstermez.
+8. Analist örneklem incelemesinden geçer.
 
