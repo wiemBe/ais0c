@@ -93,11 +93,6 @@ def registry_problems(registry: dict[str, Any], models: dict[str, str]) -> list[
     return problems
 
 
-# Free dev models (decision D-39). Dev may run one of these instead of the prod model, and its
-# OpenRouter provider may log prompts; only synthetic lab data reaches OpenRouter (D-10, D-13).
-FREE_DEV_MODELS = frozenset({"openrouter/stealth/space-bunny-alpha"})
-
-
 def model_name(target: str) -> str:
     """openrouter/deepseek/deepseek-v4-flash and hosted_vllm/deepseek-ai/DeepSeek-V4-Flash
     both name the model deepseek-v4-flash."""
@@ -105,17 +100,12 @@ def model_name(target: str) -> str:
 
 
 def dev_prod_mismatches(dev: dict[str, Any], prod: dict[str, Any]) -> list[str]:
-    """Return the aliases whose dev model is not the model the alias uses in prod (D-12).
-
-    An alias on a listed free dev model (D-39) only needs the right prod_equivalent.
-    """
+    """Return the aliases whose dev model is not the model the alias uses in prod (D-12)."""
     mismatches: list[str] = []
     for alias, entry in dev.items():
         prod_target = prod[alias]["target"]
         if entry["prod_equivalent"] != prod_target:
             mismatches.append(f"{alias}: prod_equivalent is not {prod_target!r}")
-        if entry["target"] in FREE_DEV_MODELS:
-            continue
         if model_name(entry["target"]) != model_name(prod_target):
             mismatches.append(f"{alias}: dev runs {entry['target']!r}, prod runs {prod_target!r}")
     return mismatches

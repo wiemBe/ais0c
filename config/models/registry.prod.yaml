@@ -8,8 +8,8 @@
 # - context_window: must equal vLLM's --max-model-len for the model. The values below are the
 #   models' native context lengths.
 # - forced_tool_choice: whether the model honours tool_choice "required". Pydantic AI sends
-#   it for structured output; when false the agent sends "auto" instead (Space Bunny Alpha
-#   rejects "required" through OpenRouter, D-39).
+#   it for structured output; when false the agent sends "auto" instead (some OpenRouter
+#   providers reject "required" in dev, registry.dev.yaml).
 # - tool_parser, reasoning_parser: vLLM's --tool-call-parser and --reasoning-parser for the
 #   model (§8.4). Values from the vLLM recipe and model card of each model. When the running
 #   server uses other settings, change them here and rerun the model gate

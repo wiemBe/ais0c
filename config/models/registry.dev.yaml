@@ -3,17 +3,17 @@
 #
 # - target: the model behind the alias in config/litellm/litellm.dev.yaml.
 # - prod_equivalent: the alias's target in registry.prod.yaml. Dev runs the prod models
-#   through OpenRouter (D-12), except aliases on a free dev model (D-39): soc-reasoning
-#   and soc-report run openrouter/stealth/space-bunny-alpha. soc-verifier stays
-#   on Qwen so it differs from soc-reasoning (D-21).
+#   through OpenRouter (D-12, D-44). soc-verifier is on Qwen, so it differs from
+#   soc-reasoning (D-21).
 # - capabilities: an agent whose manifest requires a capability missing here does not start
 #   (fail closed, §8.4).
 # - context_window: tokens the model accepts through OpenRouter.
 # - parallel_tool_calls: null when the model rejects the parameter; it is then not sent
-#   (Space Bunny Alpha has no OpenRouter endpoint that accepts it, D-39).
+#   (OpenRouter finds no endpoint for DeepSeek V4 Flash or Qwen 122B that accepts it, D-43,
+#   T-024).
 # - forced_tool_choice: whether the model honours tool_choice "required". Pydantic AI sends
-#   it for structured output; when false the agent sends "auto" instead (Space Bunny Alpha
-#   rejects "required" through OpenRouter, D-39).
+#   it for structured output; when false the agent sends "auto" instead (Qwen 122B rejects
+#   "required" through OpenRouter with 400 invalid parameter, T-024).
 # - tool_parser, reasoning_parser: vLLM settings (§8.4). Null in dev: the OpenRouter provider
 #   serving the request decides.
 # - turkish_quality: result of the harness Turkish suite (D-07); null until it is measured.
@@ -51,18 +51,18 @@ soc-fast:
   inference_params: {}
 
 soc-reasoning:
-  target: openrouter/stealth/space-bunny-alpha
+  target: openrouter/deepseek/deepseek-v4-flash
   prod_equivalent: hosted_vllm/deepseek-ai/DeepSeek-V4-Flash
   capabilities: [tool_calling, structured_output]
   parallel_tool_calls: null
-  forced_tool_choice: false
-  context_window: 1000000
+  forced_tool_choice: true
+  context_window: 1048576
   tool_parser: null  # chosen by the OpenRouter provider; not visible
   reasoning_parser: null  # chosen by the OpenRouter provider; not visible
   turkish_quality: null
-  artifact: stealth/space-bunny-alpha
+  artifact: deepseek/deepseek-v4-flash
   artifact_hash: null  # OpenRouter does not show which weights the provider runs
-  quantization: null  # set by the provider; not visible for a stealth model
+  quantization: null  # varies with the provider OpenRouter picks for each request
   tokenizer: null  # the provider's tokenizer files are not visible through OpenRouter
   engine_version: null  # the provider's inference engine is not visible through OpenRouter
   inference_params: {}
@@ -71,8 +71,8 @@ soc-verifier:
   target: openrouter/qwen/qwen3.5-122b-a10b
   prod_equivalent: hosted_vllm/Qwen/Qwen3.5-122B-A10B
   capabilities: [tool_calling, structured_output]
-  parallel_tool_calls: false
-  forced_tool_choice: true
+  parallel_tool_calls: null
+  forced_tool_choice: false
   context_window: 262144
   tool_parser: null  # chosen by the OpenRouter provider; not visible
   reasoning_parser: null  # chosen by the OpenRouter provider; not visible
@@ -85,18 +85,18 @@ soc-verifier:
   inference_params: {}
 
 soc-report:
-  target: openrouter/stealth/space-bunny-alpha
+  target: openrouter/qwen/qwen3.5-122b-a10b
   prod_equivalent: hosted_vllm/Qwen/Qwen3.5-122B-A10B
   capabilities: [tool_calling, structured_output]
   parallel_tool_calls: null
   forced_tool_choice: false
-  context_window: 1000000
+  context_window: 262144
   tool_parser: null  # chosen by the OpenRouter provider; not visible
   reasoning_parser: null  # chosen by the OpenRouter provider; not visible
   turkish_quality: null
-  artifact: stealth/space-bunny-alpha
+  artifact: qwen/qwen3.5-122b-a10b
   artifact_hash: null  # OpenRouter does not show which weights the provider runs
-  quantization: null  # set by the provider; not visible for a stealth model
+  quantization: null  # varies with the provider OpenRouter picks for each request
   tokenizer: null  # the provider's tokenizer files are not visible through OpenRouter
   engine_version: null  # the provider's inference engine is not visible through OpenRouter
   inference_params: {}
