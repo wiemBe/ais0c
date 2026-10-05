@@ -56,6 +56,12 @@ from ais0c_agents.registry import (
     ModelRegistryError,
     load_model_registry,
 )
+from ais0c_agents.reporting import (
+    ReportingAgent,
+    ReportingOutput,
+    ReportingTask,
+    build_reporting_agent,
+)
 from ais0c_agents.runner import AgentRun, prompt_tool_budget, run_agent, usage_limits
 from ais0c_agents.skills import NO_SKILL, SkillEvidence, SkillInput, SkillTelemetry, render_skill
 from ais0c_agents.toolset import RunDeps, ToolsetProfile, ToolSpec
@@ -107,6 +113,9 @@ __all__ = [
     "PlanAgent",
     "PromptError",
     "PromptTemplate",
+    "ReportingAgent",
+    "ReportingOutput",
+    "ReportingTask",
     "ReviewedClaim",
     "ReviewedDecision",
     "RunDeps",
@@ -125,6 +134,7 @@ __all__ = [
     "VerificationTask",
     "build_model",
     "build_orchestrator_agent",
+    "build_reporting_agent",
     "build_triage_agent",
     "build_verification_agent",
     "check_agent_config",
