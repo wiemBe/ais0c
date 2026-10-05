@@ -18,6 +18,7 @@ from urllib.parse import urlsplit
 
 from pydantic_ai.models import Model
 from pydantic_ai.models.openai import OpenAIChatModel
+from pydantic_ai.profiles import ModelProfile, merge_profile
 from pydantic_ai.providers.litellm import LiteLLMProvider
 from pydantic_ai.settings import ModelSettings
 
@@ -37,11 +38,14 @@ def build_model(
     *,
     settings: ModelSettings | None = None,
     environ: Mapping[str, str] | None = None,
+    forced_tool_choice: bool = True,
 ) -> Model:
     """Return a model that sends requests for `alias` to LiteLLM.
 
     `environ` defaults to the process environment. `settings` apply to every request made with
-    the model, e.g. the model registry's `parallel_tool_calls`.
+    the model, e.g. the model registry's `parallel_tool_calls`. `forced_tool_choice` is the
+    registry field of the same name: when False, requests that would force a tool call send
+    tool_choice "auto" instead of "required".
     """
     if alias not in MODEL_ALIASES:
         raise ModelConfigError(
@@ -53,7 +57,11 @@ def build_model(
     if not api_key.strip():
         raise ModelConfigError(f"{LITELLM_API_KEY_ENV} is not set")
     provider = LiteLLMProvider(api_base=f"{base_url}/v1", api_key=api_key)
-    return OpenAIChatModel(alias, provider=provider, settings=settings)
+    model = OpenAIChatModel(alias, provider=provider, settings=settings)
+    if forced_tool_choice:
+        return model
+    profile = merge_profile(model.profile, ModelProfile(supports_forced_tool_choice=False))
+    return OpenAIChatModel(alias, provider=provider, settings=settings, profile=profile)
 
 
 def _base_url(value: str) -> str:

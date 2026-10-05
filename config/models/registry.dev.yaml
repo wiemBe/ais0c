@@ -3,10 +3,17 @@
 #
 # - target: the model behind the alias in config/litellm/litellm.dev.yaml.
 # - prod_equivalent: the alias's target in registry.prod.yaml. Dev runs the prod models
-#   through OpenRouter (D-12).
+#   through OpenRouter (D-12), except aliases on a free dev model (D-39): soc-reasoning
+#   and soc-report run openrouter/stealth/space-bunny-alpha. soc-verifier stays
+#   on Qwen so it differs from soc-reasoning (D-21).
 # - capabilities: an agent whose manifest requires a capability missing here does not start
 #   (fail closed, §8.4).
 # - context_window: tokens the model accepts through OpenRouter.
+# - parallel_tool_calls: null when the model rejects the parameter; it is then not sent
+#   (Space Bunny Alpha has no OpenRouter endpoint that accepts it, D-39).
+# - forced_tool_choice: whether the model honours tool_choice "required". Pydantic AI sends
+#   it for structured output; when false the agent sends "auto" instead (Space Bunny Alpha
+#   rejects "required" through OpenRouter, D-39).
 # - tool_parser, reasoning_parser: vLLM settings (§8.4). Null in dev: the OpenRouter provider
 #   serving the request decides.
 # - turkish_quality: result of the harness Turkish suite (D-07); null until it is measured.
@@ -17,18 +24,20 @@ soc-fast:
   target: openrouter/deepseek/deepseek-v4-flash
   prod_equivalent: hosted_vllm/deepseek-ai/DeepSeek-V4-Flash
   capabilities: [tool_calling, structured_output]
-  parallel_tool_calls: false
+  parallel_tool_calls: null
+  forced_tool_choice: true
   context_window: 1048576
   tool_parser: null
   reasoning_parser: null
   turkish_quality: null
 
 soc-reasoning:
-  target: openrouter/deepseek/deepseek-v4-flash
+  target: openrouter/stealth/space-bunny-alpha
   prod_equivalent: hosted_vllm/deepseek-ai/DeepSeek-V4-Flash
   capabilities: [tool_calling, structured_output]
-  parallel_tool_calls: false
-  context_window: 1048576
+  parallel_tool_calls: null
+  forced_tool_choice: false
+  context_window: 1000000
   tool_parser: null
   reasoning_parser: null
   turkish_quality: null
@@ -38,17 +47,19 @@ soc-verifier:
   prod_equivalent: hosted_vllm/Qwen/Qwen3.5-122B-A10B
   capabilities: [tool_calling, structured_output]
   parallel_tool_calls: false
+  forced_tool_choice: true
   context_window: 262144
   tool_parser: null
   reasoning_parser: null
   turkish_quality: null
 
 soc-report:
-  target: openrouter/qwen/qwen3.5-122b-a10b
+  target: openrouter/stealth/space-bunny-alpha
   prod_equivalent: hosted_vllm/Qwen/Qwen3.5-122B-A10B
   capabilities: [tool_calling, structured_output]
-  parallel_tool_calls: false
-  context_window: 262144
+  parallel_tool_calls: null
+  forced_tool_choice: false
+  context_window: 1000000
   tool_parser: null
   reasoning_parser: null
   turkish_quality: null

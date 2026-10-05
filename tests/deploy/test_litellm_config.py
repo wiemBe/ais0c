@@ -236,6 +236,10 @@ def test_prod_config_fails_closed_without_an_api_base() -> None:
 
 # --- dev: OpenRouter (D-10) ---------------------------------------------------------------
 
+# Free dev models (decision D-39). Dev may run one of these instead of the prod model, and its
+# OpenRouter provider may log prompts; only synthetic lab data reaches OpenRouter (D-10, D-13).
+FREE_DEV_MODELS = frozenset({"openrouter/stealth/space-bunny-alpha"})
+
 
 def test_dev_config_reaches_every_alias_through_openrouter() -> None:
     for entry in load_config("dev")["model_list"]:
@@ -244,7 +248,9 @@ def test_dev_config_reaches_every_alias_through_openrouter() -> None:
         assert params["model"].startswith("openrouter/"), entry["model_name"]
         assert params["api_key"] == "os.environ/OPENROUTER_API_KEY"
         # Providers must honour every parameter (tools, response format) and keep no prompts.
+        # A listed free dev model (D-39) is the one exception to "keep no prompts".
+        free = params["model"] in FREE_DEV_MODELS
         assert params["extra_body"]["provider"] == {
             "require_parameters": True,
-            "data_collection": "deny",
-        }
+            "data_collection": "allow" if free else "deny",
+        }, entry["model_name"]

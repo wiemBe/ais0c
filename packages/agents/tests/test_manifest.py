@@ -202,6 +202,17 @@ def test_registry_in_the_8_4_format_loads(tmp_path: Path) -> None:
     assert entries["soc-fast"].model_settings() == {"parallel_tool_calls": False}
 
 
+def test_registry_entry_can_leave_out_parallel_tool_calls_and_forced_tool_choice() -> None:
+    # parallel_tool_calls null: the model rejects the parameter, so it is not sent (D-39).
+    entry = registry_data()["soc-fast"] | {"parallel_tool_calls": None, "forced_tool_choice": False}
+
+    entries = parse_model_registry(registry_data() | {"soc-fast": entry})
+
+    assert entries["soc-fast"].model_settings() == {}
+    assert entries["soc-fast"].forced_tool_choice is False
+    assert entries["soc-reasoning"].forced_tool_choice is True
+
+
 @pytest.mark.parametrize(
     "change",
     [

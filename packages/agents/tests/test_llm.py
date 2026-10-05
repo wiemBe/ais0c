@@ -12,7 +12,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, cast
 
 import pytest
-from pydantic_ai import Agent, models
+from pydantic import BaseModel
+from pydantic_ai import Agent, UnexpectedModelBehavior, models
 from pydantic_ai.settings import ModelSettings
 
 from ais0c_agents import (
@@ -175,3 +176,31 @@ def test_request_reaches_litellm_with_the_alias_key_and_settings(
     assert headers["authorization"] == "Bearer test-key"
     assert body["model"] == "soc-fast"
     assert body["parallel_tool_calls"] is False
+
+
+class _Verdict(BaseModel):
+    verdict: str
+
+
+@pytest.mark.parametrize(("forced", "tool_choice"), [(True, "required"), (False, "auto")])
+def test_forced_tool_choice_decides_the_tool_choice_of_structured_output(
+    fake_litellm: tuple[str, list[tuple[str, dict[str, str], dict[str, Any]]]],
+    forced: bool,
+    tool_choice: str,
+) -> None:
+    # Structured output is an output tool; Pydantic AI forces it unless the registry says the
+    # model rejects tool_choice "required" (D-39).
+    base_url, seen = fake_litellm
+    model = build_model(
+        "soc-fast",
+        environ={LITELLM_BASE_URL_ENV: base_url, LITELLM_API_KEY_ENV: "test-key"},
+        forced_tool_choice=forced,
+    )
+    agent = Agent(model, output_type=_Verdict)
+
+    # The fake answers with text, never with the output tool, so the run fails; only the
+    # first request matters here.
+    with models.override_allow_model_requests(True), pytest.raises(UnexpectedModelBehavior):
+        asyncio.run(agent.run("Decide."))
+
+    assert seen[0][2]["tool_choice"] == tool_choice

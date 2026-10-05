@@ -27,11 +27,17 @@ class ModelRegistryEntry(BaseModel):
     model_config = ConfigDict(extra="ignore", frozen=True)
 
     capabilities: frozenset[Capability]
-    parallel_tool_calls: bool
+    # None: the model rejects the parameter, so it is not sent at all.
+    parallel_tool_calls: bool | None
+    # False when the model rejects tool_choice "required"; build_model then lets the agent
+    # send "auto" for structured output instead.
+    forced_tool_choice: bool = True
     context_window: Annotated[int, Field(gt=0)]
 
     def model_settings(self) -> ModelSettings:
         """Request settings every call to this model must use."""
+        if self.parallel_tool_calls is None:
+            return ModelSettings()
         return ModelSettings(parallel_tool_calls=self.parallel_tool_calls)
 
 
