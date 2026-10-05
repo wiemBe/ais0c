@@ -119,6 +119,31 @@ Dizinler `0700`, dosyalar `0644` izinlidir: Konteynerler dosyaları başka kulla
 
 Bu makinede çalışan worker gateway'e `AIS0C_GATEWAY_URL=http://127.0.0.1:8090` ve `AIS0C_WORKER_SECRETS_DIR=deploy/compose/secrets/agents` ile bağlanır. Action Executor yalnızca `deploy/compose/secrets/executor` dizinini alır; not token'ı hiçbir ajan worker'ına verilmez. Gateway de bu profili yalnızca `action-executor` sahte ajanının çalışmalarına açar.
 
+### Batch worker (katalog senkronu)
+
+Analiz Kataloğu senkronunu çalıştıran worker ayrı bir süreçtir ([T-037](../../docs/impl/tasks/T-037-knowledge-sync-worker.md)): `uv run python -m ais0c_worker batch`. Argümansız `python -m ais0c_worker` case worker'ıdır.
+
+| Değişken | Anlamı | Varsayılan |
+|---|---|---|
+| `AIS0C_DATABASE_URL` | Uygulama veritabanı | yok |
+| `AIS0C_GATEWAY_URL` | MCP Policy Gateway | yok |
+| `AIS0C_WORKER_SECRETS_DIR` | `gateway-token-qradar-inventory-read` dosyasının bulunduğu dizin | `/run/secrets` |
+| `TEMPORAL_ADDRESS` | Temporal frontend | `127.0.0.1:7233` |
+| `TEMPORAL_NAMESPACE` | Namespace | `default` |
+| `AIS0C_KNOWLEDGE_SYNC_SCHEDULE` | `off` Schedule'a dokunmaz, örneğin ikinci bir batch worker'da | `on` |
+
+Envanter token'ı `make_secrets.py` üretir (`deploy/compose/secrets/agents/gateway-token-qradar-inventory-read`) ve gateway'e verilir; worker aynı dosyayı okur. Gateway `qradar-inventory-read` profilini sunmuyorsa veya token yoksa worker açılışta `RuntimeConfigError` ile durur. Senkron model çağırmadığı için model registry'sine ve LiteLLM'e gerek yoktur.
+
+```bash
+set -a; . deploy/compose/.env; set +a
+AIS0C_DATABASE_URL="postgresql+psycopg://ais0c:${AIS0C_DB_PASSWORD}@127.0.0.1:5432/ais0c" \
+AIS0C_GATEWAY_URL=http://127.0.0.1:8090 \
+AIS0C_WORKER_SECRETS_DIR=deploy/compose/secrets/agents \
+  uv run python -m ais0c_worker batch
+```
+
+Açılışta `knowledge-sync` Schedule'ını kurar: her gün 03:00 Europe/Istanbul'da `soc-batch` kuyruğunda bir `KnowledgeSync` başlatır. Aynı Schedule'ı elle tetiklemek `POST /catalog/sync`'in (T-028) yapacağı gibidir; süren bir koşunun üstüne ikinci bir koşu başlatmaz. `Ctrl-C` veya `SIGTERM` ile düzgünce durur; yarım kalan işi bir sonraki worker tarihinden devam ettirir.
+
 ### Lab QRadar
 
 Lab QRadar, libvirt ağında (`virbr0`) bir VM'dir. libvirt başka köprülerden gelen trafiği reddettiği için compose'un bridge ağlarından, varsayılan ağ dahil, lab QRadar'a ulaşılamaz (ECONNREFUSED). [`docker-compose.lab.yaml`](docker-compose.lab.yaml) QRadar'a giden iki MCP instance'ını dış `qradar-vmnet` ağına bağlar. Bu ağ `virbr0` üzerinde bir macvlan'dır ve konteyneri doğrudan VM'lerin segmentine koyar. Bir kez oluşturulur; değerler libvirt'in varsayılan ağına göredir:
@@ -160,6 +185,15 @@ Anahtarı yığın çalışırken eklediysen önce LiteLLM'i yeniden oluştur: `
   docker compose -f deploy/compose/docker-compose.dev.yaml up -d --wait mailpit
   AIS0C_DEV_STACK=1 uv run pytest packages/activities/tests/test_email_dev_stack.py
   ```
+- Batch worker'ın testi `qradar` profiliyle başlatılmış yığını kullanır: worker sürecini başlatır, Schedule'ı elle tetikler, koşunun sonucunu bekler ve katalogdaki kural sayısının sonuçtakiyle aynı olduğunu gösterir. Lab'da hiçbir şey açmaz, kapatmaz ve yazmaz; senkronun kendisi tek yazıcıdır.
+
+  ```bash
+  set -a; . deploy/compose/.env; set +a
+  AIS0C_DATABASE_URL="postgresql+psycopg://ais0c:${AIS0C_DB_PASSWORD}@127.0.0.1:5432/ais0c" \
+    AIS0C_DEV_STACK=1 uv run pytest services/worker/tests/test_batch_worker_dev_stack.py -s
+  ```
+
+  Worker'ın diğer testleri (`services/worker/tests/test_batch_worker.py`) yığını gerektirmez: kendi PostgreSQL'ini ve Temporal'ının yerel geliştirme sunucusunu açar, gateway'i temsil eden bir HTTP sunucusu kullanır.
 
 ## Durdurma ve sıfırlama
 

@@ -326,9 +326,11 @@ def unwrapped_tool_returns(messages: Sequence[ModelMessage], nonce: str) -> list
 # --- the platform -----------------------------------------------------------------------------
 
 
-async def eventually[T](check: Callable[[], Awaitable[T | None]]) -> T:
-    """Poll `check` until it returns something other than None."""
-    async with asyncio.timeout(WAIT_SECONDS):
+async def eventually[T](
+    check: Callable[[], Awaitable[T | None]], seconds: float = WAIT_SECONDS
+) -> T:
+    """Poll `check` until it returns something other than None, at most `seconds`."""
+    async with asyncio.timeout(seconds):
         while True:
             value = await check()
             if value is not None:
