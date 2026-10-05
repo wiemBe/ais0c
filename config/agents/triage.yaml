@@ -13,10 +13,14 @@ toolset_profile: qradar-triage-read
 # Model requests per run, output retries included.
 max_steps: 8
 budgets:
-  tokens: 60000
+  # Reasoning tokens count too; 60000 (the §8.1 example) ran out on the lab e2e with a
+  # dev model. T-030 measures the real budget.
+  tokens: 150000
   tool_calls: 12
   # Enforced by the Temporal activity and workflow timeouts (T-012).
-  wall_clock_seconds: 180
+  # 180 (the §8.1 example) ran out on the lab e2e with a slow dev model and a worker restart
+  # (30 s heartbeat timeout). Still inside the 10-minute critical/high SLA; T-030 measures it.
+  wall_clock_seconds: 420
 autonomy: L0
 can_delegate: false
 prompt: prompts/triage/v1.md

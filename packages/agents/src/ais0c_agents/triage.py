@@ -8,12 +8,13 @@ status and usage to make the TriageResult.
 """
 
 import time
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Annotated, Final
 
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic_ai import Agent, AgentRetries, ToolOutput
+from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.models import Model
 
 from ais0c_agents.gateway import GatewayClient
@@ -149,12 +150,14 @@ def build_triage_agent(
     profiles: Mapping[str, ToolsetProfile],
     gateway: GatewayClient,
     model: Model,
+    capabilities: Sequence[AbstractCapability[RunDeps]] = (),
 ) -> TriageAgent:
     """Build the agent once, outside any workflow (TemporalDurability requires it).
 
-    The agent gets only the tools of its manifest's profile. Raises ValueError when the
-    manifest does not describe a triage agent, its prompt or profile is not the one given, or
-    the profile is unknown.
+    The agent gets only the tools of its manifest's profile. `capabilities` are attached when
+    the agent is built, the only time Pydantic AI binds them; a workflow passes
+    TemporalDurability here. Raises ValueError when the manifest does not describe a triage
+    agent, its prompt or profile is not the one given, or the profile is unknown.
     """
     if (manifest.input_schema, manifest.output_schema) != (INPUT_SCHEMA, OUTPUT_SCHEMA):
         raise ValueError(
@@ -176,6 +179,7 @@ def build_triage_agent(
         toolsets=[build_gateway_toolset(profile, gateway, agent_id=manifest.id)],
         retries=RETRIES,
         name=manifest.id,
+        capabilities=list(capabilities),
     )
     agent.output_validator(check_cited_evidence)
     return TriageAgent(manifest=manifest, prompt=prompt, profile=profile, agent=agent)

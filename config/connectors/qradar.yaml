@@ -92,11 +92,11 @@ tools:
       type: object
       additionalProperties: false
       properties:
-        fields: {type: string, maxLength: 1000, description: Comma-separated list of fields to include.}
-        filter: {type: string, maxLength: 1000, description: Optional filter expression.}
+        fields: {type: string, maxLength: 1000, description: 'Comma-separated field names; omit to get all fields. Valid fields: assigned_to, categories, category_count, close_time, closing_reason_id, closing_user, credibility, description, destination_networks, device_count, domain_id, event_count, first_persisted_time, flow_count, follow_up, id, inactive, last_persisted_time, last_updated_time, local_destination_address_ids, local_destination_count, log_sources, magnitude, offense_source, offense_type, policy_category_count, protected, relevance, remote_destination_count, rules, security_category_count, severity, source_address_ids, source_count, source_network, start_time, status, username_count. Nested fields use parentheses, e.g. rules(id),log_sources(id).'}
+        filter: {type: string, maxLength: 1000, description: 'QRadar REST API filter, not AQL. Form: field operator value, with operators = != < > <= >=. Strings in double quotes, e.g. status = "OPEN". Lists use in with parentheses, e.g. id in (18,19); never square brackets. Combine conditions with and, or and parentheses. Use only the field names listed for the fields argument.'}
         limit: {type: integer, minimum: 1, maximum: 10000, default: 10, description: 'Maximum number of offenses to return (default: 10, max: 10000)'}
         offset: {type: integer, minimum: 0, default: 0, description: 'Number of offenses to skip for pagination (default: 0)'}
-        sort: {type: string, maxLength: 1000, description: Sort expression.}
+        sort: {type: string, maxLength: 1000, description: 'Comma-separated fields, each prefixed with + (ascending) or - (descending), e.g. -start_time,+id. No ASC or DESC keywords.'}
   list_offense_types:
     description: 'List offense types: the property an offense is indexed on, such as source IP or
       username.'
@@ -107,10 +107,10 @@ tools:
       type: object
       additionalProperties: false
       properties:
-        fields: {type: string, maxLength: 1000, description: Optional comma-separated list of fields to return.}
-        filter: {type: string, maxLength: 1000, description: Optional AQL filter expression.}
+        fields: {type: string, maxLength: 1000, description: 'Comma-separated field names; omit to get all fields. Valid fields: custom, database_type, id, name, property_name.'}
+        filter: {type: string, maxLength: 1000, description: 'QRadar REST API filter, not AQL. Form: field operator value, with operators = != < > <= >=. Strings in double quotes, e.g. status = "OPEN". Lists use in with parentheses, e.g. id in (18,19); never square brackets. Combine conditions with and, or and parentheses. Use only the field names listed for the fields argument.'}
         limit: {type: integer, minimum: 1, maximum: 10000, default: 10, description: 'Maximum number of results to return (default: 10)'}
-        sort: {type: string, maxLength: 1000, description: Optional sort expression.}
+        sort: {type: string, maxLength: 1000, description: 'Comma-separated fields, each prefixed with + (ascending) or - (descending), e.g. -start_time,+id. No ASC or DESC keywords.'}
   list_source_addresses:
     description: List offense source addresses with the offenses they appear in.
     cost_class: low
@@ -120,8 +120,8 @@ tools:
       type: object
       additionalProperties: false
       properties:
-        fields: {type: string, maxLength: 1000, description: Optional comma-separated list of fields to return}
-        filter: {type: string, maxLength: 1000, description: Optional filter expression.}
+        fields: {type: string, maxLength: 1000, description: 'Comma-separated field names; omit to get all fields. Valid fields: domain_id, event_flow_count, first_event_flow_seen, id, last_event_flow_seen, local_destination_address_ids, magnitude, network, offense_ids, source_ip.'}
+        filter: {type: string, maxLength: 1000, description: 'QRadar REST API filter, not AQL. Form: field operator value, with operators = != < > <= >=. Strings in double quotes, e.g. status = "OPEN". Lists use in with parentheses, e.g. id in (18,19); never square brackets. Combine conditions with and, or and parentheses. Use only the field names listed for the fields argument.'}
         limit: {type: integer, minimum: 1, maximum: 10000, default: 10, description: 'Maximum number of results to return (default: 10)'}
         offset: {type: integer, minimum: 0, description: Starting position for pagination (0-based)}
   list_local_destination_addresses:
@@ -133,8 +133,8 @@ tools:
       type: object
       additionalProperties: false
       properties:
-        fields: {type: string, maxLength: 1000, description: Optional comma-separated list of fields to return.}
-        filter: {type: string, maxLength: 1000, description: Optional filter expression.}
+        fields: {type: string, maxLength: 1000, description: 'Comma-separated field names; omit to get all fields. Valid fields: domain_id, event_flow_count, first_event_flow_seen, id, last_event_flow_seen, local_destination_ip, magnitude, network, offense_ids, source_address_ids.'}
+        filter: {type: string, maxLength: 1000, description: 'QRadar REST API filter, not AQL. Form: field operator value, with operators = != < > <= >=. Strings in double quotes, e.g. status = "OPEN". Lists use in with parentheses, e.g. id in (18,19); never square brackets. Combine conditions with and, or and parentheses. Use only the field names listed for the fields argument.'}
         limit: {type: integer, minimum: 1, maximum: 10000, default: 10, description: 'Maximum number of results to return (default: 10)'}
   list_rules:
     description: 'List QRadar analytics rules: ID, name, type, enabled state and origin.'
@@ -145,8 +145,8 @@ tools:
       type: object
       additionalProperties: false
       properties:
-        fields: {type: string, maxLength: 1000, description: Optional comma-separated list of fields to include.}
-        filter: {type: string, maxLength: 1000, description: Optional filter expression.}
+        fields: {type: string, maxLength: 1000, description: 'Comma-separated field names; omit to get all fields. Valid fields: average_capacity, base_capacity, base_host_id, capacity_timestamp, creation_date, enabled, id, identifier, linked_rule_identifier, modification_date, name, origin, owner, type.'}
+        filter: {type: string, maxLength: 1000, description: 'QRadar REST API filter, not AQL. Form: field operator value, with operators = != < > <= >=. Strings in double quotes, e.g. status = "OPEN". Lists use in with parentheses, e.g. id in (18,19); never square brackets. Combine conditions with and, or and parentheses. Use only the field names listed for the fields argument.'}
         limit: {type: integer, minimum: 1, maximum: 10000, default: 10, description: 'Maximum number of rules to return (default: 10, max: 10000)'}
         offset: {type: integer, minimum: 0, default: 0, description: 'Number of rules to skip for pagination (default: 0)'}
   get_rule:
@@ -158,7 +158,7 @@ tools:
       additionalProperties: false
       required: [rule_id]
       properties:
-        fields: {type: string, maxLength: 1000, description: 'Optional comma-separated list of fields to return (e.g., ''id,name,type,enabled'')'}
+        fields: {type: string, maxLength: 1000, description: 'Comma-separated field names; omit to get all fields. Valid fields: average_capacity, base_capacity, base_host_id, capacity_timestamp, creation_date, enabled, id, identifier, linked_rule_identifier, modification_date, name, origin, owner, type.'}
         rule_id: {type: integer, minimum: 0, description: The ID of the analytics rule to retrieve}
   list_assets:
     description: 'List assets from the QRadar asset model: IP addresses, host names, users and properties.'
@@ -169,11 +169,11 @@ tools:
       type: object
       additionalProperties: false
       properties:
-        fields: {type: string, maxLength: 1000, description: Optional comma-separated list of fields to return.}
-        filter: {type: string, maxLength: 1000, description: Optional filter expression.}
+        fields: {type: string, maxLength: 1000, description: 'Comma-separated field names; omit to get all fields. Valid fields: domain_id, hostnames, id, interfaces, products, properties, risk_score_sum, vulnerability_count.'}
+        filter: {type: string, maxLength: 1000, description: 'QRadar REST API filter, not AQL. Form: field operator value, with operators = != < > <= >=. Strings in double quotes, e.g. status = "OPEN". Lists use in with parentheses, e.g. id in (18,19); never square brackets. Combine conditions with and, or and parentheses. Use only the field names listed for the fields argument.'}
         limit: {type: integer, minimum: 1, maximum: 10000, description: 'Maximum number of assets to return (default: 50, max: 10000)'}
         offset: {type: integer, minimum: 0, description: 'Number of assets to skip for pagination (default: 0)'}
-        sort: {type: string, maxLength: 1000, description: Optional sort expression.}
+        sort: {type: string, maxLength: 1000, description: 'Comma-separated fields, each prefixed with + (ascending) or - (descending), e.g. -start_time,+id. No ASC or DESC keywords.'}
   list_log_sources:
     description: 'List log sources: ID, name, type, enabled state and status.'
     cost_class: low
@@ -183,11 +183,11 @@ tools:
       type: object
       additionalProperties: false
       properties:
-        fields: {type: string, maxLength: 1000, description: Optional comma-separated list of fields to include.}
-        filter: {type: string, maxLength: 1000, description: Optional filter expression.}
+        fields: {type: string, maxLength: 1000, description: 'Comma-separated field names; omit to get all fields. Valid fields: auto_discovered, average_eps, coalesce_events, creation_date, credibility, description, enabled, gateway, group_ids, id, internal, language_id, last_event_time, modified_date, name, protocol_type_id, requires_deploy, status, store_event_payload, target_event_collector_id, type_id.'}
+        filter: {type: string, maxLength: 1000, description: 'QRadar REST API filter, not AQL. Form: field operator value, with operators = != < > <= >=. Strings in double quotes, e.g. status = "OPEN". Lists use in with parentheses, e.g. id in (18,19); never square brackets. Combine conditions with and, or and parentheses. Use only the field names listed for the fields argument.'}
         limit: {type: integer, minimum: 1, maximum: 10000, default: 10, description: 'Maximum number of log sources to return (default: 10, max: 10000)'}
         offset: {type: integer, minimum: 0, default: 0, description: 'Number of log sources to skip for pagination (default: 0)'}
-        sort: {type: string, maxLength: 1000, description: Optional sort expression.}
+        sort: {type: string, maxLength: 1000, description: 'Comma-separated fields, each prefixed with + (ascending) or - (descending), e.g. -start_time,+id. No ASC or DESC keywords.'}
   get_log_source:
     description: Read one log source by ID.
     cost_class: low
@@ -197,7 +197,7 @@ tools:
       additionalProperties: false
       required: [log_source_id]
       properties:
-        fields: {type: string, maxLength: 1000, description: 'Optional comma-separated list of fields to return (e.g., "id,name,enabled,status")'}
+        fields: {type: string, maxLength: 1000, description: 'Comma-separated field names; omit to get all fields. Valid fields: auto_discovered, average_eps, coalesce_events, creation_date, credibility, description, enabled, gateway, group_ids, id, internal, language_id, last_event_time, modified_date, name, protocol_type_id, requires_deploy, status, store_event_payload, target_event_collector_id, type_id.'}
         log_source_id: {type: integer, minimum: 0, description: The ID of the log source to retrieve}
   list_log_source_types:
     description: 'List log source types: ID and name.'
@@ -208,8 +208,8 @@ tools:
       type: object
       additionalProperties: false
       properties:
-        fields: {type: string, maxLength: 1000, description: Optional comma-separated list of fields to return.}
-        filter: {type: string, maxLength: 1000, description: Optional filter expression.}
+        fields: {type: string, maxLength: 1000, description: 'Comma-separated field names; omit to get all fields. Valid fields: custom, default_protocol_id, id, internal, language_ids, log_source_extension_id, name, protocol_types, uuid.'}
+        filter: {type: string, maxLength: 1000, description: 'QRadar REST API filter, not AQL. Form: field operator value, with operators = != < > <= >=. Strings in double quotes, e.g. status = "OPEN". Lists use in with parentheses, e.g. id in (18,19); never square brackets. Combine conditions with and, or and parentheses. Use only the field names listed for the fields argument.'}
         limit: {type: integer, minimum: 1, maximum: 10000, default: 10, description: 'Maximum number of types to return (default: 10)'}
         offset: {type: integer, minimum: 0, description: Starting index for pagination (0-based)}
   list_reference_sets:
@@ -221,11 +221,11 @@ tools:
       type: object
       additionalProperties: false
       properties:
-        fields: {type: string, maxLength: 1000, description: Optional comma-separated list of fields to include.}
-        filter: {type: string, maxLength: 1000, description: Optional AQL-style filter expression.}
+        fields: {type: string, maxLength: 1000, description: 'Comma-separated field names; omit to get all fields. Valid fields: description, entry_type, id, name, namespace.'}
+        filter: {type: string, maxLength: 1000, description: 'QRadar REST API filter, not AQL. Form: field operator value, with operators = != < > <= >=. Strings in double quotes, e.g. status = "OPEN". Lists use in with parentheses, e.g. id in (18,19); never square brackets. Combine conditions with and, or and parentheses. Use only the field names listed for the fields argument.'}
         limit: {type: integer, minimum: 1, maximum: 10000, description: 'Maximum number of sets to return (default: 50, max: 10000)'}
         offset: {type: integer, minimum: 0, description: 'Number of sets to skip for pagination (default: 0)'}
-        sort: {type: string, maxLength: 1000, description: Optional sort expression.}
+        sort: {type: string, maxLength: 1000, description: 'Comma-separated fields, each prefixed with + (ascending) or - (descending), e.g. -start_time,+id. No ASC or DESC keywords.'}
   get_reference_set:
     description: Read one reference set by ID.
     cost_class: low
@@ -246,11 +246,11 @@ tools:
       type: object
       additionalProperties: false
       properties:
-        fields: {type: string, maxLength: 1000, description: Optional comma-separated list of fields to return.}
-        filter: {type: string, maxLength: 1000, description: Optional AQL-style filter expression.}
+        fields: {type: string, maxLength: 1000, description: 'Comma-separated field names; omit to get all fields. Valid fields: creation_time, element_type, key_label, name, namespace, number_of_elements, time_to_live, timeout_type.'}
+        filter: {type: string, maxLength: 1000, description: 'QRadar REST API filter, not AQL. Form: field operator value, with operators = != < > <= >=. Strings in double quotes, e.g. status = "OPEN". Lists use in with parentheses, e.g. id in (18,19); never square brackets. Combine conditions with and, or and parentheses. Use only the field names listed for the fields argument.'}
         limit: {type: integer, minimum: 1, maximum: 10000, description: 'Maximum number of maps to return (default: 50, max: 10000)'}
         offset: {type: integer, minimum: 0, description: 'Number of maps to skip for pagination (default: 0)'}
-        sort: {type: string, maxLength: 1000, description: Optional sort expression.}
+        sort: {type: string, maxLength: 1000, description: 'Comma-separated fields, each prefixed with + (ascending) or - (descending), e.g. -start_time,+id. No ASC or DESC keywords.'}
   get_reference_map:
     description: Read the entries of one reference map by name; page with limit and offset.
     cost_class: medium
@@ -276,11 +276,11 @@ tools:
       type: object
       additionalProperties: false
       properties:
-        fields: {type: string, maxLength: 1000, description: Optional comma-separated list of fields to return.}
-        filter: {type: string, maxLength: 1000, description: Optional AQL-style filter expression.}
+        fields: {type: string, maxLength: 1000, description: 'Comma-separated field names; omit to get all fields. Valid fields: creation_time, element_type, key_label, name, namespace, number_of_elements, time_to_live, timeout_type.'}
+        filter: {type: string, maxLength: 1000, description: 'QRadar REST API filter, not AQL. Form: field operator value, with operators = != < > <= >=. Strings in double quotes, e.g. status = "OPEN". Lists use in with parentheses, e.g. id in (18,19); never square brackets. Combine conditions with and, or and parentheses. Use only the field names listed for the fields argument.'}
         limit: {type: integer, minimum: 1, maximum: 10000, description: 'Maximum number of tables to return (default: 50, max: 10000)'}
         offset: {type: integer, minimum: 0, description: 'Number of tables to skip for pagination (default: 0)'}
-        sort: {type: string, maxLength: 1000, description: Optional sort expression.}
+        sort: {type: string, maxLength: 1000, description: 'Comma-separated fields, each prefixed with + (ascending) or - (descending), e.g. -start_time,+id. No ASC or DESC keywords.'}
   get_reference_table:
     description: Read the entries of one reference table by name; page with limit and offset.
     cost_class: medium

@@ -1,9 +1,10 @@
 """Activities of `CaseWorkflow` (architecture §6, §9).
 
 One evaluation is: `fetch_offense`, `enrich_offense`, `start_evaluation` (opens the case or
-starts the next evaluation and sets the SLA deadline), `triage`, then `record_decision`, or
-`mark_no_ai_decision` when the SLA runs out or triage fails. `close_case` ends the case when the
-offense is closed in QRadar.
+starts the next evaluation and sets the SLA deadline), the Triage run (the child workflow
+TriageWorkflow; its activities are in `ais0c_activities.triage`), then `record_decision`, or
+`mark_no_ai_decision` when the SLA runs out or triage gives no decision. `close_case` ends the
+case when the offense is closed in QRadar.
 """
 
 from collections.abc import Callable
@@ -22,11 +23,9 @@ from ais0c_activities.names import (
     MARK_NO_AI_DECISION,
     RECORD_DECISION,
     START_EVALUATION,
-    TRIAGE,
 )
 from ais0c_activities.offense_source import OffenseSource
 from ais0c_activities.settings import CaseSettings
-from ais0c_activities.triage import TriageRunner
 from ais0c_contracts import CaseSource, EnrichmentContext, Level, OffenseSnapshot, TriageResult
 from ais0c_storage.enums import CaseStatus, OffenseStatus
 from ais0c_storage.repositories import (
@@ -67,13 +66,11 @@ class CaseActivities:
         *,
         sessions: SessionFactory,
         source: OffenseSource,
-        triage: TriageRunner,
         settings: CaseSettings,
         ioc_matcher: IocMatcher | None = None,
     ) -> None:
         self._sessions = sessions
         self._source = source
-        self._triage = triage
         self._settings = settings
         self._ioc_matcher = NoIocMatcher() if ioc_matcher is None else ioc_matcher
 
@@ -82,7 +79,6 @@ class CaseActivities:
             self.fetch_offense,
             self.enrich_offense,
             self.start_evaluation,
-            self.triage,
             self.record_decision,
             self.mark_no_ai_decision,
             self.close_case,
@@ -157,18 +153,6 @@ class CaseActivities:
                 if case.run_id != run_id:
                     case = await set_case_run_id(session, case_id, run_id)
             return case.sla_due_at
-
-    @activity.defn(name=TRIAGE)
-    async def triage(
-        self,
-        case_id: str,
-        evaluation_no: int,
-        offense: OffenseSnapshot,
-        enrichment: EnrichmentContext,
-    ) -> TriageResult:
-        return await self._triage.triage(
-            case_id=case_id, evaluation_no=evaluation_no, offense=offense, enrichment=enrichment
-        )
 
     @activity.defn(name=RECORD_DECISION)
     async def record_decision(

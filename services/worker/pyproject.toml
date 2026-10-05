@@ -8,6 +8,8 @@ dependencies = [
     "ais0c-activities",
     # Worker, client and Schedules.
     "temporalio[pydantic]>=1.34,<2",
+    # PydanticAIPlugin: the data converter and sandbox settings agent runs need (decision T-02).
+    "pydantic-ai-slim[temporal]>=2.53,<3",
 ]
 
 [dependency-groups]

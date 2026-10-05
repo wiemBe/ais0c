@@ -1,5 +1,5 @@
 """The case worker end to end: real workflows and activities, PostgreSQL, a fake offense source
-and a scripted Triage step on the time-skipping test server.
+and the Triage agent with a scripted model, on the time-skipping test server.
 
 Covers the acceptance criteria of T-010 across the workflow and activity boundary; the
 recorded histories are replayed at the end of each scenario (criterion 9).
@@ -8,6 +8,7 @@ recorded histories are replayed at the end of each scenario (criterion 9).
 from datetime import UTC, datetime, timedelta
 
 import pytest
+from pydantic_ai.durable_exec.temporal import PydanticAIPlugin
 from temporalio.client import Client, WorkflowHandle
 from temporalio.contrib.pydantic import pydantic_data_converter
 from temporalio.exceptions import ApplicationError
@@ -17,14 +18,15 @@ from temporalio.worker import Replayer
 from temporalio.worker.workflow_sandbox import SandboxedWorkflowRunner
 from worker_support import (
     Platform,
-    ScriptedTriage,
+    RecordingGateway,
+    TriageModel,
     offense,
     running_platform,
-    triage_result,
+    triage_runtime,
 )
 
 from ais0c_activities import CaseLauncher, CaseSettings, FakeOffenseSource, SessionFactory
-from ais0c_contracts import CatalogMode, Level, TriageResult
+from ais0c_contracts import CatalogMode, Level
 from ais0c_storage.enums import CaseStatus, CriticalAssetKind, OffenseStatus
 from ais0c_storage.repositories import (
     SyncedRule,
@@ -65,11 +67,16 @@ async def define_rule(
 
 
 async def replay_all(platform: Platform, *case_ids: str) -> None:
-    replayer = Replayer(
-        workflows=list(CASE_QUEUE_WORKFLOWS), data_converter=pydantic_data_converter
-    )
+    """Replay the intake runs, the cases and every Triage run the model saw.
+
+    A Triage run replays its agent, so it needs the agent the worker installed.
+    """
+    replayer = Replayer(workflows=list(CASE_QUEUE_WORKFLOWS), plugins=[PydanticAIPlugin()])
     handles: list[WorkflowHandle] = [*platform.intake_runs]
-    handles += [platform.env.client.get_workflow_handle(case_id) for case_id in case_ids]
+    workflow_ids = [*case_ids, *platform.triage_runs()]
+    handles += [
+        platform.env.client.get_workflow_handle(workflow_id) for workflow_id in workflow_ids
+    ]
     for handle in handles:
         await replayer.replay_workflow(await handle.fetch_history())
 
@@ -116,7 +123,7 @@ async def test_offenses_flow_from_intake_to_closed_cases(
 
         # Criterion 2: the same offenses again are processed only once.
         await platform.run_intake(first)
-        assert platform.triage.calls == [("case-2", 1)]
+        assert platform.triage_runs() == ["case-2-triage-1"]
         started = await platform.seen(2)
         assert started is not None
         assert (started.status, started.case_id) == (OffenseStatus.RUNNING, "case-2")
@@ -128,7 +135,7 @@ async def test_offenses_flow_from_intake_to_closed_cases(
         await platform.case_when(
             "case-2", lambda row: row.evaluation_no == 2 and row.status is CaseStatus.DECIDED
         )
-        assert platform.triage.calls == [("case-2", 1), ("case-2", 2)]
+        assert platform.triage_runs() == ["case-2-triage-1", "case-2-triage-2"]
 
         # ...and closing the offense in QRadar ends it.
         platform.source.close(2)
@@ -215,22 +222,25 @@ async def test_a_case_id_is_never_used_twice(
 async def test_a_case_without_a_decision_by_its_sla_is_marked(
     env: WorkflowEnvironment, sessions: SessionFactory
 ) -> None:
-    """Criterion 8: the model is unreachable past the 10-minute SLA of a high-floor offense."""
+    """Criterion 8: the model is unreachable past the 10-minute SLA of a high-floor offense.
+
+    The Triage run's wall clock budget is raised to an hour here, so the run itself outlasts the
+    SLA; with the manifest's 180 seconds it would end without a decision.
+    """
     await define_rule(sessions, 11, min_level=Level.HIGH)
 
-    async def model_down_once(offense_id: int, evaluation_no: int, attempt: int) -> TriageResult:
-        if attempt == 1:
+    async def model_down_once(run_id: str, step: int, attempt: int) -> None:
+        if step == 1 and attempt == 1:
             raise ApplicationError("model unavailable", next_retry_delay=timedelta(minutes=20))
-        return triage_result(Level.LOW)
 
-    triage = ScriptedTriage(model_down_once)
-    async with running_platform(env, sessions, triage=triage) as platform:
+    model = TriageModel(ai_level=Level.LOW, hook=model_down_once)
+    async with running_platform(env, sessions, model=model, wall_clock_seconds=3600) as platform:
         first = await platform.run_intake()
         await env.sleep(timedelta(minutes=1))
         start = await env.get_current_time()
         platform.source.put(offense(60, start=start, rule_ids=[11]))
         await platform.run_intake(first)
-        opened = await platform.case_when("case-60", lambda row: len(triage.calls) == 1)
+        opened = await platform.case_when("case-60", lambda row: len(model.requests) == 1)
         assert opened.sla_due_at == start + timedelta(minutes=10)
 
         await env.sleep(timedelta(minutes=11))
@@ -256,7 +266,7 @@ async def test_the_case_worker_runs_workflows_in_the_sandbox(
         env.client,
         sessions=sessions,
         source=FakeOffenseSource(),
-        triage=ScriptedTriage(),
+        triage=triage_runtime(TriageModel(), RecordingGateway()),
         settings=CaseSettings(),
     )
 
@@ -265,16 +275,26 @@ async def test_the_case_worker_runs_workflows_in_the_sandbox(
     assert config.get("task_queue") == "soc-case"
 
 
-async def test_the_case_worker_needs_the_pydantic_converter(
-    env: WorkflowEnvironment, sessions: SessionFactory
+@pytest.mark.parametrize("pydantic_converter", [False, True])
+async def test_the_case_worker_needs_pydantic_ais_plugin(
+    env: WorkflowEnvironment, sessions: SessionFactory, pydantic_converter: bool
 ) -> None:
-    plain = Client(env.client.service_client, namespace=env.client.namespace)
+    """Contract models need the Pydantic converter, the agent the plugin's sandbox settings."""
+    plain = (
+        Client(
+            env.client.service_client,
+            namespace=env.client.namespace,
+            data_converter=pydantic_data_converter,
+        )
+        if pydantic_converter
+        else Client(env.client.service_client, namespace=env.client.namespace)
+    )
 
-    with pytest.raises(ValueError, match="Pydantic"):
+    with pytest.raises(ValueError, match="Pydantic AI's plugin"):
         build_case_worker(
             plain,
             sessions=sessions,
             source=FakeOffenseSource(),
-            triage=ScriptedTriage(),
+            triage=triage_runtime(TriageModel(), RecordingGateway()),
             settings=CaseSettings(),
         )

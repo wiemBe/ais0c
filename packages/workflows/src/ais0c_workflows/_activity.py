@@ -8,8 +8,9 @@ from temporalio.common import RetryPolicy
 
 # Database work.
 STORE_TIMEOUT: Final = timedelta(seconds=30)
-# Reads from the offense source: QRadar through the gateway from T-012 on.
-SOURCE_TIMEOUT: Final = timedelta(minutes=1)
+# Reads from the offense source: QRadar through the MCP Policy Gateway. One read is a few gateway
+# calls, and each may wait for its quota pool (up to 60 seconds) before its MCP call (up to 60).
+SOURCE_TIMEOUT: Final = timedelta(minutes=5)
 
 
 async def call[T](

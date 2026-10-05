@@ -1,7 +1,8 @@
-"""CaseWorkflow: evaluations, signals and the SLA timer (criteria 7 and 8).
+"""CaseWorkflow: evaluations, signals, the SLA timer (T-010 criteria 7 and 8) and the Triage
+child run (T-012 criterion 2).
 
-The workflow runs in the sandbox against fake activities; the SLA tests skip time on the
-Temporal test server.
+The workflow runs in the sandbox against fake activities and TriageStub in place of
+TriageWorkflow; the SLA tests skip time on the Temporal test server.
 """
 
 import asyncio
@@ -10,15 +11,23 @@ from contextlib import asynccontextmanager
 from datetime import timedelta
 
 import pytest
-from temporalio.client import WorkflowHandle
+from temporalio.client import WorkflowExecutionStatus, WorkflowHandle
 from temporalio.exceptions import ApplicationError
 from temporalio.testing import WorkflowEnvironment
 from temporalio.worker import Worker
-from workflow_fakes import WAIT_SECONDS, CaseFakes, offense, triage_result
+from workflow_fakes import (
+    WAIT_SECONDS,
+    BudgetExhaustedTriage,
+    CaseFakes,
+    CrashingTriage,
+    TriageStub,
+    offense,
+    triage_result,
+)
 
-from ais0c_contracts import Level, TriageResult
-from ais0c_workflows import CaseCarry, CaseStatus, CaseView, CaseWorkflow
-from ais0c_workflows.names import CASE_TASK_QUEUE, OFFENSE_CLOSED, OFFENSE_UPDATED
+from ais0c_contracts import Level, RunStatus, TriageResult
+from ais0c_workflows import CaseCarry, CaseStatus, CaseView, CaseWorkflow, TriageOutcome
+from ais0c_workflows.names import CASE_TASK_QUEUE, OFFENSE_CLOSED, OFFENSE_UPDATED, TRIAGE_WORKFLOW
 
 pytestmark = pytest.mark.anyio
 
@@ -28,12 +37,15 @@ CASE_ID = "case-101"
 
 @asynccontextmanager
 async def running_case(
-    env: WorkflowEnvironment, fakes: CaseFakes, carry: CaseCarry | None = None
+    env: WorkflowEnvironment,
+    fakes: CaseFakes,
+    carry: CaseCarry | None = None,
+    triage_workflow: type = TriageStub,
 ) -> AsyncIterator[WorkflowHandle[CaseWorkflow, CaseView]]:
     async with Worker(
         env.client,
         task_queue=CASE_TASK_QUEUE,
-        workflows=[CaseWorkflow],
+        workflows=[CaseWorkflow, triage_workflow],
         activities=fakes.activities(),
     ):
         handle = await env.client.start_workflow(
@@ -162,9 +174,14 @@ async def test_offense_closed_during_triage_abandons_the_evaluation(
     async with running_case(env, fakes) as handle:
         await fakes.events.wait_for("triage", 1)
         result = await close(handle)
+        # The run is abandoned, not cancelled: it finishes on its own and records itself.
+        run = env.client.get_workflow_handle(f"{CASE_ID}-triage-1", result_type=TriageOutcome)
+        assert (await run.describe()).status is WorkflowExecutionStatus.RUNNING
         release.set()
+        outcome = await run.result()
 
     assert result.status is CaseStatus.CLOSED
+    assert outcome.status is RunStatus.COMPLETED
     assert fakes.decisions == []
     assert fakes.closed_records == [(CASE_ID, OFFENSE_ID)]
 
@@ -176,7 +193,7 @@ async def test_offense_closed_before_the_first_evaluation(env: WorkflowEnvironme
     async with Worker(
         env.client,
         task_queue=CASE_TASK_QUEUE,
-        workflows=[CaseWorkflow],
+        workflows=[CaseWorkflow, TriageStub],
         activities=fakes.activities(),
     ):
         handle = await env.client.start_workflow(
@@ -276,3 +293,38 @@ async def test_a_continued_case_keeps_its_evaluation_count(env: WorkflowEnvironm
 
     assert fakes.evaluations == [(4, updated)]
     assert result.evaluation_no == 4
+
+
+async def test_each_evaluation_is_triaged_by_its_own_run(env: WorkflowEnvironment) -> None:
+    """Criterion 2: triage is the child workflow TriageWorkflow, one run per evaluation."""
+    now = await env.get_current_time()
+    fakes = CaseFakes(offense(OFFENSE_ID, start=now))
+
+    async with running_case(env, fakes) as handle:
+        await fakes.events.wait_for("decided", 1)
+        updated = now + timedelta(minutes=1)
+        fakes.offense = offense(OFFENSE_ID, start=now, updated=updated)
+        await handle.signal(OFFENSE_UPDATED, updated)
+        await fakes.events.wait_for("decided", 2)
+        await close(handle)
+
+    assert fakes.triage_runs == [f"{CASE_ID}-triage-1", f"{CASE_ID}-triage-2"]
+    request = await env.client.get_workflow_handle(f"{CASE_ID}-triage-2").fetch_history()
+    started = request.events[0].workflow_execution_started_event_attributes
+    assert started.workflow_type.name == TRIAGE_WORKFLOW
+    assert started.parent_workflow_execution.workflow_id == CASE_ID
+
+
+@pytest.mark.parametrize("triage_workflow", [BudgetExhaustedTriage, CrashingTriage])
+async def test_a_triage_run_without_a_decision_marks_no_ai_decision(
+    env: WorkflowEnvironment, triage_workflow: type
+) -> None:
+    now = await env.get_current_time()
+    fakes = CaseFakes(offense(OFFENSE_ID, start=now))
+
+    async with running_case(env, fakes, triage_workflow=triage_workflow) as handle:
+        state = await state_when(handle, lambda view: view.status is CaseStatus.NO_AI_DECISION)
+        result = await close(handle)
+
+    assert (state.evaluation_no, fakes.decisions) == (1, [])
+    assert result.status is CaseStatus.CLOSED

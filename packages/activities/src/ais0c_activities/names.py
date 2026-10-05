@@ -28,7 +28,11 @@ START_CASE: Final = "start_case"
 FETCH_OFFENSE: Final = "fetch_offense"
 ENRICH_OFFENSE: Final = "enrich_offense"
 START_EVALUATION: Final = "start_evaluation"
-TRIAGE: Final = "triage"
 RECORD_DECISION: Final = "record_decision"
 MARK_NO_AI_DECISION: Final = "mark_no_ai_decision"
 CLOSE_CASE: Final = "close_case"
+
+# Triage run activities (TriageWorkflow). The agent's model and tool activities come from
+# Pydantic AI's TemporalDurability.
+BEGIN_TRIAGE_RUN: Final = "begin_triage_run"
+FINISH_TRIAGE_RUN: Final = "finish_triage_run"

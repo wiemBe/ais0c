@@ -14,8 +14,9 @@ from collections.abc import AsyncIterator, Iterator
 from pathlib import Path
 
 import pytest
+from pydantic_ai import models
+from pydantic_ai.durable_exec.temporal import PydanticAIPlugin
 from sqlalchemy import URL
-from temporalio.contrib.pydantic import pydantic_data_converter
 from temporalio.testing import WorkflowEnvironment
 
 from ais0c_activities import SessionFactory
@@ -77,7 +78,21 @@ async def sessions(database_url: URL) -> AsyncIterator[SessionFactory]:
 
 @pytest.fixture
 async def env() -> AsyncIterator[WorkflowEnvironment]:
-    async with await WorkflowEnvironment.start_time_skipping(
-        data_converter=pydantic_data_converter
-    ) as env:
+    """The client carries Pydantic AI's plugin, as the worker's does (`ais0c_worker.connect`)."""
+    async with await WorkflowEnvironment.start_time_skipping(plugins=[PydanticAIPlugin()]) as env:
         yield env
+
+
+@pytest.fixture
+async def dev_server() -> AsyncIterator[WorkflowEnvironment]:
+    """Temporal's CLI dev server: a real server, without time skipping. Its handling of a worker
+    that stops (its sticky queue is released) is the production one."""
+    async with await WorkflowEnvironment.start_local(plugins=[PydanticAIPlugin()]) as env:
+        yield env
+
+
+@pytest.fixture(autouse=True)
+def _no_real_model_requests() -> Iterator[None]:
+    """Unit tests never reach a real model (AGENTS.md); FunctionModel still runs."""
+    with models.override_allow_model_requests(False):
+        yield

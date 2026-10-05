@@ -7,6 +7,10 @@ decision. The SLA timer runs alongside triage: when the deadline passes first th
 `no_ai_decision`, so the operator knows the AI has not looked at it. Triage keeps running and a
 later decision still replaces that status.
 
+Triage is the child workflow TriageWorkflow, one per evaluation: the Triage agent runs there
+through Pydantic AI's TemporalDurability. A run that ends without a decision (budget exhausted,
+failed) leaves the case `no_ai_decision` until the next update.
+
 Between evaluations the case waits. `offense_updated` with a version not evaluated yet starts the
 next evaluation; `offense_closed` ends the workflow. A long-lived case continues as new when
 Temporal suggests it.
@@ -15,11 +19,10 @@ Temporal suggests it.
 import asyncio
 from datetime import datetime, timedelta
 from enum import StrEnum
-from typing import Final
 
 from temporalio import workflow
-from temporalio.common import RetryPolicy
-from temporalio.exceptions import ActivityError
+from temporalio.common import WorkflowIDReusePolicy
+from temporalio.exceptions import ChildWorkflowError, WorkflowAlreadyStartedError
 
 from ais0c_workflows._activity import SOURCE_TIMEOUT, call
 from ais0c_workflows.names import (
@@ -33,22 +36,15 @@ from ais0c_workflows.names import (
     OFFENSE_UPDATED,
     RECORD_DECISION,
     START_EVALUATION,
-    TRIAGE,
+    TRIAGE_WORKFLOW,
+    triage_workflow_id,
 )
+from ais0c_workflows.triage import TriageOutcome, TriageRequest
 
 with workflow.unsafe.imports_passed_through():
     from pydantic import AwareDatetime, BaseModel, ConfigDict
 
-    from ais0c_contracts import EnrichmentContext, Level, OffenseSnapshot, TriageResult
-
-# One triage attempt; the Triage manifest's wall clock budget is 180 seconds.
-TRIAGE_TIMEOUT: Final = timedelta(minutes=5)
-TRIAGE_RETRY: Final = RetryPolicy(
-    initial_interval=timedelta(seconds=10),
-    backoff_coefficient=2.0,
-    maximum_interval=timedelta(minutes=2),
-    maximum_attempts=5,
-)
+    from ais0c_contracts import EnrichmentContext, Level, OffenseSnapshot, RunStatus, TriageResult
 
 
 class CaseStatus(StrEnum):
@@ -180,10 +176,8 @@ class CaseWorkflow:
         if not triage.done():
             triage.cancel()
             return
-        try:
-            result = triage.result()
-        except ActivityError:
-            workflow.logger.warning("triage failed: %s evaluation %d", self._case_id, evaluation_no)
+        result = triage.result()
+        if result is None:
             if self._status is CaseStatus.RUNNING:
                 await self._no_ai_decision(evaluation_no)
             return
@@ -200,26 +194,45 @@ class CaseWorkflow:
 
     async def _triage(
         self, evaluation_no: int, offense: OffenseSnapshot, enrichment: EnrichmentContext
-    ) -> TriageResult:
-        """The Triage step. T-012 replaces this activity call with the Triage agent run through
-        Pydantic AI's TemporalDurability; the rest of the workflow stays as it is.
+    ) -> TriageResult | None:
+        """Run the Triage agent for this evaluation; None when it gives no decision.
 
-        Closing the case abandons triage instead of asking the server to cancel it: a cancel
-        request that crosses the activity's completion is rejected and fails the workflow task.
+        The run is the child workflow TriageWorkflow, so its many activities stay out of this
+        history. Closing the case abandons the child instead of cancelling it: the run finishes
+        on its own and records itself, and no cancel request can cross its completion. Its ID
+        is never reused, so an evaluation is triaged at most once.
         """
-        return await call(
-            TRIAGE,
-            self._case_id,
-            evaluation_no,
-            offense,
-            enrichment,
-            result_type=TriageResult,
-            attempt_timeout=TRIAGE_TIMEOUT,
-            retry_policy=TRIAGE_RETRY,
-            cancellation_type=workflow.ActivityCancellationType.ABANDON,
+        run_id = triage_workflow_id(self._case_id, evaluation_no)
+        request = TriageRequest(
+            case_id=self._case_id,
+            evaluation_no=evaluation_no,
+            parent_run_id=workflow.info().run_id,
+            offense=offense,
+            enrichment=enrichment,
         )
+        try:
+            outcome = await workflow.execute_child_workflow(
+                TRIAGE_WORKFLOW,
+                request,
+                id=run_id,
+                result_type=TriageOutcome,
+                cancellation_type=workflow.ChildWorkflowCancellationType.ABANDON,
+                parent_close_policy=workflow.ParentClosePolicy.ABANDON,
+                id_reuse_policy=WorkflowIDReusePolicy.REJECT_DUPLICATE,
+            )
+        except (ChildWorkflowError, WorkflowAlreadyStartedError) as error:
+            workflow.logger.warning("triage run %s failed: %s", run_id, error)
+            return None
+        if outcome.status is not RunStatus.COMPLETED or outcome.result is None:
+            workflow.logger.warning(
+                "triage run %s ended %s: %s", run_id, outcome.status, outcome.error
+            )
+            return None
+        return outcome.result
 
-    async def _settled_by(self, deadline: datetime, triage: asyncio.Task[TriageResult]) -> bool:
+    async def _settled_by(
+        self, deadline: datetime, triage: asyncio.Task[TriageResult | None]
+    ) -> bool:
         """Wait until triage finishes or the case closes; False if the deadline comes first."""
         remaining = deadline - workflow.now()
         if remaining <= timedelta(0):

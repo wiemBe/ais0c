@@ -1,7 +1,8 @@
-"""The worker of the `soc-case` task queue: OffenseIntake, CaseWorkflow and their activities."""
+"""The worker of the `soc-case` task queue: OffenseIntake, CaseWorkflow, TriageWorkflow and their
+activities, the Triage agent's model and tool activities included."""
 
+from pydantic_ai.durable_exec.temporal import PydanticAIPlugin
 from temporalio.client import Client
-from temporalio.contrib.pydantic import pydantic_data_converter
 from temporalio.worker import Worker
 
 from ais0c_activities import (
@@ -9,11 +10,18 @@ from ais0c_activities import (
     IocMatcher,
     OffenseSource,
     SessionFactory,
-    TriageRunner,
+    TriageRuntime,
     case_queue_activities,
 )
 from ais0c_workflows import CASE_QUEUE_WORKFLOWS
+from ais0c_workflows.agent_runtime import install_triage_agent
 from ais0c_workflows.names import CASE_TASK_QUEUE
+
+
+async def connect(address: str, *, namespace: str = "default") -> Client:
+    """A Temporal client set up for the case worker: Pydantic AI's plugin brings the Pydantic data
+    converter that contract models need and the sandbox settings that agent runs need."""
+    return await Client.connect(address, namespace=namespace, plugins=[PydanticAIPlugin()])
 
 
 def build_case_worker(
@@ -21,19 +29,21 @@ def build_case_worker(
     *,
     sessions: SessionFactory,
     source: OffenseSource,
-    triage: TriageRunner,
+    triage: TriageRuntime,
     settings: CaseSettings | None = None,
     ioc_matcher: IocMatcher | None = None,
 ) -> Worker:
     """A worker for the `soc-case` task queue; run it with `async with` or `run()`.
 
-    `settings` default to the environment (`CaseSettings.from_env`). Workflows run in Temporal's
-    sandbox, the default runner. `client` must use the Pydantic data converter, because contract
-    models cross the workflow boundary.
+    Installs `triage`'s agent as the Triage agent of this process's TriageWorkflows
+    (`ais0c_workflows.agent_runtime`). `settings` default to the environment
+    (`CaseSettings.from_env`). Workflows run in Temporal's sandbox, the default runner.
+    `client` must carry Pydantic AI's plugin (`connect`): contract models and agent messages
+    cross the workflow boundary, and the agent runs in workflow code.
     """
-    converter = client.data_converter.payload_converter_class
-    if converter is not pydantic_data_converter.payload_converter_class:
-        raise ValueError("the Temporal client must use the Pydantic data converter")
+    if not any(isinstance(plugin, PydanticAIPlugin) for plugin in client.config()["plugins"]):
+        raise ValueError("the Temporal client must be created with Pydantic AI's plugin")
+    install_triage_agent(triage.run)
     activities = case_queue_activities(
         client=client,
         sessions=sessions,

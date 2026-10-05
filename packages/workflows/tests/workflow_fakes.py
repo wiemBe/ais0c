@@ -1,16 +1,21 @@
-"""Fake activities, a stand-in case workflow and synthetic payloads for the workflow tests.
+"""Fake activities, stand-in workflows and synthetic payloads for the workflow tests.
 
-The fakes are registered under the real activity names, so the workflows run unchanged. IPs are
-from the RFC 5737 ranges.
+The fakes are registered under the real activity and workflow names, so the workflows run
+unchanged. IPs are from the RFC 5737 ranges.
 """
 
 import asyncio
 from collections.abc import Awaitable, Callable, Sequence
-from datetime import datetime, timedelta
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 
 from temporalio import activity, workflow
+from temporalio.common import RetryPolicy
+from temporalio.exceptions import ActivityError, ApplicationError
 
 from ais0c_contracts import (
+    AgentTask,
+    Budget,
     CaseVerdict,
     CatalogContext,
     Confidence,
@@ -18,17 +23,21 @@ from ais0c_contracts import (
     Level,
     OffenseSnapshot,
     RunStatus,
+    TimeWindow,
     TriageResult,
     Usage,
 )
+from ais0c_workflows import TriageOutcome, TriageRequest
 from ais0c_workflows.names import (
     ADMIT_OFFENSES,
+    BEGIN_TRIAGE_RUN,
     CASE_STATE,
     CLOSE_CASE,
     ENRICH_OFFENSE,
     FETCH_OFFENSE,
     FETCH_OFFENSE_CHANGES,
     FIND_CLOSED_OFFENSES,
+    FINISH_TRIAGE_RUN,
     MARK_NO_AI_DECISION,
     NEXT_PENDING_OFFENSES,
     OFFENSE_CLOSED,
@@ -36,10 +45,20 @@ from ais0c_workflows.names import (
     RECORD_DECISION,
     START_CASE,
     START_EVALUATION,
-    TRIAGE,
+    TRIAGE_WORKFLOW,
 )
 
 WAIT_SECONDS = 10
+# The activity of TriageStub that plays the test's script.
+SCRIPTED_TRIAGE = "scripted_triage"
+# The stub retries a failing script like the agent's activities retry a failing model request.
+STUB_RETRY = RetryPolicy(
+    initial_interval=timedelta(seconds=10),
+    backoff_coefficient=2.0,
+    maximum_interval=timedelta(minutes=2),
+    maximum_attempts=5,
+)
+NO_USAGE = Usage(tokens=0, tool_calls=0, seconds=0.0)
 
 
 def offense(
@@ -206,16 +225,74 @@ class CaseStub:
 type TriageBehavior = Callable[[int, int], Awaitable[TriageResult]]
 
 
+@workflow.defn(name=TRIAGE_WORKFLOW)
+class TriageStub:
+    """Stands in for TriageWorkflow: the scripted activity gives the evaluation's result, and an
+    activity that fails for good ends the run `failed`."""
+
+    @workflow.run
+    async def run(self, request: TriageRequest) -> TriageOutcome:
+        run_id = workflow.info().workflow_id
+        try:
+            result = await workflow.execute_activity(
+                SCRIPTED_TRIAGE,
+                args=[request.case_id, request.evaluation_no],
+                result_type=TriageResult,
+                start_to_close_timeout=timedelta(minutes=5),
+                retry_policy=STUB_RETRY,
+            )
+        except ActivityError as error:
+            return TriageOutcome(
+                run_id=run_id,
+                status=RunStatus.FAILED,
+                result=None,
+                usage=NO_USAGE,
+                error=str(error),
+            )
+        return TriageOutcome(
+            run_id=run_id,
+            status=RunStatus.COMPLETED,
+            result=result,
+            usage=result.usage,
+            error=None,
+        )
+
+
 async def decide_at_once(evaluation_no: int, attempt: int) -> TriageResult:
     return triage_result()
 
 
+@workflow.defn(name=TRIAGE_WORKFLOW)
+class BudgetExhaustedTriage:
+    """Stands in for a Triage run that ran out of its budget without a decision."""
+
+    @workflow.run
+    async def run(self, request: TriageRequest) -> TriageOutcome:
+        return TriageOutcome(
+            run_id=workflow.info().workflow_id,
+            status=RunStatus.BUDGET_EXHAUSTED,
+            result=None,
+            usage=NO_USAGE,
+            error="the wall clock budget of 180 seconds ran out",
+        )
+
+
+@workflow.defn(name=TRIAGE_WORKFLOW)
+class CrashingTriage:
+    """Stands in for a Triage run whose workflow fails."""
+
+    @workflow.run
+    async def run(self, request: TriageRequest) -> TriageOutcome:
+        raise ApplicationError("agent misconfigured", non_retryable=True)
+
+
 class CaseFakes:
-    """Case activities for one offense.
+    """Case activities for one offense, and the activity TriageStub runs.
 
     `offense` is what `fetch_offense` returns, so a test changes it to simulate an update. The
     SLA deadline follows the real rule: offense creation for the first evaluation, the update
-    for later ones, plus `sla`. `triage_behavior` gets the evaluation and attempt numbers.
+    for later ones, plus `sla`. `triage_behavior` gets the evaluation and attempt numbers;
+    `triage_runs` collects the IDs of the triage runs that called it.
     """
 
     def __init__(
@@ -234,13 +311,14 @@ class CaseFakes:
         self.evaluations: list[tuple[int, datetime]] = []
         self.decisions: list[tuple[int, Level | None, datetime]] = []
         self.closed_records: list[tuple[str, int]] = []
+        self.triage_runs: list[str] = []
 
     def activities(self) -> list[Callable[..., object]]:
         return [
             self.fetch_offense,
             self.enrich_offense,
             self.start_evaluation,
-            self.triage,
+            self.scripted_triage,
             self.record_decision,
             self.mark_no_ai_decision,
             self.close_case,
@@ -275,16 +353,13 @@ class CaseFakes:
         await self.events.add("evaluation", evaluation_no)
         return start + self.sla
 
-    @activity.defn(name=TRIAGE)
-    async def triage(
-        self,
-        case_id: str,
-        evaluation_no: int,
-        offense: OffenseSnapshot,
-        enrichment: EnrichmentContext,
-    ) -> TriageResult:
+    @activity.defn(name=SCRIPTED_TRIAGE)
+    async def scripted_triage(self, case_id: str, evaluation_no: int) -> TriageResult:
+        info = activity.info()
+        if info.workflow_id is not None and info.workflow_id not in self.triage_runs:
+            self.triage_runs.append(info.workflow_id)
         await self.events.add("triage", evaluation_no)
-        return await self.triage_behavior(evaluation_no, activity.info().attempt)
+        return await self.triage_behavior(evaluation_no, info.attempt)
 
     @activity.defn(name=RECORD_DECISION)
     async def record_decision(
@@ -307,3 +382,120 @@ class CaseFakes:
     async def close_case(self, case_id: str, offense_id: int) -> None:
         self.closed_records.append((case_id, offense_id))
         await self.events.add("closed")
+
+
+# --- TriageWorkflow ---------------------------------------------------------------------------
+
+# The activity that ScriptedAgent runs for each agent run.
+AGENT_STEP = "agent_step"
+
+# Gets the run ID and the activity attempt.
+type AgentStepBehavior = Callable[[str, int], Awaitable[TriageResult]]
+
+
+async def answer_at_once(run_id: str, attempt: int) -> TriageResult:
+    return triage_result()
+
+
+@dataclass(frozen=True)
+class AgentReport:
+    """What an agent run reports (`TriageRunReport`)."""
+
+    status: RunStatus
+    result: TriageResult | None
+    usage: Usage
+    error: str | None
+
+
+class ScriptedAgent:
+    """Stands in for the Triage agent in workflow code: one activity plays the script, as the
+    agent's model requests would. Records the nonce and task of every run."""
+
+    def __init__(self) -> None:
+        self.nonces: list[str] = []
+        self.tasks: list[AgentTask] = []
+
+    async def __call__(
+        self,
+        task: AgentTask,
+        offense: OffenseSnapshot,
+        enrichment: EnrichmentContext,
+        *,
+        nonce: str,
+    ) -> AgentReport:
+        if not workflow.unsafe.is_replaying():
+            self.nonces.append(nonce)
+            self.tasks.append(task)
+        result = await workflow.execute_activity(
+            AGENT_STEP,
+            task.task_id,
+            result_type=TriageResult,
+            start_to_close_timeout=timedelta(hours=1),
+            retry_policy=RetryPolicy(maximum_attempts=3),
+            cancellation_type=workflow.ActivityCancellationType.ABANDON,
+        )
+        return AgentReport(
+            status=RunStatus.COMPLETED, result=result, usage=result.usage, error=None
+        )
+
+
+def agent_task(run_id: str, *, budget_seconds: int = 180) -> AgentTask:
+    return AgentTask(
+        task_id=run_id,
+        parent_run_id="case-run-1",
+        case_id="case-101",
+        agent_id="triage",
+        agent_version="1.0.0",
+        objective="Triage QRadar offense 101 (evaluation 1).",
+        context_refs=[],
+        time_window=TimeWindow(
+            start=datetime(2026, 10, 3, 9, 0, tzinfo=UTC),
+            end=datetime(2026, 10, 3, 10, 0, tzinfo=UTC),
+        ),
+        budget=Budget(tokens=60000, tool_calls=12, seconds=budget_seconds),
+    )
+
+
+class TriageFakes:
+    """The run record activities of TriageWorkflow and the agent's scripted step."""
+
+    def __init__(
+        self, *, budget_seconds: int = 180, step: AgentStepBehavior = answer_at_once
+    ) -> None:
+        self.budget_seconds = budget_seconds
+        self.step = step
+        self.events = Events()
+        self.begun: list[tuple[str, str, int, str, int]] = []
+        self.finished: list[tuple[str, RunStatus, TriageResult | None, str | None]] = []
+
+    def activities(self) -> list[Callable[..., object]]:
+        return [self.begin_triage_run, self.finish_triage_run, self.agent_step]
+
+    @activity.defn(name=BEGIN_TRIAGE_RUN)
+    async def begin_triage_run(
+        self,
+        run_id: str,
+        case_id: str,
+        evaluation_no: int,
+        parent_run_id: str,
+        offense: OffenseSnapshot,
+    ) -> tuple[AgentTask, str]:
+        self.begun.append((run_id, case_id, evaluation_no, parent_run_id, offense.offense_id))
+        return agent_task(run_id, budget_seconds=self.budget_seconds), "0123456789abcdef"
+
+    @activity.defn(name=FINISH_TRIAGE_RUN)
+    async def finish_triage_run(
+        self,
+        run_id: str,
+        status: RunStatus,
+        result: TriageResult | None,
+        usage: Usage,
+        error: str | None,
+    ) -> None:
+        self.finished.append((run_id, status, result, error))
+        await self.events.add("finished")
+
+    @activity.defn(name=AGENT_STEP)
+    async def agent_step(self, run_id: str) -> TriageResult:
+        await self.events.add("step")
+        return await self.step(run_id, activity.info().attempt)

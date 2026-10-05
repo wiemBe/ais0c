@@ -19,7 +19,6 @@ from ais0c_contracts import (
     CaseVerdict,
     Confidence,
     CriticalAssetHit,
-    EnrichmentContext,
     Level,
     OffenseSnapshot,
     TriageResult,
@@ -31,37 +30,14 @@ pytestmark = pytest.mark.anyio
 CASE_ID = "case-7"
 
 
-class RecordingTriage:
-    def __init__(self) -> None:
-        self.calls: list[tuple[str, int, int]] = []
-
-    async def triage(
-        self,
-        *,
-        case_id: str,
-        evaluation_no: int,
-        offense: OffenseSnapshot,
-        enrichment: EnrichmentContext,
-    ) -> TriageResult:
-        self.calls.append((case_id, evaluation_no, offense.offense_id))
-        return triage_result(Level.LOW)
-
-
 @pytest.fixture
 def source() -> FakeOffenseSource:
     return FakeOffenseSource([offense(7)])
 
 
 @pytest.fixture
-def runner() -> RecordingTriage:
-    return RecordingTriage()
-
-
-@pytest.fixture
-def activities(
-    sessions: SessionFactory, source: FakeOffenseSource, runner: RecordingTriage
-) -> CaseActivities:
-    return CaseActivities(sessions=sessions, source=source, triage=runner, settings=CaseSettings())
+def activities(sessions: SessionFactory, source: FakeOffenseSource) -> CaseActivities:
+    return CaseActivities(sessions=sessions, source=source, settings=CaseSettings())
 
 
 async def start(
@@ -215,14 +191,3 @@ async def test_fetching_an_unknown_offense_fails_without_retries(
     with pytest.raises(ApplicationError) as error:
         await env.run(activities.fetch_offense, 404)
     assert (error.value.type, error.value.non_retryable) == ("OffenseNotFound", True)
-
-
-async def test_triage_goes_to_the_runner(
-    activities: CaseActivities, runner: RecordingTriage
-) -> None:
-    enrichment = await ActivityEnvironment().run(activities.enrich_offense, offense(7))
-
-    result = await ActivityEnvironment().run(activities.triage, CASE_ID, 2, offense(7), enrichment)
-
-    assert result.ai_level is Level.LOW
-    assert runner.calls == [(CASE_ID, 2, 7)]

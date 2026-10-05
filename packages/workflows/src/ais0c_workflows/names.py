@@ -10,6 +10,7 @@ CASE_TASK_QUEUE: Final = "soc-case"
 
 OFFENSE_INTAKE: Final = "OffenseIntake"
 CASE_WORKFLOW: Final = "CaseWorkflow"
+TRIAGE_WORKFLOW: Final = "TriageWorkflow"
 
 # CaseWorkflow signals and query.
 OFFENSE_UPDATED: Final = "offense_updated"
@@ -20,6 +21,11 @@ CASE_STATE: Final = "state"
 def case_workflow_id(offense_id: int) -> str:
     """ID of the offense's case workflow (architecture §20)."""
     return f"case-{offense_id}"
+
+
+def triage_workflow_id(case_id: str, evaluation_no: int) -> str:
+    """ID of the Triage run of one evaluation; it is also the run's `agent_runs.run_id`."""
+    return f"{case_id}-triage-{evaluation_no}"
 
 
 # Intake activities.
@@ -33,10 +39,14 @@ START_CASE: Final = "start_case"
 FETCH_OFFENSE: Final = "fetch_offense"
 ENRICH_OFFENSE: Final = "enrich_offense"
 START_EVALUATION: Final = "start_evaluation"
-TRIAGE: Final = "triage"
 RECORD_DECISION: Final = "record_decision"
 MARK_NO_AI_DECISION: Final = "mark_no_ai_decision"
 CLOSE_CASE: Final = "close_case"
+
+# TriageWorkflow activities. The agent's model requests and tool calls are activities too;
+# Pydantic AI's TemporalDurability registers them under names it derives from the agent.
+BEGIN_TRIAGE_RUN: Final = "begin_triage_run"
+FINISH_TRIAGE_RUN: Final = "finish_triage_run"
 
 ACTIVITY_NAMES: Final = frozenset(
     {
@@ -48,9 +58,10 @@ ACTIVITY_NAMES: Final = frozenset(
         FETCH_OFFENSE,
         ENRICH_OFFENSE,
         START_EVALUATION,
-        TRIAGE,
         RECORD_DECISION,
         MARK_NO_AI_DECISION,
         CLOSE_CASE,
+        BEGIN_TRIAGE_RUN,
+        FINISH_TRIAGE_RUN,
     }
 )

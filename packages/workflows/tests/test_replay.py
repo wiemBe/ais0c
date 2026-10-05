@@ -14,7 +14,7 @@ from temporalio.contrib.pydantic import pydantic_data_converter
 from temporalio.exceptions import ApplicationError
 from temporalio.testing import WorkflowEnvironment
 from temporalio.worker import Replayer, UnsandboxedWorkflowRunner, Worker
-from workflow_fakes import CaseFakes, CaseStub, IntakeFakes, offense, triage_result
+from workflow_fakes import CaseFakes, CaseStub, IntakeFakes, TriageStub, offense, triage_result
 
 from ais0c_contracts import TriageResult
 from ais0c_workflows import CASE_QUEUE_WORKFLOWS, CaseWorkflow, OffenseIntake
@@ -50,7 +50,7 @@ async def case_history(env: WorkflowEnvironment) -> WorkflowHistory:
     async with Worker(
         env.client,
         task_queue=CASE_TASK_QUEUE,
-        workflows=[CaseWorkflow],
+        workflows=[CaseWorkflow, TriageStub],
         activities=fakes.activities(),
     ):
         handle = await env.client.start_workflow(

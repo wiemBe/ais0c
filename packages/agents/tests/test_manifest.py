@@ -66,7 +66,7 @@ def test_triage_manifest_loads() -> None:
         output_schema="TriageResult",
         toolset_profile="qradar-triage-read",
         max_steps=8,
-        budgets=Budgets(tokens=60000, tool_calls=12, wall_clock_seconds=180),
+        budgets=Budgets(tokens=150000, tool_calls=12, wall_clock_seconds=420),
         autonomy="L0",
         can_delegate=False,
         prompt="prompts/triage/v1.md",
