@@ -29,6 +29,7 @@ Never break these. A PR that breaks one is rejected regardless of anything else.
 6. **No secrets or real data in the repo.** No credentials, `.env` files, production IPs, hostnames or usernames. Fixtures are synthetic. Use documentation IP ranges (RFC 5737: `192.0.2.0/24`, `198.51.100.0/24`, `203.0.113.0/24`) and `example.com`-style domains.
 7. **Log content is untrusted.** Tool results reach a model only inside the `untrusted_*` wrapper defined in `docs/impl/prompts.md`.
 8. **Stay inside your task's allowed paths.** Do not reformat, rename or refactor unrelated files.
+9. **Only the planner pushes.** A coding agent never runs `git push`, never adds, changes or removes a git remote, and never opens a PR on a hosting service. Commit on your task branch in your own worktree and stop there. The planner (the agent that writes the task files and merges finished tasks into `main`) is the only one that pushes or touches remotes. Unless the user tells you that you are the planner, you are not.
 
 ## Language
 
@@ -46,7 +47,7 @@ See `docs/impl/repo-structure.md` for the layout and the allowed dependencies be
 3. Read the linked doc sections and every contract you will touch.
 4. Write tests first or alongside the code. Every acceptance criterion in the task needs a test.
 5. Run the checks below until they pass.
-6. Open a PR using `.github/pull_request_template.md`.
+6. Commit on your task branch. Write the PR text from `.github/pull_request_template.md` to `../ais0c-prs/PR-<task-id>.md`, outside the repo. Do not push (hard rule 9).
 
 ## Definition of done
 
@@ -71,4 +72,4 @@ Task T-001 sets these up; until it is merged they may not exist yet.
 
 ## Reviews
 
-An agent from a different model family than the author reviews each PR; a human merges it. When you review, check the hard rules first, then the acceptance criteria, then code quality. Report findings in the review. Do not push to the author's branch.
+An agent from a different model family than the author reviews each PR; the planner merges it into `main`. When you review, check the hard rules first, then the acceptance criteria, then code quality. Report findings in the review. Do not commit to the author's branch.
