@@ -1,6 +1,6 @@
 # Görev Pipeline'ı: Faz 0 kapanışı, Faz 1 ve canary öncesi
 
-> Son güncelleme: 2026-10-05 (T-28–T-37 kararları; T-040–T-042 bitti; H-3 yapıldı, H-2 ertelendi; H-7). Faz 0 görevleri (T-001–T-012) [multi-agent-dev.md](multi-agent-dev.md)'dedir. Bu pipeline, 2026-10-03 kararlarını (D-29–D-38, T-18–T-25) ve `future.md`'den alınan maddeleri koda taşır.
+> Son güncelleme: 2026-10-05 (T-28–T-37 kararları; T-040–T-042 bitti; H-3 yapıldı, H-2 ertelendi; dalga B görev dosyaları ve T-38–T-46; H-7). Faz 0 görevleri (T-001–T-012) [multi-agent-dev.md](multi-agent-dev.md)'dedir. Bu pipeline, 2026-10-03 kararlarını (D-29–D-38, T-18–T-25) ve `future.md`'den alınan maddeleri koda taşır.
 
 Çalışma kuralları [multi-agent-dev.md](multi-agent-dev.md) ile aynıdır: bir görev, bir branch, bir worktree; sözleşme değişikliği insan onayı ister; PR'ı farklı model ailesi inceler.
 
@@ -56,30 +56,41 @@ T-019 ve T-020 aynı anda `packages/executor/` içinde çalışır. Çakışmay�
 
 ## Faz 1, dalga B (dalga A'dan sonra)
 
-| Görev | Kapsam | Bağımlı olduğu |
-|---|---|---|
-| T-023 | Investigation ajanı: `qradar-investigate-read`, AQL Guard'dan geçen sorgular, timeline, hipotezler, acil event adayları, skill talimatının, `required_telemetry` ve `required_evidence`'ın prompt'a eklenmesi (T-36) | T-015, T-021 |
-| T-024 | Verification ajanı: `soc-verifier`, `qradar-verify-read`; yalnızca yapısal claim'ler; kritik bulgularda kanıtı yeniden çekme; uyuşmazlıkta QA | T-015 |
-| T-025 | Reporting ajanı: `CaseReport`, Türkçe özet, acil event sıralaması, `NoteContent` | T-015 |
-| T-026 | Orchestrator ve `CaseWorkflow`'un genişletilmesi: skill seçimli `CasePlan`, plan doğrulama, child ajanlar, bildirim seviyesi formülü, QA kuralları (D-35), executor çağrıları, shadow modu (yazma kapalı). Ayrıca: `run_id`'nin workflow'dan açık geçirilmesi (T-29); bastırılan güncellemenin ertelenmiş değerlendirmesi ve `no_ai_decision` aralığı (T-30); executor'ın ayrı worker'ı ve `soc-executor` kuyruğu, not run marker'ı (T-33) | T-019, T-020, T-021, T-023, T-024, T-025, T-041 |
-| T-027 | Grup değerlendirmesi ve gruplama kaçışları (T-22) | T-026 |
-| T-036 | Bildirim grupları ve yönlendirme tablosu (D-41); grup seviyesi yükselince yeni grup e-postası (D-42); not ve e-postada ortak Türkçe etiketler ve executor'ın ortak parçalarının `common`'a taşınması (T-33) | T-020, T-041 |
-| T-037 | T-022'nin bağlanması: batch worker, `knowledge-sync` Schedule'ının açılışta kurulması, compose'da inventory token'ı | T-022 |
+Görev dosyaları 2026-10-05'te yazıldı. Pipeline'daki tek T-026 satırı dört göreve bölündü (T-40): T-043, T-044, T-026 ve T-045. Branch'ler `main`'den açılır.
+
+Sıra:
+
+1. Hemen, paralel: T-043, T-036, T-037.
+2. T-043'ten sonra, paralel: T-023, T-024, T-025, T-044.
+3. Ardından sırayla: T-026, T-045, T-027. Bu üçünün dosyalarını planner, bağımlı oldukları görevler birleşince gerçek arayüzlere göre gözden geçirir; o zamana kadar ajana verilmez.
+
+| Görev | Kapsam | İzinli dizinler | Bağımlı olduğu | Dosya |
+|---|---|---|---|---|
+| T-043 | Ajan altyapısı: bağlam kanıtı takma adları `ev_c<n>` (T-38), çıktıdaki bütün kanıt alanlarının doğrulanması, öneri AQL'inin AQL Guard'dan geçmesi ve Guard'a `LIMIT`/zaman sırası kuralı (T-39), prompt'un Skill bölümü (T-44), araçsız ajan | `packages/agents/`, `packages/knowledge/` (skill taraması), `packages/policy/` (AQL Guard'ın sıra kuralı) | `main` | [T-043](tasks/T-043-ajan-altyapisi.md) |
+| T-023 | Investigation ajanı: `qradar-investigate-read`, Ariel sorguları, timeline, hipotezler, acil event adayları, skill'in talimatı ve gereksinimleri (T-36); lab'da Temporal'sız koşu, AQL'deki çift tırnak ölçümü | `packages/agents/`, `prompts/investigation/`, `config/agents/investigation.yaml`, `tests/e2e/` | T-043 | [T-023](tasks/T-023-investigation-ajani.md) |
+| T-024 | Verification ajanı: `soc-verifier`, `qradar-verify-read`; yalnızca yapısal claim'ler ve kanıt; kritik claim'lerin kanıtını yeniden çekme; serbest metni görmeme | `packages/agents/`, `prompts/verification/`, `config/agents/verification.yaml`, `tests/e2e/` | T-043 | [T-024](tasks/T-024-verification-ajani.md) |
+| T-025 | Reporting ajanı: `CaseReport`, Türkçe özet (≤400 karakter), adaylardan acil event sıralaması, öneriler; araçsız | `packages/agents/`, `prompts/reporting/`, `config/agents/reporting.yaml` | T-043 | [T-025](tasks/T-025-reporting-ajani.md) |
+| T-044 | Orchestrator ajanı ve plan doğrulama (T-41): `CasePlan`, deterministik `validate_plan`, varsayılan plan, plan bütçesi ayarları | `packages/agents/`, `prompts/orchestrator/`, `config/agents/orchestrator.yaml`, `packages/workflows/` (yalnızca `plan` modülü), `packages/activities/` (ayarlar) | T-043 | [T-044](tasks/T-044-orchestrator-plan.md) |
+| T-026 | `CaseWorkflow`'un ajan zinciri: ajan child workflow'ları, skill doğrulaması ve kaydı, karar ve bildirim seviyesi (T-42), QA kuralları (D-35), rapor/acil event/öneri kaydı; `run_id`'nin açık geçirilmesi (T-29); ertelenmiş değerlendirme ve `no_ai_decision` aralığı (T-30) | `packages/workflows/`, `packages/activities/`, `packages/storage/`, `services/worker/`, `tests/e2e/` | T-023, T-024, T-025, T-044 | [T-026](tasks/T-026-vaka-ajan-zinciri.md) |
+| T-045 | Executor'ın vaka akışına bağlanması: executor worker'ı ve `soc-executor` kuyruğu (T-33 (1)), run marker (T-33 (3)), not ve e-posta çağrıları, shadow modunda `disabled` kayıtlar | `packages/workflows/`, `packages/activities/`, `services/worker/` | T-026 | [T-045](tasks/T-045-executor-vaka-akisi.md) |
+| T-027 | Grup değerlendirmesi ve gruplama kaçışları (T-22, T-46); grup notu ve grup e-postası; bekleyen ve gruplanmış offense'lerin katalog kontrolü (T-30 (3)) | `packages/activities/`, `packages/workflows/`, `packages/storage/`, `services/worker/` | T-026, T-045, T-036 | [T-027](tasks/T-027-grup-degerlendirmesi.md) |
+| T-036 | Bildirim grupları ve yönlendirme tablosu (D-41, T-43), grup seviyesi yükselince yeni grup e-postası (D-42), not ve e-postada ortak Türkçe etiketler, executor'ın ortak parçalarının `common`'a taşınması (T-33 (5)) | `packages/executor/`, `packages/storage/`, `packages/activities/` | T-041 | [T-036](tasks/T-036-bildirim-gruplari.md) |
+| T-037 | T-022'nin bağlanması: batch worker (`python -m ais0c_worker batch`), `knowledge-sync` Schedule'ının açılışta kurulması, dev'de envanter token'ı | `services/worker/`, `deploy/compose/README.md` | — | [T-037](tasks/T-037-knowledge-sync-worker.md) |
 
 ## Faz 1, dalga C
 
 | Görev | Kapsam | Bağımlı olduğu |
 |---|---|---|
-| T-028 | API: vakalar, adımlar, geri bildirim, QA, gruplar, katalog (storage'da `qradar_enabled` ve `missing` filtreleri dahil, T-37), kritik varlıklar, alıcılar, SLA metrikleri, platform bayrakları, `/me`, `/health` ([api.md](api.md)); geliştirme için basit kimlik doğrulama modu | T-022, T-026 |
+| T-028 | API: vakalar, adımlar, geri bildirim, QA, gruplar, katalog (storage'da `qradar_enabled` ve `missing` filtreleri dahil, T-37), kritik varlıklar, alıcılar ve yönlendirme (T-036'nın repository'leri), SLA metrikleri, platform bayrakları, `/me`, `/health` ([api.md](api.md)); geliştirme için basit kimlik doğrulama modu | T-022, T-026, T-036 |
 | T-029 | Arayüz MVP: kuyruk, vaka detayı, geri bildirim, QA, gruplar, katalog, kill switch | T-028 |
 | T-030 | Harness Faz 1: golden suite koşucusu, `pass^k`, adversarial FN, güven katmanları ve skill suite'leri, on-prem modellerle model geçiş gate'i | T-026 |
-| T-031 | Prod shadow dağıtımı: prod compose, LiteLLM prod konfigürasyonu, shadow modu, executor worker'ının compose servisi (T-33), dağıtım notları | T-018, T-026, H-7 |
+| T-031 | Prod shadow dağıtımı: prod compose, LiteLLM prod konfigürasyonu, shadow modu, case, batch ve executor worker'larının compose servisleri (T-33, T-037, T-045), dağıtım notları | T-018, T-026, T-037, T-045, H-7 |
 
 ## Canary öncesi
 
 | Görev | Kapsam | Bağımlı olduğu |
 |---|---|---|
-| T-032 | Asgari sağlık alarmları: intake durdu, log source sustu, not/e-posta hataları (yalnızca `failed`, e-postada `rejected` de; `disabled` hiçbir zaman hata sayılmaz, T-37); e-posta ve QRadar'a syslog (T-23) | T-017, T-020, T-022 |
+| T-032 | Asgari sağlık alarmları: intake durdu, log source sustu, not/e-posta hataları (yalnızca `failed`, e-postada `rejected` de; `disabled` hiçbir zaman hata sayılmaz, T-37); e-posta ve QRadar'a syslog (T-23) | T-017, T-020, T-022, T-045 |
 | T-033 | Çift kontrol: `change_approvals` akışı, API ve arayüz (D-36) | T-028, T-029 |
 | T-034 | AI olay müdahale playbook'ları: `docs/ai-incident-response.md` (D-37) | — |
 | T-035 | OIDC entegrasyonu ve audit saklama | H-6 |

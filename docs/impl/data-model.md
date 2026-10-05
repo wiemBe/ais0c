@@ -222,7 +222,7 @@ Benzersiz: (`offense_id`, `run_marker`).
 
 | Sütun | Tip | Not |
 |---|---|---|
-| `list_name` | text | Alıcı grubu; admin'in verdiği ad (örnek: `operators`, `exec`, `analyst-eng`, `hunters`) (D-41) |
+| `list_name` | text | Alıcı grubu; admin'in verdiği ad (örnek: `operators`, `exec`, `analyst-eng`, `hunters`), `[a-z][a-z0-9-]{0,62}` (D-41, T-43) |
 | `email` | text | Yalnızca izinli alan adları |
 
 ### `notification_routes`
@@ -231,11 +231,12 @@ Hangi uyarının hangi alıcı gruplarına gideceği (D-41).
 
 | Sütun | Tip | Not |
 |---|---|---|
+| `id` | uuid PK | |
 | `kind` | text | `EmailKind` |
 | `level` | text? | `Level`; hunt raporu için boş |
 | `list_name` | text | `notification_recipients.list_name` |
 
-PK: (`kind`, `level`, `list_name`). Başlangıç kayıtları: `case_alert`/`group_alert` × `high` → `operators`; × `critical` → `operators`, `exec`, `analyst-eng`; `hunt_report` → `hunters`.
+Benzersiz: (`kind`, `level`, `list_name`), `NULLS NOT DISTINCT` ile; hunt raporunun boş seviyesi de tek sayılır (T-43). Başlangıç kayıtları: `case_alert`/`group_alert` × `high` → `operators`; × `critical` → `operators`, `exec`, `analyst-eng`; `hunt_report` → `hunters`.
 
 ### `allowed_email_domains`
 

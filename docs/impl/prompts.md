@@ -37,7 +37,7 @@ Her ajan prompt'u şu bölümlerden oluşur:
 1. **Role:** Ajan kim, hangi vakada çalışıyor
 2. **Objective:** Bu çalışmada ne üretmesi gerekiyor
 3. **Shared rules:** Manifest'in `shared_rules` alanının seçtiği `_shared/rules/v<N>.md` içeriği, olduğu gibi
-4. **Skill:** Workflow'un doğruladığı skill'in `instructions.md` içeriği; skill seçilmediyse bu bölüm yoktur (architecture §7)
+4. **Skill:** Workflow'un doğruladığı skill'in `instructions.md` içeriği, ardından `required_telemetry` ve `required_evidence` listeleri (T-36). Skill seçilmediyse bölümde yalnızca şu cümle bulunur: "No skill was selected for this case: investigate with the general method." (T-44). Skill içeriği onaylı ve taranmış olduğu için `untrusted_*` ile sarılmaz (architecture §7).
 5. **Tools:** Hangi araç ne zaman kullanılır, bütçe ne kadar
 6. **Output:** Çıktı şemasının adı. Çıktıyı Pydantic AI structured output ile zorlar; prompt'ta JSON elle tarif edilmez.
 7. **Examples:** İsteğe bağlı; yalnızca lab verisinden
@@ -62,6 +62,7 @@ Bu türe şunlar girer: araç sonuçları, offense açıklaması, kural adları,
 
 - Etiketteki ek (`7f3a9c`) her ajan çalışması için rastgele üretilir (en az 6 hex karakter).
 - Araç sonucunun etiketindeki `evidence_id`, kanıtın çalışma içi takma adıdır: çalışmanın n'inci araç çağrısı için `ev_<n>` (T-27). Model gateway'in gerçek kimliğini görmez, takma adla atıf yapar; çıktı doğrulaması takma adı gerçek kimliğe çevirir. Kanıt olmayan bloklar (prompt bağlamı, reddedilen veya kanıtsız çağrılar) `ev_none` taşır ve atıf alamaz.
+- Önceki ajanlardan gelen kanıt prompt'a `ev_c<n>` takma adıyla girer (`n` girdideki sıra; T-38). Model bu kanıta da atıf yapabilir; çıktıdaki bütün kanıt alanları aynı doğrulamadan geçer.
 - Sarmalayıcı `packages/policy` içindedir. Sarmalamadan önce içerikteki `untrusted_` ve `org_context` geçen etiket benzeri ifadeler etkisiz hale getirilir. Böylece saldırgan log içine kapanış etiketi yazarak veri bölümünden çıkamaz.
 - Araç sonucu ajana başka bir yoldan, sarmalanmadan verilemez. Bunun için negatif test zorunludur.
 

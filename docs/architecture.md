@@ -487,12 +487,12 @@ Notu LLM değil, deterministik Action Executor yazar. Hiçbir ajanın not yazma 
 
 ```text
 [AI-SOC] Değerlendirme #2 · 2026-10-02 14:05 · run:7f3a9c
-Karar: Şüpheli · Güven: orta · Bildirim seviyesi: high
+Karar: Şüpheli · Güven: orta · Bildirim seviyesi: yüksek
 Özet: <en fazla 3 cümle>
 Acil bakılması gereken event'ler:
  1. 13:52:10 · FW-DMZ-01 · Firewall Permit · 203.0.113.7 → 10.20.4.15:445 · neden: <tek cümle>
  2. ...
-Önerilen adımlar: investigate_further, block_ioc_manual
+Önerilen adımlar: Ayrıntılı inceleme, IOC'yi engelle (manuel)
 Veri eksikleri: <varsa>
 Ayrıntılı rapor: <platform vaka linki>
 ```

@@ -190,7 +190,7 @@ Bütün ajan sonuçları şu alanları taşır:
 
 `PlanStep`: `agent_id` (yalnızca registry'de bu workflow türü için izinli ajanlar), `skill_id` (str?; yalnızca router'ın aday listesinden), `skill_version` (str?), `objective` (`ShortText`), `time_window`, `budget`. `skill_id` ve `skill_version` v0.2'de eklendi (T-21).
 
-Workflow planı şöyle doğrular: Verification adımı yoksa ekler; tekrar eden ajanı reddeder; toplam bütçe vaka bütçesini aşarsa planı kırpar.
+Workflow planı şöyle doğrular: Verification adımı yoksa ekler; tekrar eden ajanı reddeder; toplam bütçe vaka bütçesini aşarsa planı kırpar. Kuralların tamamı ve reddedilen planın yerine geçen varsayılan plan T-41'dedir. Reporting plan adımı değildir; workflow onu her değerlendirmenin sonunda çalıştırır (T-40).
 
 ### `InvestigationResult`
 
