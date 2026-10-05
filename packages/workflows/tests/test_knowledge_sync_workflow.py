@@ -28,6 +28,7 @@ from temporalio.exceptions import ActivityError, ApplicationError
 from temporalio.testing import WorkflowEnvironment
 from temporalio.worker import Replayer, Worker
 
+from ais0c_knowledge.catalog import CatalogSyncReport
 from ais0c_workflows import BATCH_QUEUE_WORKFLOWS, KnowledgeSync, KnowledgeSyncResult
 from ais0c_workflows.knowledge_sync import (
     CATALOG_SYNC_HEARTBEAT,
@@ -48,17 +49,18 @@ from ais0c_workflows.schedules import (
 
 pytestmark = pytest.mark.anyio
 
-COUNTS = {
-    "rules": 134,
-    "rules_added": 2,
-    "rules_renamed": 1,
-    "rules_missing": 0,
-    "log_sources": 51,
-    "log_sources_added": 0,
-    "log_sources_changed": 0,
-    "log_sources_missing": 0,
-    "log_sources_untyped": 0,
-}
+COUNTS = CatalogSyncReport(
+    rules=134,
+    log_sources=51,
+    rules_added=(100001, 100002),
+    rules_changed=(100003,),
+    rules_missing=(100004,),
+    rules_marked_missing=(100004,),
+    rules_returned=(100005,),
+    log_sources_missing=(200001,),
+    log_sources_marked_missing=(200001,),
+    log_sources_returned=(200002,),
+).counts()
 WAIT_SECONDS = 30
 
 

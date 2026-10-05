@@ -33,7 +33,7 @@ profiles:
   # aql: AQL Guard rules (packages/policy aql_guard.AqlProfile) for create_ariel_search.
   # output_filter: removes fields from every result of the profile.
   # text_arguments: limits of a text argument in every tool of the profile (ais0c_mcp_gateway
-  #   text_rules): max_length in characters, and multiline to allow "\n". The text may hold no
+  #   text_rules): max_length in UTF-16 code units, and multiline to allow "\n". The text may hold no
   #   other control or invisible character. Every free-text argument of a write tool needs one.
   qradar-triage-read:
     max_time_window: P31D
@@ -58,7 +58,7 @@ profiles:
     # The executor declares a window within the case's last 31 days, like the Triage profile.
     max_time_window: P31D
     text_arguments:
-      # The note (architecture §9): the template puts one field on each line. 2000 characters is
-      # the limit of QRadar's offense note dialog; the API documents none. T-019 checks it in the
-      # lab and keeps its template below it.
+      # The note (architecture §9): the template puts one field on each line. T-019 measured
+      # QRadar's note limit in the lab on 2026-10-04: 2000 UTF-16 code units. The gateway counts
+      # the same unit (T-040), and the executor keeps its template within this limit.
       note_text: {max_length: 2000, multiline: true}

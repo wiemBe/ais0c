@@ -390,7 +390,9 @@ async def test_a_retried_activity_leaves_one_note_in_qradar(
         ),
         (
             "add_offense_note",
-            refused(ToolStatus.DENIED, "invalid_text: note_text is longer than 2000 characters"),
+            refused(
+                ToolStatus.DENIED, "invalid_text: note_text is longer than 2000 UTF-16 code units"
+            ),
             False,
         ),
         (

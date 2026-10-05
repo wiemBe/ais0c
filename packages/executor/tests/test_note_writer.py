@@ -412,7 +412,7 @@ async def test_a_refused_write_is_recorded_and_returned(
     fail; the outcome says why."""
     await switch(sessions, True)
     refused = OffenseNotesError(
-        "add_offense_note: denied: invalid_text: note_text is longer than 2000 characters",
+        "add_offense_note: denied: invalid_text: note_text is longer than 2000 UTF-16 code units",
         retryable=False,
     )
     qradar.add_failures.append((False, refused))
