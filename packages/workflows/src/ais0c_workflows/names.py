@@ -1,4 +1,4 @@
-"""Names of the case task queue: workflows, signals and the activities they call.
+"""Names of the task queues: workflows, signals, Schedules and the activities they call.
 
 Activities are called by name; `ais0c_activities.names` registers them under the same names.
 A test in services/worker checks that the two lists match.
@@ -7,10 +7,15 @@ A test in services/worker checks that the two lists match.
 from typing import Final
 
 CASE_TASK_QUEUE: Final = "soc-case"
+BATCH_TASK_QUEUE: Final = "soc-batch"
 
 OFFENSE_INTAKE: Final = "OffenseIntake"
 CASE_WORKFLOW: Final = "CaseWorkflow"
 TRIAGE_WORKFLOW: Final = "TriageWorkflow"
+KNOWLEDGE_SYNC: Final = "KnowledgeSync"
+
+# The Schedule that starts KnowledgeSync; its runs' workflow IDs begin with it.
+KNOWLEDGE_SYNC_SCHEDULE_ID: Final = "knowledge-sync"
 
 # CaseWorkflow signals and query.
 OFFENSE_UPDATED: Final = "offense_updated"
@@ -55,6 +60,9 @@ CLOSE_CASE: Final = "close_case"
 BEGIN_TRIAGE_RUN: Final = "begin_triage_run"
 FINISH_TRIAGE_RUN: Final = "finish_triage_run"
 
+# KnowledgeSync activities.
+SYNC_ANALYSIS_CATALOG: Final = "sync_analysis_catalog"
+
 ACTIVITY_NAMES: Final = frozenset(
     {
         FETCH_OFFENSE_CHANGES,
@@ -73,5 +81,6 @@ ACTIVITY_NAMES: Final = frozenset(
         CLOSE_CASE,
         BEGIN_TRIAGE_RUN,
         FINISH_TRIAGE_RUN,
+        SYNC_ANALYSIS_CATALOG,
     }
 )

@@ -450,10 +450,14 @@ profiles:
       - {id: get_reference_map, risk: read}
       - {id: list_reference_tables, risk: read}
       - {id: get_reference_table, risk: read}
-  # §11.2 also lists custom properties and indexes; the fork has no tools for them yet.
+  # The telemetry inventory (§11.4) and the Analysis Catalog sync (KnowledgeSync, §9, D-25):
+  # rules, log sources and log source types, read page by page. No Ariel search. §11.2 also
+  # lists custom properties and indexes; the fork has no tools for them yet.
   qradar-inventory-read:
     server_profile: qradar-read
     tools:
+      - {id: list_rules, risk: read}
+      - {id: get_rule, risk: read}
       - {id: list_log_sources, risk: read}
       - {id: get_log_source, risk: read}
       - {id: list_log_source_types, risk: read}

@@ -194,6 +194,13 @@ dependencies = [
     { name = "ais0c-storage" },
     { name = "pydantic" },
     { name = "pyyaml" },
+    { name = "sqlalchemy", extra = ["asyncio"] },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "anyio" },
+    { name = "testcontainers" },
 ]
 
 [package.metadata]
@@ -203,6 +210,13 @@ requires-dist = [
     { name = "ais0c-storage", editable = "packages/storage" },
     { name = "pydantic", specifier = ">=2.12,<3" },
     { name = "pyyaml", specifier = ">=6.0.3,<7" },
+    { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.1.2,<2.2" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "anyio", specifier = ">=4.15,<5" },
+    { name = "testcontainers", specifier = ">=4.15,<5" },
 ]
 
 [[package]]

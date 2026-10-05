@@ -18,6 +18,7 @@ async def call[T](
     *args: object,
     result_type: type[T],
     attempt_timeout: timedelta = STORE_TIMEOUT,
+    heartbeat_timeout: timedelta | None = None,
     retry_policy: RetryPolicy | None = None,
     cancellation_type: workflow.ActivityCancellationType = (
         workflow.ActivityCancellationType.TRY_CANCEL
@@ -25,14 +26,16 @@ async def call[T](
 ) -> T:
     """Run activity `name` and return its result as `result_type`.
 
-    `attempt_timeout` bounds one attempt. Without `retry_policy` the activity is retried until
-    it succeeds (Temporal's default), so an outage delays the workflow instead of failing it.
+    `attempt_timeout` bounds one attempt; with `heartbeat_timeout`, an attempt that goes that
+    long without a heartbeat fails too. Without `retry_policy` the activity is retried until it
+    succeeds (Temporal's default), so an outage delays the workflow instead of failing it.
     """
     result: T = await workflow.execute_activity(
         name,
         args=list(args),
         result_type=result_type,
         start_to_close_timeout=attempt_timeout,
+        heartbeat_timeout=heartbeat_timeout,
         retry_policy=retry_policy,
         cancellation_type=cancellation_type,
     )

@@ -1,4 +1,4 @@
-"""Names the case task queue shares with `ais0c_workflows`.
+"""Names the task queues share with `ais0c_workflows`.
 
 Workflows call activities by name and may not import this package (docs/impl/repo-structure.md),
 so `ais0c_workflows.names` holds the same names; a test in services/worker checks that the two
@@ -39,3 +39,6 @@ CLOSE_CASE: Final = "close_case"
 # Pydantic AI's TemporalDurability.
 BEGIN_TRIAGE_RUN: Final = "begin_triage_run"
 FINISH_TRIAGE_RUN: Final = "finish_triage_run"
+
+# KnowledgeSync activities (the `soc-batch` task queue).
+SYNC_ANALYSIS_CATALOG: Final = "sync_analysis_catalog"

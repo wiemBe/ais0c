@@ -7,10 +7,19 @@ dependencies = [
     "ais0c-contracts",
     "ais0c-storage",
     "ais0c-querylang",
-    # Skill manifest models (skills/); same version range as ais0c-contracts.
+    # Skill manifest models (skills/) and QRadar inventory rows; same version range as
+    # ais0c-contracts.
     "pydantic>=2.12,<3",
     # Skill manifests (skills/<id>/<version>/skill.yaml) are YAML.
     "pyyaml>=6.0.3,<7",
+    # The catalog sync's advisory lock; same range as ais0c-storage.
+    "sqlalchemy[asyncio]>=2.1.2,<2.2",
+]
+
+[dependency-groups]
+dev = [
+    "anyio>=4.15,<5",
+    "testcontainers>=4.15,<5",
 ]
 
 [build-system]

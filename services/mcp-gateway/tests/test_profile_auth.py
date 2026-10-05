@@ -57,7 +57,8 @@ async def test_a_tool_outside_the_profile_is_denied_with_a_reason(harness: Harne
     ("profile", "tool_id", "arguments"),
     [
         ("qradar-verify-read", "get_offense", {"offense_id": 1001}),
-        ("qradar-inventory-read", "get_rule", {"rule_id": 100234}),
+        # The inventory profile reads rules since T-022, but it has no Ariel search.
+        ("qradar-inventory-read", "create_ariel_search", {"query_expression": QUERY}),
         ("qradar-hunt-read", "list_assets", {}),
         ("qradar-tuning-read", "list_log_sources", {}),
         ("qradar-triage-read", "list_offense_closing_reasons", {}),

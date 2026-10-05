@@ -48,6 +48,7 @@ profiles:
     # Hunts cover up to 12 months (HuntRequest) in slices of at most one day.
     max_time_window: P366D
     aql: {max_window: P1D, max_limit: 10000, allowed_tables: [events], wide_window_threshold: PT6H}
+  # Lists only, no Ariel search, so no AQL rules (config/connectors/qradar.yaml).
   qradar-inventory-read:
     max_time_window: P31D
   qradar-tuning-read:

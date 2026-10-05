@@ -4,7 +4,8 @@ No workflow logic. Activities are registered under the names in `ais0c_activitie
 the workflows use to call them. The Triage agent's model and tool activities come from Pydantic
 AI's TemporalDurability (`TriageRuntime`). The Action Executor's note and e-mail activities
 (`NoteActivities`, `EmailActivities`) are not on the case queue; no workflow calls them before
-T-026.
+T-026. The `soc-batch` task queue has KnowledgeSync's catalog sync (`CatalogSyncActivities`,
+`BatchRuntime.activities`).
 """
 
 from collections.abc import Callable
@@ -12,6 +13,12 @@ from collections.abc import Callable
 from temporalio.client import Client
 
 from ais0c_activities.case import CaseActivities, sla_deadline
+from ais0c_activities.catalog import (
+    CATALOG_SYNC_AGENT_ID,
+    INVENTORY_PROFILE,
+    KNOWLEDGE_SYNC_CONTEXT,
+    CatalogSyncActivities,
+)
 from ais0c_activities.db import SessionFactory
 from ais0c_activities.email import (
     SEND_EMAIL,
@@ -72,7 +79,13 @@ from ais0c_activities.note import (
 )
 from ais0c_activities.offense_source import FakeOffenseSource, OffenseSource
 from ais0c_activities.priority import pre_priority
-from ais0c_activities.runtime import CaseRuntime, RuntimeConfigError, load_case_runtime
+from ais0c_activities.runtime import (
+    BatchRuntime,
+    CaseRuntime,
+    RuntimeConfigError,
+    load_batch_runtime,
+    load_case_runtime,
+)
 from ais0c_activities.settings import CaseSettings
 from ais0c_activities.triage import TriageRunActivities, TriageRuntime
 from ais0c_contracts import ModelRelease
@@ -107,17 +120,22 @@ def case_queue_activities(
 
 
 __all__ = [
+    "CATALOG_SYNC_AGENT_ID",
     "GROUP_WINDOW",
     "INTAKE_CONTEXT",
+    "INVENTORY_PROFILE",
+    "KNOWLEDGE_SYNC_CONTEXT",
     "NOTE_PROFILE",
     "RATE_WINDOW",
     "SEND_EMAIL",
     "SOURCE_AGENT_ID",
     "WRITE_OFFENSE_NOTE",
+    "BatchRuntime",
     "CaseActivities",
     "CaseLauncher",
     "CaseRuntime",
     "CaseSettings",
+    "CatalogSyncActivities",
     "EmailActivities",
     "EmailRuntime",
     "FakeOffenseSource",
@@ -154,6 +172,7 @@ __all__ = [
     "compare_model_releases",
     "decide_grouping",
     "floor_level",
+    "load_batch_runtime",
     "load_case_runtime",
     "load_email_runtime",
     "load_model_releases",
