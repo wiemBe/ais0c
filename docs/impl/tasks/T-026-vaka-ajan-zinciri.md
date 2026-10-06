@@ -1,6 +1,6 @@
 # T-026: CaseWorkflow'un ajan zinciri
 
-> Bu görev T-023, T-024, T-025 ve T-044 birleştikten sonra verilir. Planner o zaman dosyayı bu görevlerin gerçek arayüzlerine göre gözden geçirir.
+> Planner 2026-10-06'da dosyayı birleşen ajanların arayüzlerine göre gözden geçirdi (`main` `f201c43`: T-023, T-024, T-025, T-044, T-046, T-047). Ajanların girdi tipleri aşağıdaki "Arayüzler" bölümündedir. T-048 (ajanın son cevabı, bütçeler) paralel yürür.
 
 ## Amaç
 
@@ -23,8 +23,13 @@ Not ve e-posta bu görevde yoktur (T-045).
 - `docs/architecture.md` §6, §7, §9 (bütün alt bölümler), §20, §21
 - `docs/impl/contracts.md`: `AgentTask`, `CasePlan`, `TriageResult`, `InvestigationResult`, `VerificationResult`, `CaseReport`, `UrgentEvent`, `Recommendation`, `SkillRef`
 - `docs/impl/data-model.md`: `cases`, `qa_items`, `urgent_events`, `recommendations`, `agent_runs`
-- `docs/decisions.md`: D-30, D-31, D-33, D-35, T-21, T-29, T-30, T-40, T-41, T-42, T-45
-- T-023, T-024, T-025, T-043 ve T-044'ün PR'ları
+- `docs/decisions.md`: D-30, D-31, D-33, D-35, D-44, T-21, T-29, T-30, T-40, T-41, T-42, T-45, T-48, T-50, T-51, T-52
+- `../ais0c-prs/` altında T-023, T-024, T-025, T-043, T-044, T-046 ve T-047'nin PR'ları
+- `packages/agents/src/ais0c_agents/`: `investigation.py`, `orchestrator.py`, `verification.py`, `reporting.py`; `packages/workflows/src/ais0c_workflows/plan.py`
+
+## Branch
+
+`agent/<araç>/T-026`, `main`'den, **ayrı bir worktree'de** (`git worktree add ../ais0c-T-026 -b agent/<araç>/T-026 main`). Ana checkout'ta (`/home/efe/Documents/ais0c`) çalışılmaz. Push yapılmaz (AGENTS.md hard rule 9).
 
 ## İzinli dizinler
 
@@ -65,8 +70,10 @@ Her madde en az bir testle gösterilir. Workflow testleri Temporal test ortamın
    - Reporting: karar raporsuz kaydedilir.
 
    Test: her halkanın başarısızlığı.
-4. **Girdiler (T-45).** Her ajanın girdisi T-45'teki gibi kurulur. Kanıt kayıtları storage'dan `EvidenceRef` olarak bir activity'de okunur. Serbest metin alanları bir sonraki ajana taşınmaz.
+4. **Girdiler (T-45).** Her ajanın girdisi T-45'teki gibi, "Arayüzler" bölümündeki tiplerle kurulur. Kanıt kayıtları storage'dan `EvidenceRef` olarak bir activity'de okunur. Serbest metin alanları bir sonraki ajana taşınmaz.
    - Kritik claim'ler: karar FP ise veya bildirim seviyesi high/critical ise, kararın bütün claim'leri kritiktir.
+   - Verification'ın itiraz ettiği claim'ler (`Disagreement.claim_text` claim metnine birebir eşit, T-51) Reporting'e gitmez.
+   - Plan adımının `objective`'i ajanın `AgentTask.objective`'idir; ajanlar onu `agent.objective` bloğunda gösterir (T-48). Workflow onu başka bir yola koymaz.
    - Test: sahte ajanların aldığı girdiler beklenen alanları taşır ve `rationale` taşımaz.
 5. **Skill doğrulaması (T-21).** Planda seçilen skill'in rolü, durumu (prod'da `approved`), sürümü, son kullanma tarihi ve içerik hash'i, ajan başlamadan bir activity'de kontrol edilir. Geçmeyen skill'le adım skill'siz koşar ve neden kaydedilir. Test.
 6. **Karar ve seviye (T-42).**
@@ -98,6 +105,24 @@ Her madde en az bir testle gösterilir. Workflow testleri Temporal test ortamın
 
     Lab koşusunu planner yapar; kodlama ajanı lab'da offense açmaz ve kapatmaz.
 
+## Arayüzler
+
+Ajanlar `ais0c_agents`'tan kurulur; her biri worker açılışında **bir kez** kurulur ve `capabilities`'e `TemporalDurability` verilir. Model, alias'ın registry kaydındaki `forced_tool_choice` ile kurulur (D-44: Qwen alias'larında `false`).
+
+| Ajan | Kurucu | Girdi | Alias |
+|---|---|---|---|
+| Orchestrator | `build_orchestrator_agent(manifest, prompt, model, capabilities)` | `OrchestratorTask(task, triage=TriageDecision.from_result(triage_result), offense, candidates: CandidateSkill…, agents: PlanAgent…, plan_budget=settings.plan_budget)` | `soc-reasoning` |
+| Investigation | `build_investigation_agent(manifest, prompt, profiles, gateway, model, aql_rules_path, capabilities)` | `InvestigationTask(task, offense, enrichment, triage: InvestigationTriage, context_evidence, skill: SkillInput \| None, knowledge)` | `soc-reasoning` |
+| Verification | `build_verification_agent(manifest, prompt, profiles, gateway, model, capabilities)` | `VerificationTask(task, reviewed: ReviewedDecision, claims: ReviewedClaim(claim, critical)…, evidence, offense)` | `soc-verifier` |
+| Reporting | `build_reporting_agent(manifest, prompt, model, capabilities)` | `ReportingTask(task, decision: CaseDecision(verdict, confidence, notify_level), claims, evidence, urgent_event_candidates, data_gaps, offense, enrichment)` | `soc-report` |
+
+- **Plan doğrulama.** `validate_plan(plan, agents=..., candidates=..., plan_budget=..., window=..., needs_investigation=...)` (`ais0c_workflows.plan`). Workflow kodunda `workflow.unsafe.imports_passed_through()` içinde içe aktarılır (T-51). Orchestrator `CandidateSkill` görür, doğrulama `PlanCandidate(agent_id, skill, budget)` ister; ikisi aynı router çıktısından kurulur, `wall_clock_seconds` → `seconds` (PR-T-044, sapma 5). `agents`, plan ajanlarının (Investigation, Verification) manifest bütçeleridir.
+- **Adımın bütçesi.** `validate_plan`'ın döndürdüğü adım bütçesi `AgentTask.budget` olur. Investigation kendi içinde manifest, adım ve skill bütçesinin en küçüğünü kullanır (`effective_budget`).
+- **Skill.** Investigation'ın `skill`'i, skill doğrulamasından (kriter 5) geçen `ais0c_knowledge` skill'inden `SkillInput`'a çevrilir (PR-T-043'teki örnek). Geçmezse `None`.
+- **Reporting'in kanıtı.** `evidence`, Reporting'e giden claim'lerin ve acil event adaylarının kanıtını içerir. `ReportingTask` adayın (ve T-048'den sonra claim'in) kanıtı listede yoksa reddeder. Adaylar Investigation'ın `urgent_event_candidates`'idir; Investigation koşmadıysa boş liste.
+- **Kod cevabı.** Verification, kanıtı vakada olmayan bütün claim'leri kendisi reddeder ve modeli çağırmadan `agrees=false` döndürebilir (PR-T-024). Bu da bir Verification sonucudur; QA kuralları aynı işler.
+- **Bütçe sonu.** T-048'den sonra bütçeye takılan araçlı ajan `completed` döner ve sonucunda `budget_exhausted` data gap'i olur. Zincir bunu normal sonuç gibi işler.
+
 ## Kapsam dışı
 
 - Not ve e-posta, executor worker'ı (T-045)
@@ -106,7 +131,8 @@ Her madde en az bir testle gösterilir. Workflow testleri Temporal test ortamın
 
 ## Bağımlılıklar
 
-- T-023, T-024, T-025, T-044 (dolayısıyla T-043)
+- T-023, T-024, T-025, T-044, T-046, T-047 (`main` `f201c43`'te birleşik)
+- T-048 paralel yürür; çakışabilecek dosya `packages/activities/src/ais0c_activities/settings.py`'dir (T-048 orada yalnızca `AIS0C_PLAN_TOKENS`'ın varsayılanını değiştirir).
 - T-041 (`main`'de)
 
 ## Notlar

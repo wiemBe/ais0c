@@ -62,8 +62,9 @@ Sıra:
 
 1. Hemen, paralel: T-043, T-036, T-037. (Bitti, `main`'de.)
 2. T-043'ten sonra, paralel: T-023, T-024, T-025, T-044. (T-024, T-025, T-044 bitti, `main`'de; T-023 yarım kaldı, D-44.)
-3. İnceleme düzeltmeleri (2026-10-06): önce T-046; sonra paralel T-047 ve T-023'ün devamı.
-4. Ardından sırayla: T-026, T-045, T-027. Bu üçünün dosyalarını planner, bağımlı oldukları görevler birleşince gerçek arayüzlere göre gözden geçirir; o zamana kadar ajana verilmez.
+3. İnceleme düzeltmeleri (2026-10-06): önce T-046; sonra paralel T-047 ve T-023'ün devamı. (Bitti, `main` `f201c43`.)
+4. Paralel: T-026 (ajan zinciri; dosyası gerçek arayüzlere göre güncellendi) ve T-048 (ajanın son cevabı, Investigation bütçesi, Ariel zaman penceresi).
+5. Ardından sırayla: T-045, T-027. Bu üçünün dosyalarını planner, bağımlı oldukları görevler birleşince gerçek arayüzlere göre gözden geçirir; o zamana kadar ajana verilmez.
 
 | Görev | Kapsam | İzinli dizinler | Bağımlı olduğu | Dosya |
 |---|---|---|---|---|
@@ -74,6 +75,7 @@ Sıra:
 | T-044 | Orchestrator ajanı ve plan doğrulama (T-41): `CasePlan`, deterministik `validate_plan`, varsayılan plan, plan bütçesi ayarları | `packages/agents/`, `prompts/orchestrator/`, `config/agents/orchestrator.yaml`, `packages/workflows/` (yalnızca `plan` modülü), `packages/activities/` (ayarlar) | T-043 | [T-044](tasks/T-044-orchestrator-plan.md) |
 | T-046 | Önceki ajanların metni için `agent.<tür>` kaynakları (T-48): policy paketi, Verification ve Orchestrator | `packages/policy/`, `packages/agents/` (verification, orchestrator ve testleri) | T-024, T-044 | [T-046](tasks/T-046-ajan-metni-kaynaklari.md) |
 | T-047 | Reporting düzeltmeleri (T-50): ajan bir kez kurulur, acil event aday numarasıyla seçilir, gerçek kanıt kimliği modele gösterilmez, dev stack testi `tests/e2e/`'ye taşınır | `packages/agents/` (reporting, `RunDeps`), `prompts/reporting/`, `tests/e2e/` | T-025, T-046 | [T-047](tasks/T-047-reporting-duzeltmeleri.md) |
+| T-048 | Ajanın son cevabı (bütçe bitmeden araçlar geri çekilir), Investigation ve skill token bütçeleri, investigate profilinden dört listeleme aracı, Ariel penceresinin hazır AQL parçaları, T-54'ün küçük düzeltmeleri (T-52, T-53, T-54) | `packages/agents/`, ajan prompt'ları, `config/agents/investigation.yaml`, `skills/*` (bütçe), `config/connectors/qradar.yaml` (investigate profili), `services/mcp-gateway/tests/`, `packages/activities/` (plan token varsayılanı), `tests/e2e/` | T-023, T-046, T-047 | [T-048](tasks/T-048-ajan-butcesi-ve-zaman-penceresi.md) |
 | T-026 | `CaseWorkflow`'un ajan zinciri: ajan child workflow'ları, skill doğrulaması ve kaydı, karar ve bildirim seviyesi (T-42), QA kuralları (D-35), rapor/acil event/öneri kaydı; `run_id`'nin açık geçirilmesi (T-29); ertelenmiş değerlendirme ve `no_ai_decision` aralığı (T-30) | `packages/workflows/`, `packages/activities/`, `packages/storage/`, `services/worker/`, `tests/e2e/` | T-023, T-024, T-025, T-044, T-046, T-047 | [T-026](tasks/T-026-vaka-ajan-zinciri.md) |
 | T-045 | Executor'ın vaka akışına bağlanması: executor worker'ı ve `soc-executor` kuyruğu (T-33 (1)), run marker (T-33 (3)), not ve e-posta çağrıları, shadow modunda `disabled` kayıtlar | `packages/workflows/`, `packages/activities/`, `services/worker/` | T-026 | [T-045](tasks/T-045-executor-vaka-akisi.md) |
 | T-027 | Grup değerlendirmesi ve gruplama kaçışları (T-22, T-46); grup notu ve grup e-postası; bekleyen ve gruplanmış offense'lerin katalog kontrolü (T-30 (3)) | `packages/activities/`, `packages/workflows/`, `packages/storage/`, `services/worker/` | T-026, T-045, T-036 | [T-027](tasks/T-027-grup-degerlendirmesi.md) |
