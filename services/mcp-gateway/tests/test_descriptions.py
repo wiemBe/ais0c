@@ -55,7 +55,7 @@ async def test_results_hold_no_upstream_metadata(harness: Harness) -> None:
             await harness.post(client, harness.intent(profile, tool, arguments), run_id=run)
             for tool, arguments in [
                 ("get_offense", {"offense_id": 1001}),
-                ("list_rules", {}),
+                ("list_assets", {}),
                 ("get_ariel_search_status", {"search_id": search_id}),
                 ("get_ariel_search_results", {"search_id": search_id}),
             ]

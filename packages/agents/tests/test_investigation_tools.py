@@ -1,10 +1,11 @@
 """T-023 criterion 3: only the investigate profile and the complete Ariel lifecycle."""
 
-from ais0c_agents import load_aql_rules
-from ais0c_agents.investigation import render_time_window
+import yaml
+
+from ais0c_agents import ToolsetProfile, ToolSpec, build_investigation_agent
 from ais0c_contracts import RunStatus
 
-from .helpers import GATEWAY_POLICY, ScriptedModel, alias, answer, call, retry_prompts
+from .helpers import GATEWAY_POLICY, REPO_ROOT, ScriptedModel, alias, answer, call, retry_prompts
 from .investigation_helpers import (
     INVESTIGATION_PROFILE,
     INVESTIGATION_RUN_ID,
@@ -13,7 +14,9 @@ from .investigation_helpers import (
     build_investigation,
     instruction_text,
     investigation_gateway,
+    investigation_manifest,
     investigation_output,
+    investigation_prompt,
     investigation_task,
     run_investigation,
 )
@@ -60,26 +63,9 @@ def test_model_sees_exactly_the_profile_and_no_write_tool() -> None:
     )
     assert "get_ariel_search_status with wait_seconds" in text
     assert "Keep only one search active" in text
-    assert "Put LIMIT before the time range" in text
+    assert "the START/STOP part goes after LIMIT" in text
     assert "UTF8(payload)" in text
     assert "Budget: at most 22 tool calls." in text
-
-
-def test_prompt_gives_the_window_in_milliseconds_and_a_guard_clean_example() -> None:
-    script = ScriptedModel(answer(investigation_output("ev_c1", ranks=(1,))))
-
-    run_investigation(build_investigation(script))
-
-    text = instruction_text(script)
-    window = investigation_task().task.time_window
-    assert render_time_window(window) in text
-    assert f"{int(window.start.timestamp()) * 1000} to {int(window.end.timestamp()) * 1000}" in text
-    [example] = [
-        line.split("Example: ", 1)[1] for line in text.splitlines() if "Example: SELECT" in line
-    ]
-    rules = load_aql_rules(GATEWAY_POLICY, profile=INVESTIGATION_PROFILE.name)
-    assert rules.check(example).allowed
-    assert '"' not in example
 
 
 def test_a_tool_outside_the_profile_cannot_be_called() -> None:
@@ -95,3 +81,52 @@ def test_a_tool_outside_the_profile_cannot_be_called() -> None:
     assert gateway.intents == []
     [retry] = retry_prompts(run.messages)
     assert "Unknown tool name: 'add_offense_note'" in retry.model_response()
+
+
+# T-048 criterion 3 (decision T-52): the catalog listings left qradar-investigate-read.
+CATALOG_LISTINGS = {"list_rules", "list_log_sources", "list_log_source_types", "list_offense_types"}
+
+
+def connector_profile(name: str) -> ToolsetProfile:
+    """A profile of config/connectors/qradar.yaml as the gateway hands it to an agent."""
+    connector = yaml.safe_load(
+        (REPO_ROOT / "config/connectors/qradar.yaml").read_text(encoding="utf-8")
+    )
+    registry = connector["tools"]
+    return ToolsetProfile(
+        name=name,
+        connector="qradar",
+        tools=tuple(
+            ToolSpec(
+                id=tool["id"],
+                description=registry[tool["id"]]["description"],
+                schema_version="1",
+                cost_class=registry[tool["id"]]["cost_class"],
+                parameters=registry[tool["id"]]["input_schema"],
+            )
+            for tool in connector["profiles"][name]["tools"]
+        ),
+    )
+
+
+def test_the_model_is_not_offered_the_catalog_listings() -> None:
+    profile = connector_profile("qradar-investigate-read")
+    script = ScriptedModel(answer(investigation_output("ev_c1", ranks=(1,))))
+    agent = build_investigation_agent(
+        manifest=investigation_manifest(),
+        prompt=investigation_prompt(),
+        profiles={profile.name: profile},
+        gateway=investigation_gateway(),
+        model=script.model,
+        aql_rules_path=GATEWAY_POLICY,
+    )
+
+    run = run_investigation(agent)
+
+    assert run.status is RunStatus.COMPLETED
+    offered = {tool.name for tool in script.requests[0][1].function_tools}
+    assert offered == {tool.id for tool in profile.tools}
+    assert not offered & CATALOG_LISTINGS
+    assert {"get_rule", "get_log_source", "create_ariel_search"} <= offered
+    # The triage profile keeps them.
+    assert CATALOG_LISTINGS <= {tool.id for tool in connector_profile("qradar-triage-read").tools}

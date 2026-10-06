@@ -158,10 +158,12 @@ def test_the_input_is_bounded() -> None:
 def test_the_prompt_takes_exactly_the_inputs_the_agent_fills() -> None:
     assert verification_prompt().placeholders - {"shared_rules"} == PLACEHOLDERS
     assert PLACEHOLDERS == {
+        "objective",
         "reviewed",
         "claims",
         "offense",
         "evidence",
+        "time_window",
         "tools",
         "tool_budget",
     }
@@ -423,8 +425,7 @@ def test_the_prompt_states_the_profile_limits_and_asks_for_a_data_gap() -> None:
     # qradar-verify-read: at most a 2-hour window and 200 rows (architecture §11.2).
     assert rules.aql.max_window == timedelta(hours=2)
     assert rules.aql.max_limit == 200
-    assert "at most 2 hours and return at most 200 rows" in text
-    assert LOGON_QUERY in text
+    assert "at most 2 hours between START and STOP and return at most 200 rows" in text
     for tool in VERIFY_PROFILE.tools:
         assert tool.id in text
     assert "record a data gap" in text

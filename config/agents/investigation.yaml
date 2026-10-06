@@ -10,7 +10,7 @@ output_schema: InvestigationResult
 toolset_profile: qradar-investigate-read
 max_steps: 30
 budgets:
-  tokens: 150000
+  tokens: 300000
   tool_calls: 24
   wall_clock_seconds: 300
 autonomy: L0

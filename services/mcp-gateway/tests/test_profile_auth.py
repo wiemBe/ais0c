@@ -80,6 +80,55 @@ async def test_every_profile_denies_tools_it_does_not_have(
     assert harness.fake.calls == []
 
 
+# T-048 criterion 3 (decision T-52): the catalog in the agent's prompt holds what these list.
+CATALOG_LISTINGS = ("list_rules", "list_log_sources", "list_log_source_types", "list_offense_types")
+
+
+@pytest.mark.parametrize("tool_id", CATALOG_LISTINGS)
+async def test_the_investigate_profile_denies_the_catalog_listings(
+    harness: Harness, tool_id: str
+) -> None:
+    profile = "qradar-investigate-read"
+    run = await harness.start_run(AGENT_RUN, profile=profile)
+
+    async with harness.client() as client:
+        listed = await client.get("/v1/tools", headers=auth(harness.tokens[profile]))
+        result = tool_result(
+            await harness.post(client, harness.intent(profile, tool_id, {}), run_id=run)
+        )
+
+    assert tool_id not in [tool["id"] for tool in listed.json()["tools"]]
+    assert result.status is ToolStatus.DENIED
+    assert result.deny_reason == f"tool_not_in_profile: {tool_id} is not a tool of {profile}"
+    assert harness.fake.calls == []
+
+
+async def test_only_the_investigate_profile_lost_the_catalog_listings(harness: Harness) -> None:
+    tools = {name: set(profile.tools) for name, profile in harness.registry.profiles.items()}
+
+    assert not tools["qradar-investigate-read"] & set(CATALOG_LISTINGS)
+    # The other profiles that had them keep them.
+    assert set(CATALOG_LISTINGS) <= tools["qradar-triage-read"]
+    assert {"list_rules", "list_log_sources", "list_log_source_types"} <= tools[
+        "qradar-inventory-read"
+    ]
+    assert "list_rules" in tools["qradar-tuning-read"]
+    # Investigation keeps its offense, rule, asset and log source lookups and the Ariel search.
+    assert tools["qradar-investigate-read"] == {
+        "get_offense",
+        "list_offenses",
+        "list_source_addresses",
+        "list_local_destination_addresses",
+        "get_rule",
+        "list_assets",
+        "get_log_source",
+        "create_ariel_search",
+        "get_ariel_search_status",
+        "get_ariel_search_results",
+        "delete_ariel_search",
+    }
+
+
 async def test_a_token_cannot_borrow_another_profile(harness: Harness) -> None:
     # The triage token, with an intent and a run that claim the investigate profile.
     run = await harness.start_run(AGENT_RUN, profile="qradar-investigate-read")

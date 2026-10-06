@@ -6,27 +6,46 @@ one ends the run as `budget_exhausted`. A model that keeps breaking the output s
 tool rules, and a gateway that cannot answer, end it as `failed`. Neither leaves a result.
 An agent without tools runs the same way, with a tool call budget of 0.
 
+Pydantic AI checks the token budget after a response arrives, so a final answer that crossed
+it would be lost. Every run therefore carries FinalAnswer (decision T-52): before the budget
+runs out it withdraws the agent's function tools, so the next request can only return the
+result, and a run that ends this way completes with a `budget_exhausted` data gap. A model
+that calls a tool anyway runs into the tool call or token budget and ends `budget_exhausted`
+as before.
+
 The wall-clock budget is not enforced here: the Temporal activity and workflow timeouts own it
 (T-012, agent-harness.md §2).
 """
 
 import time
-from collections.abc import Callable
-from dataclasses import dataclass
-from typing import Final
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass, field
+from typing import ClassVar, Final
 
-from pydantic_ai import Agent, capture_run_messages
+from pydantic_ai import Agent, RunContext, capture_run_messages
+from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.exceptions import AgentRunError, UsageLimitExceeded
-from pydantic_ai.messages import ModelMessage
+from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, UserPromptPart
+from pydantic_ai.models import ModelRequestContext
+from pydantic_ai.tools import ToolDefinition
 from pydantic_ai.usage import RunUsage, UsageLimits
 
 from ais0c_agents.gateway import GatewayError
 from ais0c_agents.manifest import AgentManifest
 from ais0c_agents.prompts import PromptTemplate
 from ais0c_agents.toolset import RunDeps
-from ais0c_contracts import Budget, RunStatus, Usage
+from ais0c_contracts import AgentResult, Budget, DataGap, DataGapReason, RunStatus, Usage
 
 MAX_ERROR_LENGTH: Final = 1000
+FINAL_ANSWER_PROMPT: Final = (
+    "Your budget is used up and your tools are withdrawn: return your result now, from what "
+    "you already have."
+)
+"""What every request without the agent's tools tells the model (decision T-52)."""
+TOKEN_RESERVE_FACTOR: Final = 2
+"""The tools go once fewer tokens remain than this many times the last request's total."""
+UNNAMED_AGENT: Final = "agent"
+"""The data gap's source for an agent without a name; create_agent names every agent."""
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -59,6 +78,64 @@ def prompt_tool_budget(manifest: AgentManifest, budget: Budget) -> int:
     return max(0, min(manifest.budgets.tool_calls, budget.tool_calls, manifest.max_steps - 1))
 
 
+def budget_spent(
+    usage: RunUsage, limits: UsageLimits | None, messages: Sequence[ModelMessage]
+) -> bool:
+    """Whether the run must answer now instead of calling another tool (decision T-52).
+
+    True when the tool call budget is used up, or when fewer tokens remain than
+    TOKEN_RESERVE_FACTOR times the total tokens of the last model request: the next request
+    sends the whole conversation again, so it costs at least as much as the last one.
+    """
+    if limits is None:
+        return False
+    if limits.tool_calls_limit is not None and usage.tool_calls >= limits.tool_calls_limit:
+        return True
+    if limits.total_tokens_limit is None:
+        return False
+    responses = [message for message in messages if isinstance(message, ModelResponse)]
+    last = responses[-1].usage.total_tokens if responses else 0
+    return limits.total_tokens_limit - usage.total_tokens < TOKEN_RESERVE_FACTOR * last
+
+
+@dataclass
+class FinalAnswer(AbstractCapability[RunDeps]):
+    """Withdraws an agent's function tools once its budget is spent (decision T-52).
+
+    From the first request at which budget_spent holds, every request offers only the output
+    tool and carries FINAL_ANSWER_PROMPT; the tools do not come back in that run. An agent
+    without function tools is left alone. One instance serves one run: run_agent makes it and
+    reads `withdrawn` afterwards.
+
+    Pydantic AI refuses a capability added per run inside a durable workflow unless it is safe
+    there. This one is: it contributes no toolset and no durable operation, and its hooks read
+    only the run context, so a replay of the workflow makes the same decisions.
+    """
+
+    _safe_at_runtime: ClassVar[bool] = True
+
+    withdrawn: bool = field(default=False, init=False)
+    """Whether the run's tools were withdrawn."""
+
+    async def prepare_tools(
+        self, ctx: RunContext[RunDeps], tool_defs: list[ToolDefinition]
+    ) -> list[ToolDefinition]:
+        if not tool_defs:
+            return tool_defs
+        if not self.withdrawn and budget_spent(ctx.usage, ctx.usage_limits, ctx.messages):
+            self.withdrawn = True
+        return [] if self.withdrawn else tool_defs
+
+    async def before_model_request(
+        self, ctx: RunContext[RunDeps], request_context: ModelRequestContext
+    ) -> ModelRequestContext:
+        request = request_context.messages[-1] if request_context.messages else None
+        if self.withdrawn and isinstance(request, ModelRequest):
+            # The request this step made: the sentence stays in the run's history.
+            request.parts = [*request.parts, UserPromptPart(FINAL_ANSWER_PROMPT)]
+        return request_context
+
+
 async def run_agent[OutputT, ResultT](
     agent: Agent[RunDeps, OutputT],
     *,
@@ -72,13 +149,17 @@ async def run_agent[OutputT, ResultT](
 ) -> AgentRun[ResultT]:
     """Run `agent` once and map the outcome to a RunStatus; never raises for a failed run.
 
-    `finalize` turns the model's validated output into the agent's result.
+    `finalize` turns the model's validated output into the agent's result. When FinalAnswer
+    withdrew the tools and the model still answered, an AgentResult gets one more data gap:
+    its source is the agent (its name, which create_agent sets to the manifest ID), its period
+    the task's window and its reason `budget_exhausted`; the model's own data gaps stay.
     """
     usage = RunUsage()
     started = clock()
     output: OutputT | None = None
     status = RunStatus.COMPLETED
     error: str | None = None
+    final_answer = FinalAnswer()
     with capture_run_messages() as messages:
         try:
             result = await agent.run(
@@ -87,6 +168,7 @@ async def run_agent[OutputT, ResultT](
                 instructions=instructions,
                 usage_limits=limits,
                 usage=usage,
+                capabilities=[final_answer],
             )
         except UsageLimitExceeded as exc:
             status, error = RunStatus.BUDGET_EXHAUSTED, _describe(exc)
@@ -99,9 +181,18 @@ async def run_agent[OutputT, ResultT](
         tool_calls=usage.tool_calls,
         seconds=max(0.0, clock() - started),
     )
+    finalized = None if output is None else finalize(output, run_usage)
+    if final_answer.withdrawn and isinstance(finalized, AgentResult):
+        gap = DataGap(
+            source=agent.name or UNNAMED_AGENT,
+            period_start=deps.time_window.start,
+            period_end=deps.time_window.end,
+            reason=DataGapReason.BUDGET_EXHAUSTED,
+        )
+        finalized = finalized.model_copy(update={"data_gaps": [*finalized.data_gaps, gap]})
     return AgentRun(
         status=status,
-        result=None if output is None else finalize(output, run_usage),
+        result=finalized,
         usage=run_usage,
         prompt_version=prompt.version,
         prompt_hash=prompt.sha256,

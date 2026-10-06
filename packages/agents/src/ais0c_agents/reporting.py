@@ -8,9 +8,9 @@ What the model returns is narrower than CaseReport, and that is the point of the
 decision and the data gaps are the input's, never the model's. An urgent event is the number
 of a candidate plus the model's `rank`, `reason` and `checklist`; the run copies the
 candidate's nine identifiers into the report, so the model never copies an evidence ID or a
-query (decision T-50). Three output validators hold the rules: `check_evidence` (which every
-agent has), `check_candidates` and `check_log_text`. The run fills the rest of CaseReport from
-the input.
+query (decision T-50). Four output validators hold the rules: `check_evidence` (which every
+agent has), `check_candidates`, `check_log_text` and `check_summary_aliases`. The run fills the
+rest of CaseReport from the input.
 
 The agent has no tools (T-043): all evidence arrives in the input, under the `ev_c<n>` aliases
 of decision T-38, and no gateway evidence ID reaches the model (decision T-27). The agent is
@@ -21,6 +21,7 @@ docs/impl/prompts.md, and no log text may reach the report.
 
 from __future__ import annotations
 
+import re
 import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
@@ -115,6 +116,8 @@ CANDIDATE_HIDDEN_FIELDS: Final = frozenset({"rank", "evidence_id", "aql"})
 FREE_TEXT_FIELDS: Final[tuple[str, ...]] = ("summary_tr", "reason", "rationale", "checklist")
 MIN_QUOTE: Final = 20
 """A piece of this many characters or more is a copy of log text, not a summary."""
+# An evidence alias the model may see in this run: `ev_c<n>`, `ev_<n>` or `ev_none` (T-54 (2)).
+EVIDENCE_ALIAS: Final = re.compile(r"\bev_(?:c[0-9]+|[0-9]+|none)\b", re.IGNORECASE)
 
 
 # Not a ContractModel: contract models are defined only in packages/contracts.
@@ -149,19 +152,31 @@ class ReportingTask(BaseModel):
     """Organization context; only its catalog and critical assets reach the prompt."""
 
     @model_validator(mode="after")
-    def _candidates_evidence_given(self) -> Self:
-        """A candidate's evidence is in `evidence`, so the prompt can show it as `ev_c<n>`."""
+    def _evidence_given(self) -> Self:
+        """Every claim's and every candidate's evidence is in `evidence` (T-047, T-54 (4)).
+
+        The prompt can show a candidate's evidence only as an alias of the task's evidence, and
+        the report's claims must rest on evidence the case carries.
+        """
         given = {ref.evidence_id for ref in self.evidence}
-        missing = [
+        claims = [
+            number
+            for number, claim in enumerate(self.claims, start=1)
+            if not set(claim.evidence_ids) <= given
+        ]
+        candidates = [
             number
             for number, candidate in enumerate(self.urgent_event_candidates, start=1)
             if candidate.evidence_id not in given
         ]
-        if missing:
-            raise ValueError(
-                f"urgent event candidates {', '.join(map(str, missing))} cite evidence that is "
-                "not in the task's evidence"
-            )
+        problems = [
+            f"{kind} {', '.join(map(str, numbers))} cite evidence that is not in the task's "
+            "evidence"
+            for kind, numbers in (("claims", claims), ("urgent event candidates", candidates))
+            if numbers
+        ]
+        if problems:
+            raise ValueError("; ".join(problems))
         return self
 
 
@@ -267,6 +282,25 @@ def check_log_text(ctx: RunContext[RunDeps], output: ReportingOutput) -> Reporti
                     "Turkish words; only structural fields (time, IP, user, event name) may be "
                     "repeated."
                 )
+    return output
+
+
+def check_summary_aliases(ctx: RunContext[RunDeps], output: ReportingOutput) -> ReportingOutput:
+    """Output validator: `summary_tr` names no evidence alias (decision T-54 (2)).
+
+    The operator reads the summary as plain Turkish, in the note and the e-mail, and cannot look
+    an alias such as `ev_c1` up. The output goes back to the model naming the aliases it wrote.
+    """
+    del ctx
+    found = list(
+        dict.fromkeys(match.group(0) for match in EVIDENCE_ALIAS.finditer(output.summary_tr))
+    )
+    if found:
+        raise ModelRetry(
+            f"Your summary_tr names evidence aliases ({', '.join(found)}). The operator cannot "
+            "look an alias up: write summary_tr without them. Evidence is cited only in a "
+            "recommendation's evidence_ids."
+        )
     return output
 
 
@@ -511,4 +545,5 @@ def build_reporting_agent(
     )
     agent.output_validator(check_candidates)
     agent.output_validator(check_log_text)
+    agent.output_validator(check_summary_aliases)
     return ReportingAgent(manifest=manifest, prompt=prompt, agent=agent)

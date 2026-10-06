@@ -1,26 +1,37 @@
-"""T-023 criterion 7: run Investigation once against the dev stack, without Temporal.
+"""T-023 criterion 7, T-048 criterion 8: run Investigation once against the dev stack, without
+Temporal.
 
 The target is the closed offense named by ``QRADAR_LAB_OFFENSE_ID``. The offense snapshot and
 its catalog context come from the same code the case workflow uses (the gateway offense source
 and ``build_enrichment``). The test records the agent run before the gateway can receive a call,
 gives the windows-dcsync draft directly (no router), and only uses read-profile tools. It reports
-the call/AQL/model measurements requested by T-023 and verifies the offense stayed closed and
-unchanged.
+the call/AQL/model measurements requested by T-023 and T-048 and verifies the offense stayed
+closed and unchanged.
+
+Since T-048 the run must complete (decision T-52): the runner withdraws the tools before the
+budget runs out, so a run that reaches its budget completes with a ``budget_exhausted`` data gap.
+The gateway must serve the T-048 profile, without the four catalog listings. The prompt writes
+START and STOP in the console's time zone (decision T-53), which this test does not know: it
+finds the offense's own events with each of ``CONSOLE_ZONES`` first and builds the agent with
+the zone that returns them.
 """
 
 import json
 import os
+import re
 import secrets
 from collections.abc import AsyncIterator, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import pytest
 import yaml
 from e2e_support import MODEL_REGISTRY, REPO_ROOT
 from pydantic import BaseModel, ConfigDict
+from pydantic_ai.messages import ModelRequest, ModelResponse, UserPromptPart
 from sqlalchemy import select
 
 from ais0c_activities import (
@@ -46,11 +57,13 @@ from ais0c_agents import (
     load_model_registry,
 )
 from ais0c_agents.gateway_http import HttpGatewayClient
+from ais0c_agents.runner import FINAL_ANSWER_PROMPT
 from ais0c_contracts import (
     AgentTask,
     Budget,
     CaseVerdict,
     Confidence,
+    DataGapReason,
     InvestigationResult,
     Level,
     OffenseSnapshot,
@@ -60,6 +73,7 @@ from ais0c_contracts import (
 )
 from ais0c_knowledge.skills import Skill, load_skills
 from ais0c_policy import new_nonce
+from ais0c_querylang import bound_query
 from ais0c_storage import create_engine, create_session_factory, create_sync_engine
 from ais0c_storage.migrate import upgrade
 from ais0c_storage.models import AgentRunRow, EvidenceRow, ToolCallRow
@@ -80,7 +94,16 @@ OFFENSE_PROFILE = "qradar-triage-read"
 DECLARED_WINDOW = timedelta(days=30)
 MIN_WINDOW = timedelta(minutes=1)
 CREATE_TOOL = "create_ariel_search"
+RESULTS_TOOL = "get_ariel_search_results"
 DELETE_TOOL = "delete_ariel_search"
+# Candidates for the console's time zone (S-13), and how the test finds the offense's events.
+CONSOLE_ZONES = ("Europe/Istanbul", "UTC")
+PROBE_LIMIT = 10
+ACCOUNT_PATTERN = re.compile(r"^[A-Za-z0-9._$-]{1,64}$")
+# The listings the T-048 profile no longer has (decision T-52).
+CATALOG_LISTINGS = frozenset(
+    {"list_rules", "list_log_sources", "list_log_source_types", "list_offense_types"}
+)
 SETUP_BUDGET = Budget(tokens=0, tool_calls=4, seconds=120)
 FORBIDDEN_TOOL_PARTS = ("note", "close", "write", "delete_offense")
 QRADAR_QUERY_REJECTION_TEXT = (
@@ -173,6 +196,10 @@ async def test_closed_dcsync_offense_is_investigated_once(
     case_id = f"case-{offense_id}"
     run_id = f"{case_id}-investigation-lab-{secrets.token_hex(4)}"
     manifest, registry = _config()
+    offered = {tool.id for tool in lab.investigate.tools}
+    assert not offered & CATALOG_LISTINGS, (
+        f"the gateway serves an older {INVESTIGATION_PROFILE}: {sorted(offered & CATALOG_LISTINGS)}"
+    )
     before = await _read_offense(sessions, lab, case_id, offense_id)
     assert before.status == "CLOSED", f"lab offense {offense_id} must be closed"
     source = GatewayOffenseSource(
@@ -182,6 +209,7 @@ async def test_closed_dcsync_offense_is_investigated_once(
     assert snapshot is not None, f"the offense source cannot read lab offense {offense_id}"
     async with sessions() as session:
         enrichment = await build_enrichment(session, snapshot, ioc_matcher=NoIocMatcher())
+    zone = await _console_zone(sessions, lab, case_id, snapshot)
     skill = _dcsync_skill()
     task = InvestigationTask(
         task=_agent_task(manifest, run_id, case_id, _window(snapshot)),
@@ -230,6 +258,7 @@ async def test_closed_dcsync_offense_is_investigated_once(
             gateway=lab.investigate_client,
             model=model,
             aql_rules_path=REPO_ROOT / "config/policies/qradar.yaml",
+            console_zone=ZoneInfo(zone),
         )
         run = await agent.run(task, run_id=run_id, nonce=new_nonce())
 
@@ -250,6 +279,7 @@ async def test_closed_dcsync_offense_is_investigated_once(
     )
     after = await _read_offense(sessions, lab, case_id, offense_id)
     report = _report(
+        zone,
         before,
         after,
         run,
@@ -270,24 +300,18 @@ async def test_closed_dcsync_offense_is_investigated_once(
     assert row.model_alias == "soc-reasoning"
     assert row.prompt_version == "investigation/v1"
     assert _state(before) == _state(after)
-    if run.status is RunStatus.BUDGET_EXHAUSTED:
-        # The manifest and draft skill carry starting budgets that T-030 will tune. Exhaustion
-        # is therefore a measured lab outcome, provided the runner stopped at that boundary.
-        assert run.result is None
-        assert run.error is not None
-        assert run.error.startswith("UsageLimitExceeded:")
-    else:
-        assert run.status is RunStatus.COMPLETED, run.error
-        assert isinstance(run.result, InvestigationResult)
-        recorded = {item.evidence_id for item in evidence}
-        cited = {
-            *(evidence_id for claim in run.result.claims for evidence_id in claim.evidence_ids),
-            *(evidence_id for item in run.result.timeline for evidence_id in item.evidence_ids),
-            *(item.evidence_id for item in run.result.urgent_event_candidates),
-        }
-        assert cited <= recorded, (
-            f"the model cited evidence the gateway did not record: {cited - recorded}"
-        )
+    # A run that reaches its budget completes too (T-048): the report says whether it did.
+    assert run.status is RunStatus.COMPLETED, run.error
+    assert isinstance(run.result, InvestigationResult)
+    recorded = {item.evidence_id for item in evidence}
+    cited = {
+        *(evidence_id for claim in run.result.claims for evidence_id in claim.evidence_ids),
+        *(evidence_id for item in run.result.timeline for evidence_id in item.evidence_ids),
+        *(item.evidence_id for item in run.result.urgent_event_candidates),
+    }
+    assert cited <= recorded, (
+        f"the model cited evidence the gateway did not record: {cited - recorded}"
+    )
 
 
 async def _read_offense(
@@ -317,6 +341,66 @@ def _first_row(result: ToolResult) -> dict[str, Any]:
     row = result.data[0] if result.data else {}
     assert isinstance(row, dict), result.model_dump(mode="json")
     return row
+
+
+async def _console_zone(
+    sessions: SessionFactory, lab: Lab, case_id: str, offense: OffenseSnapshot
+) -> str:
+    """The console's time zone: the first of CONSOLE_ZONES whose START/STOP finds the offense's
+    own events, in a recorded system run that deletes its searches."""
+    account = offense.offense_source
+    if not ACCOUNT_PATTERN.fullmatch(account):
+        pytest.fail(f"offense source {account!r} is not an AQL-safe account name")
+    window = _window(offense)
+    async with system_run(
+        sessions=sessions,
+        gateway=lab.investigate_client,
+        profile=lab.investigate,
+        agent_id="investigation",
+        case_id=case_id,
+        objective="Find the console's time zone for the T-048 lab run.",
+        window=window,
+        budget=Budget(tokens=0, tool_calls=4 * len(CONSOLE_ZONES), seconds=300),
+    ) as probe:
+        for zone in CONSOLE_ZONES:
+            query = bound_query(
+                f"SELECT username FROM events WHERE username = '{account}'",  # noqa: S608
+                window=window,
+                limit=PROBE_LIMIT,
+                tz=ZoneInfo(zone),
+            )
+            created = await probe.call(
+                CREATE_TOOL,
+                {"query_expression": query},
+                reason="Find the offense's events with START and STOP in one time zone.",
+                expected_evidence="The offense's events, if the zone is the console's.",
+            )
+            search_id = str(_first_row(created).get("search_id") or "")
+            try:
+                await probe.call(
+                    "get_ariel_search_status",
+                    {"search_id": search_id, "wait_seconds": 20},
+                    reason="Let the search finish.",
+                    expected_evidence="The search's status.",
+                )
+                results = await probe.call(
+                    RESULTS_TOOL,
+                    {"search_id": search_id, "limit": PROBE_LIMIT},
+                    reason="Read whether the zone found the events.",
+                    expected_evidence="The offense's events or none.",
+                )
+            finally:
+                await probe.send(
+                    DELETE_TOOL,
+                    {"search_id": search_id},
+                    reason="The search is not needed any more.",
+                    expected_evidence="Confirmation that the search was deleted.",
+                )
+            if results.data:
+                return zone
+    pytest.fail(
+        f"no zone of {', '.join(CONSOLE_ZONES)} finds the events of offense {offense.offense_id}"
+    )
 
 
 def _window(offense: OffenseSnapshot) -> TimeWindow:
@@ -464,6 +548,7 @@ async def _cleanup_searches(
 
 
 def _report(
+    zone: str,
     before: _Offense,
     after: _Offense,
     run: AgentRun[InvestigationResult],
@@ -497,8 +582,10 @@ def _report(
         and any(marker in call.deny_reason for marker in QRADAR_QUERY_REJECTION_TEXT)
     ]
     result = run.result
+    rows = {item.evidence_id: item.identifiers.get("rows") for item in evidence}
     return {
         "offense_id": before.id,
+        "console_zone": zone,
         "offense_state": _state(before),
         "offense_unchanged": _state(before) == _state(after),
         "run_id": row.run_id,
@@ -522,7 +609,32 @@ def _report(
             for call in quoted
         ],
         "double_quoted_field_json_broken": any(call.status.value == "error" for call in quoted),
+        "aql_queries": [
+            {
+                "query": call.intent.arguments.get("query_expression"),
+                "status": call.status.value,
+                "deny_reason": call.deny_reason,
+            }
+            for call in create_calls
+        ],
+        "result_rows": [
+            rows.get(call.evidence_id or "")
+            for call in calls
+            if call.intent.tool_id == RESULTS_TOOL
+        ],
         "ariel_searches_cleaned": searches_cleaned,
+        "model_requests": sum(isinstance(message, ModelResponse) for message in run.messages),
+        "tools_withdrawn": any(
+            isinstance(part, UserPromptPart) and part.content == FINAL_ANSWER_PROMPT
+            for message in run.messages
+            if isinstance(message, ModelRequest)
+            for part in message.parts
+        ),
+        "budget_exhausted_gap": result is not None
+        and any(gap.reason is DataGapReason.BUDGET_EXHAUSTED for gap in result.data_gaps),
+        "data_gaps": []
+        if result is None
+        else [gap.model_dump(mode="json") for gap in result.data_gaps],
         "tokens": run.usage.tokens,
         "agent_seconds": run.usage.seconds,
         "wall_clock_seconds": (ended - started).total_seconds(),

@@ -48,7 +48,7 @@ def test_manifest_has_the_required_values_and_loads_against_the_registry() -> No
     assert raw["toolset_profile"] == "qradar-investigate-read"
     assert raw["max_steps"] == 30
     assert raw["budgets"] == {
-        "tokens": 150000,
+        "tokens": 300000,
         "tool_calls": 24,
         "wall_clock_seconds": 300,
     }
@@ -84,6 +84,20 @@ def test_input_is_local_bounded_and_has_no_triage_rationale() -> None:
         )
     with pytest.raises(ValidationError, match="knowledge"):
         InvestigationTask.model_validate(task.model_dump() | {"knowledge": [runbook()] * 11})
+
+
+@pytest.mark.parametrize("skill_id", ["password-spraying", "vpn-new-country", "windows-dcsync"])
+def test_the_draft_skills_token_budget_fits_one_investigation(skill_id: str) -> None:
+    # T-048 criterion 2 (decision T-52): 250 000 tokens per skill, under the manifest's 300 000.
+    path = REPO_ROOT / "skills" / skill_id / "1.0.0" / "skill.yaml"
+    raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+    manifest = load_manifest(
+        INVESTIGATION_MANIFEST, load_model_registry(REPO_ROOT / MODEL_REGISTRY)
+    )
+
+    assert raw["status"] == "draft"
+    assert raw["budgets"]["tokens"] == 250000
+    assert raw["budgets"]["tokens"] < manifest.budgets.tokens == 300000
 
 
 def test_every_input_reaches_the_model_in_its_own_trust_layer() -> None:

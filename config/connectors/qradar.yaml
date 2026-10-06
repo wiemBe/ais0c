@@ -412,18 +412,17 @@ profiles:
       - {id: list_log_source_types, risk: read}
   qradar-investigate-read:
     server_profile: qradar-read
+    # No list_rules, list_log_sources, list_log_source_types or list_offense_types: the agent
+    # finds that catalog in its prompt (org_context), and their schemas cost tokens on every
+    # request (decision T-52).
     tools:
       - {id: get_offense, risk: read}
       - {id: list_offenses, risk: read}
-      - {id: list_offense_types, risk: read}
       - {id: list_source_addresses, risk: read}
       - {id: list_local_destination_addresses, risk: read}
-      - {id: list_rules, risk: read}
       - {id: get_rule, risk: read}
       - {id: list_assets, risk: read}
-      - {id: list_log_sources, risk: read}
       - {id: get_log_source, risk: read}
-      - {id: list_log_source_types, risk: read}
       - {id: create_ariel_search, risk: read, guard: aql}
       - {id: get_ariel_search_status, risk: read, only_own_searches: true}
       - {id: get_ariel_search_results, risk: read, max_rows: 500, only_own_searches: true}

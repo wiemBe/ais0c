@@ -8,7 +8,7 @@
 | `AIS0C_SLA_LOW_MINUTES` | 60 | Agent SLA for medium, low and unrated offenses |
 | `AIS0C_REEVALUATION_MINUTES` | 30 | An update that only brings more events is evaluated again once this long has passed since the last evaluation (D-31) |
 | `AIS0C_TRIAGE_RETRY_MINUTES` | 5 | Wait before a Triage run that the model's outage ended runs once more (D-33) |
-| `AIS0C_PLAN_TOKENS` | 250000 | Plan budget: tokens of all the steps of one evaluation's plan together (T-41) |
+| `AIS0C_PLAN_TOKENS` | 400000 | Plan budget: tokens of all the steps of one evaluation's plan together (T-41) |
 | `AIS0C_PLAN_TOOL_CALLS` | 40 | Plan budget: tool calls of all the steps together |
 | `AIS0C_PLAN_SECONDS` | 480 | Plan budget: wall-clock seconds of all the steps together |
 | `AIS0C_QA_SAMPLE_PERCENT` | 10 | Low and medium FP decisions sampled for operator review (S-10) |
@@ -52,7 +52,7 @@ class CaseSettings:
     sla_low: timedelta = timedelta(minutes=60)
     reevaluation_interval: timedelta = timedelta(minutes=30)
     triage_retry_delay: timedelta = timedelta(minutes=5)
-    plan_tokens: int = 250000
+    plan_tokens: int = 400000
     plan_tool_calls: int = 40
     plan_seconds: int = 480
     qa_sample_percent: int = 10

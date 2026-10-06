@@ -34,7 +34,7 @@ required_evidence:
 # Starting values; the skill's suite (T-030) measures them. One Ariel search takes at least four
 # tool calls (create, status, results, delete); the 14-day baseline needs two searches.
 budgets:
-  tokens: 120000
+  tokens: 250000
   tool_calls: 28
   wall_clock_seconds: 300
 output_schema: InvestigationResult

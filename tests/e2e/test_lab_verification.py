@@ -24,7 +24,8 @@ dev stack's gateway and the real `soc-verifier`, without Temporal, and the test 
 PR reports: which claim was contested, the re-fetch calls, the tokens and the duration.
 
 AQL's `START`/`STOP` literals are read in the lab console's own time zone, which this test does
-not know, so it tries `CONSOLE_ZONES` and keeps the query that returns rows.
+not know, so it tries `CONSOLE_ZONES` and keeps the query that returns rows. The agent is built
+with the zone that query found (T-048): its prompt writes START and STOP in it.
 
 Whether the model actually contested the refutable claim is a measurement, not an assertion: a
 dev model may read less than a prod one (D-39). The harness measures that (T-030); here the
@@ -48,7 +49,7 @@ import pytest
 import yaml
 from e2e_support import MODEL_REGISTRY, REPO_ROOT
 from pydantic import BaseModel, ConfigDict
-from pydantic_ai.messages import ModelResponse
+from pydantic_ai.messages import ModelRequest, ModelResponse, UserPromptPart
 from sqlalchemy import select
 
 from ais0c_activities import SessionFactory
@@ -69,12 +70,14 @@ from ais0c_agents import (
     load_model_registry,
 )
 from ais0c_agents.gateway_http import HttpGatewayClient
+from ais0c_agents.runner import FINAL_ANSWER_PROMPT
 from ais0c_contracts import (
     AgentTask,
     Budget,
     CaseVerdict,
     Claim,
     Confidence,
+    DataGapReason,
     EvidenceRef,
     Level,
     OffenseSnapshot,
@@ -245,7 +248,7 @@ async def test_a_lab_decision_is_checked_against_the_source(
 
     # The evidence: one Ariel query in the offense's window, in the verify profile.
     window = _query_window(before)
-    rows, ref = await _collect_evidence(sessions, lab, case_id, account, window)
+    rows, ref, zone = await _collect_evidence(sessions, lab, case_id, account, window)
     claims, absent = _claims(rows, account, ref.evidence_id)
     task = VerificationTask(
         task=_agent_task(manifest, run_id, case_id, window),
@@ -266,6 +269,7 @@ async def test_a_lab_decision_is_checked_against_the_source(
                 },
                 "claims": [{"text": item.claim.text, "critical": item.critical} for item in claims],
                 "refutable_claim_address": absent,
+                "console_zone": zone,
             },
             indent=2,
         )
@@ -297,6 +301,7 @@ async def test_a_lab_decision_is_checked_against_the_source(
             profiles={lab.verify.name: lab.verify},
             gateway=lab.verify_client,
             model=model,
+            console_zone=_zone(zone),
         )
         run = await agent.run(task, run_id=run_id, nonce=new_nonce())
     async with sessions.begin() as session:
@@ -424,12 +429,12 @@ async def _collect_evidence(
     case_id: str,
     account: str,
     window: TimeWindow,
-) -> tuple[list[dict[str, Any]], EvidenceRef]:
+) -> tuple[list[dict[str, Any]], EvidenceRef, str]:
     """One Ariel query in the offense's window, in a recorded system run.
 
-    Returns its rows and the `EvidenceRef` the gateway recorded for the result, so the claims
-    under review rest on evidence QRadar really returned. The console's time zone is unknown,
-    so each candidate zone is tried until a query returns rows.
+    Returns its rows, the `EvidenceRef` the gateway recorded for the result, so the claims
+    under review rest on evidence QRadar really returned, and the console's time zone. That
+    zone is unknown, so each candidate zone is tried until a query returns rows.
     """
     # The account comes from the lab's own scenario, but a value that could close the literal
     # is refused here rather than sent to QRadar.
@@ -445,7 +450,7 @@ async def _collect_evidence(
     for zone in CONSOLE_ZONES:
         rows, ref = await _search(sessions, lab, case_id, query, window, zone)
         if rows and ref is not None:
-            return rows, ref
+            return rows, ref, zone
         tried.append(zone)
     pytest.fail(
         f"the query for {account} returned no rows in {', '.join(tried)}; add the lab console's "
@@ -630,6 +635,7 @@ def _report(
 ) -> dict[str, Any]:
     """What the PR reports: the contested claim, the re-fetch calls, the tokens and the time."""
     result = run.result
+    rows = {item.evidence_id: item.identifiers.get("rows") for item in evidence}
     return {
         "offense_id": before.id,
         "offense_state": _state(before),
@@ -657,6 +663,29 @@ def _report(
             for call in calls
         ],
         "evidence_recorded": [item.evidence_id for item in evidence],
+        # T-048: the agent's own queries (decision T-53) and whether its budget ran out (T-52).
+        "aql_queries": [
+            {
+                "query": call.intent.arguments.get("query_expression"),
+                "status": call.status.value,
+                "deny_reason": call.deny_reason,
+            }
+            for call in calls
+            if call.intent.tool_id == "create_ariel_search"
+        ],
+        "result_rows": [
+            rows.get(call.evidence_id or "")
+            for call in calls
+            if call.intent.tool_id == "get_ariel_search_results"
+        ],
+        "tools_withdrawn": any(
+            isinstance(part, UserPromptPart) and part.content == FINAL_ANSWER_PROMPT
+            for message in run.messages
+            if isinstance(message, ModelRequest)
+            for part in message.parts
+        ),
+        "budget_exhausted_gap": result is not None
+        and any(gap.reason is DataGapReason.BUDGET_EXHAUSTED for gap in result.data_gaps),
         "model_requests": sum(isinstance(message, ModelResponse) for message in run.messages),
         "tokens": run.usage.tokens,
         "tool_calls": run.usage.tool_calls,

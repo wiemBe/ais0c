@@ -32,10 +32,11 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 from pydantic_ai import ModelRetry, RunContext
-from pydantic_ai.messages import UserPromptPart
+from pydantic_ai.messages import ModelMessage, ModelResponse, UserPromptPart
 from pydantic_ai.models import Model
+from pydantic_ai.models.function import AgentInfo
 from pydantic_ai.models.test import TestModel
-from pydantic_ai.usage import RunUsage
+from pydantic_ai.usage import RequestUsage, RunUsage
 
 from ais0c_agents import (
     AgentRun,
@@ -59,9 +60,10 @@ from ais0c_agents.reporting import (
     build_reporting_agent,
     check_candidates,
     check_log_text,
+    check_summary_aliases,
 )
 from ais0c_agents.reporting import SPEC as REPORTING_SPEC
-from ais0c_agents.runner import run_agent
+from ais0c_agents.runner import FINAL_ANSWER_PROMPT, run_agent
 from ais0c_contracts import (
     AgentTask,
     Budget,
@@ -1580,3 +1582,133 @@ def test_the_config_check_refuses_a_toolset_profile() -> None:
             prompt,
         )
     assert {"qradar-triage-read", "qradar-investigate-read"} <= set(PROFILES)
+
+
+# --- T-048: the summary's aliases, the task's claims, an agent without tools -------------------
+
+
+@pytest.mark.parametrize(
+    "alias", ["ev_c1", "ev_12", "ev_none", "EV_C2"], ids=["context", "tool", "none", "upper case"]
+)
+def test_a_summary_that_names_an_evidence_alias_is_sent_back(alias: str) -> None:
+    output = ReportingOutput.model_validate(
+        reporting_output(summary_tr=f"svc_backup_7731 icin 412 basarisiz giris ({alias}).")
+    )
+
+    with pytest.raises(ModelRetry) as raised:
+        check_summary_aliases(_ctx(), output)
+
+    assert f"({alias})" in str(raised.value)
+    assert "write summary_tr without them" in str(raised.value)
+
+
+@pytest.mark.parametrize(
+    "summary",
+    [SUMMARY_TR, "prev_1 ve dev_none bir alias degil.", "ev_x ve level_2 de degil."],
+    ids=["plain", "inside a word", "not an alias"],
+)
+def test_a_summary_without_an_alias_is_accepted(summary: str) -> None:
+    output = ReportingOutput.model_validate(reporting_output(summary_tr=summary))
+
+    assert check_summary_aliases(_ctx(), output) is output
+
+
+def test_an_alias_in_the_summary_is_corrected_in_the_run() -> None:
+    script = ScriptedModel(
+        answer(reporting_output(summary_tr="412 basarisiz giris goruldu (ev_c1, ev_none).")),
+        answer(reporting_output()),
+    )
+
+    run = run_reporting(_agent(script.model))
+
+    [retry] = retry_prompts(run.messages)
+    assert "names evidence aliases (ev_c1, ev_none)" in retry.model_response()
+    assert run.status is RunStatus.COMPLETED
+    assert run.result is not None
+    assert run.result.summary_tr == SUMMARY_TR
+
+
+def test_the_prompt_says_the_summary_names_no_alias() -> None:
+    text = _agent(TestModel()).render_instructions(reporting_task(), nonce=NONCE)
+
+    assert "`summary_tr` names no evidence alias such as `ev_c1` or `ev_none`" in text
+
+
+def test_a_claim_whose_evidence_is_not_in_the_task_is_refused() -> None:
+    stray = Claim(text="Baska bir kanit.", evidence_ids=["ev_0199a1b2c3d47e8f9a0b1c2d3e4f5a6f"])
+
+    with pytest.raises(ValidationError, match="claims 2 cite evidence that is not in the task"):
+        reporting_task(claims=[VERIFIED_CLAIM, stray])
+    with pytest.raises(ValidationError, match="claims 1 cite evidence"):
+        reporting_task(candidates=[], evidence=[])
+    assert reporting_task(claims=[VERIFIED_CLAIM]).claims == [VERIFIED_CLAIM]
+
+
+def test_a_task_names_both_its_claims_and_its_candidates_without_evidence() -> None:
+    with pytest.raises(ValidationError) as raised:
+        reporting_task(evidence=[])
+
+    assert "claims 1 cite evidence" in str(raised.value)
+    assert "urgent event candidates 1 cite evidence" in str(raised.value)
+
+
+@pytest.mark.parametrize("excerpts", [1, 3], ids=["fewer", "more"])
+def test_run_deps_refuse_excerpts_that_do_not_match_the_evidence(excerpts: int) -> None:
+    with pytest.raises(ValidationError, match=f"context_excerpts holds {excerpts} excerpts for 2"):
+        RunDeps(
+            run_id=REPORTING_RUN_ID,
+            case_id="case-4711",
+            hunt_id=None,
+            time_window=TimeWindow(start=START, end=END),
+            nonce=NONCE,
+            context_evidence=CONTEXT_EVIDENCE,
+            context_excerpts=("excerpt",) * excerpts,
+        )
+
+
+def test_run_deps_take_no_excerpts_or_one_per_evidence() -> None:
+    def deps(excerpts: tuple[str, ...]) -> RunDeps:
+        return RunDeps(
+            run_id=REPORTING_RUN_ID,
+            case_id="case-4711",
+            hunt_id=None,
+            time_window=TimeWindow(start=START, end=END),
+            nonce=NONCE,
+            context_evidence=CONTEXT_EVIDENCE,
+            context_excerpts=excerpts,
+        )
+
+    assert deps(()).context_excerpts == ()
+    assert deps(("a", "")).context_excerpts == ("a", "")
+
+
+def test_reporting_is_not_touched_by_the_final_answer_rule() -> None:
+    # Reporting has no tools: a schema retry near the token budget neither withdraws anything
+    # nor tells the model its budget is used up, and the report gets no budget data gap.
+    def costing(
+        step: Callable[[list[ModelMessage], AgentInfo], ModelResponse],
+    ) -> Callable[[list[ModelMessage], AgentInfo], ModelResponse]:
+        def respond(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+            response = step(messages, info)
+            response.usage = RequestUsage(input_tokens=25000)
+            return response
+
+        return respond
+
+    script = ScriptedModel(
+        costing(answer(reporting_output(recommendations="not a list"))),
+        costing(answer(reporting_output())),
+    )
+
+    run = run_reporting(_agent(script.model))
+
+    assert run.status is RunStatus.COMPLETED, run.error
+    assert len(script.requests) == 2
+    assert all(not info.function_tools for _, info in script.requests)
+    assert all(
+        FINAL_ANSWER_PROMPT not in text
+        for messages, info in script.requests
+        for text in model_inputs(messages, info)
+    )
+    assert run.result is not None
+    assert run.result.data_gaps == []

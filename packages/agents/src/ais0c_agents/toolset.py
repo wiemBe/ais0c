@@ -160,6 +160,16 @@ class RunDeps(BaseModel):
     output validator checks that every urgent event names one of them, once. The default keeps
     runs that never set it valid."""
 
+    @model_validator(mode="after")
+    def _excerpts_match_the_evidence(self) -> Self:
+        """`context_excerpts` is empty or holds one excerpt per context evidence (T-54 (3))."""
+        if self.context_excerpts and len(self.context_excerpts) != len(self.context_evidence):
+            raise ValueError(
+                f"context_excerpts holds {len(self.context_excerpts)} excerpts for "
+                f"{len(self.context_evidence)} context evidence; give one per evidence or none"
+            )
+        return self
+
 
 class GatewayCallRecord(BaseModel):
     """Kept in the tool return's metadata, which the model never sees."""

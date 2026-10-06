@@ -40,7 +40,7 @@ required_evidence:
 # Starting values; the skill's suite (T-030) measures them. One Ariel search takes at least four
 # tool calls (create, status, results, delete); critical and high offenses have a 10 minute SLA.
 budgets:
-  tokens: 120000
+  tokens: 250000
   tool_calls: 24
   wall_clock_seconds: 300
 output_schema: InvestigationResult

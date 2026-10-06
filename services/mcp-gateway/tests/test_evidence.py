@@ -46,11 +46,11 @@ def intake_read(harness: Harness) -> dict[str, Any]:
 
 async def test_every_call_is_recorded_and_ok_calls_have_evidence(harness: Harness) -> None:
     run = await harness.start_run(AGENT_RUN, profile=INVESTIGATE)
-    harness.fake.responses["list_rules"] = lambda arguments: RuntimeError("QRadar request failed")
+    harness.fake.responses["list_assets"] = lambda arguments: RuntimeError("QRadar request failed")
     calls = [
         ("get_offense", {"offense_id": 1001}),  # ok
         ("list_reference_sets", {}),  # denied: not in the profile
-        ("list_rules", {}),  # error: the server fails
+        ("list_assets", {}),  # error: the server fails
         ("get_rule", {"rule_id": 100234}),  # ok
     ]
 
