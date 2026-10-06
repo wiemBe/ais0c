@@ -261,7 +261,7 @@ def response(tokens: int) -> ModelResponse:
     return ModelResponse(parts=[], usage=RequestUsage(input_tokens=tokens))
 
 
-def test_the_rule_reads_the_last_request_and_both_budgets() -> None:
+def test_the_rule_reads_the_last_request_and_all_three_budgets() -> None:
     limits = UsageLimits(total_tokens_limit=10000, tool_calls_limit=5)
 
     def spent(total: int, last: int, tool_calls: int = 0) -> bool:
@@ -275,3 +275,22 @@ def test_the_rule_reads_the_last_request_and_both_budgets() -> None:
     assert not spent(total=100, last=100, tool_calls=4)
     assert not budget_spent(RunUsage(input_tokens=10**9), UsageLimits(total_tokens_limit=None), [])
     assert not budget_spent(RunUsage(), None, [])
+
+    requests = UsageLimits(request_limit=3)
+    assert not budget_spent(RunUsage(requests=1), requests, [])
+    assert budget_spent(RunUsage(requests=2), requests, [])
+
+
+def test_with_one_model_request_left_the_run_returns_a_budget_gap() -> None:
+    script = ScriptedModel(
+        call("get_offense", offense_id=4711),
+        answer(triage_output(alias(1))),
+    )
+
+    run = run_triage(build(script, gateway(), triage_manifest(max_steps=2)))
+
+    assert run.status is RunStatus.COMPLETED
+    assert [bool(tools) for tools in offered_tools(script)] == [True, False]
+    assert told_to_answer(script) == [False, True]
+    assert run.result is not None
+    assert run.result.data_gaps == [budget_gap("triage")]

@@ -205,7 +205,7 @@ def test_settings_default_to_the_architecture_values() -> None:
     assert settings.max_concurrent_cases == 10
     # D-31 and T-014.
     assert settings.reevaluation_interval == timedelta(minutes=30)
-    assert settings.triage_retry_delay == timedelta(minutes=5)
+    assert settings.agent_retry_delay == timedelta(minutes=5)
 
 
 def test_settings_come_from_the_environment() -> None:
@@ -216,7 +216,7 @@ def test_settings_come_from_the_environment() -> None:
             "AIS0C_SLA_HIGH_MINUTES": "5",
             "AIS0C_SLA_LOW_MINUTES": "30",
             "AIS0C_REEVALUATION_MINUTES": "45",
-            "AIS0C_TRIAGE_RETRY_MINUTES": "2",
+            "AIS0C_AGENT_RETRY_MINUTES": "2",
         }
     )
 
@@ -226,7 +226,7 @@ def test_settings_come_from_the_environment() -> None:
         sla_high=timedelta(minutes=5),
         sla_low=timedelta(minutes=30),
         reevaluation_interval=timedelta(minutes=45),
-        triage_retry_delay=timedelta(minutes=2),
+        agent_retry_delay=timedelta(minutes=2),
     )
 
 
@@ -239,7 +239,7 @@ def test_settings_come_from_the_environment() -> None:
         "AIS0C_SLA_HIGH_MINUTES",
         "AIS0C_SLA_LOW_MINUTES",
         "AIS0C_REEVALUATION_MINUTES",
-        "AIS0C_TRIAGE_RETRY_MINUTES",
+        "AIS0C_AGENT_RETRY_MINUTES",
     ],
 )
 def test_invalid_settings_are_rejected(name: str, value: str) -> None:
@@ -255,7 +255,7 @@ def test_settings_reject_impossible_values() -> None:
     with pytest.raises(ValueError, match="re-evaluation interval"):
         CaseSettings(reevaluation_interval=timedelta(0))
     with pytest.raises(ValueError, match="retry delay"):
-        CaseSettings(triage_retry_delay=timedelta(seconds=-1))
+        CaseSettings(agent_retry_delay=timedelta(seconds=-1))
 
 
 @pytest.mark.parametrize(

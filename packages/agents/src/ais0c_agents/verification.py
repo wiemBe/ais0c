@@ -18,8 +18,8 @@ What reaches the model, each part in its trust layer (architecture §22):
 - the evidence of the claims as `ev_c<n>` blocks (decision T-38);
 - the plan step's objective, Orchestrator text, in an `agent.objective` block (decisions T-48,
   T-54); the user prompt is the platform's fixed RUN_PROMPT;
-- the task's window as AQL parts ready to copy, START and STOP in the QRadar console's time
-  zone, widened as far as the profile's 2-hour AQL window allows (decision T-53).
+- the task's window as copy-ready epoch-millisecond START/STOP parts, each within the profile's
+  2-hour AQL window (decision T-55).
 
 Code decides one thing before the model runs: a claim that cites evidence this case does not
 carry does not go to the model. The code puts it in the result as a disagreement with the reason
@@ -35,7 +35,6 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import timedelta
 from typing import Annotated, Final
-from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic_ai import Agent, AgentRetries, ModelRetry, RunContext
@@ -45,7 +44,7 @@ from pydantic_ai.models import Model
 from ais0c_agents.builder import AgentSpec, check_agent_config, create_agent
 from ais0c_agents.evidence import context_alias, render_context_evidence
 from ais0c_agents.gateway import GatewayClient
-from ais0c_agents.investigation import CONSOLE_ZONE, render_time_window
+from ais0c_agents.investigation import render_time_window
 from ais0c_agents.manifest import AgentManifest
 from ais0c_agents.prompts import PromptTemplate, wrap_json_lines
 from ais0c_agents.runner import AgentRun, prompt_tool_budget, run_agent, usage_limits
@@ -243,8 +242,6 @@ class VerificationAgent:
     prompt: PromptTemplate
     profile: ToolsetProfile
     agent: Agent[RunDeps, VerificationOutput]
-    console_zone: ZoneInfo = CONSOLE_ZONE
-    """The QRadar console's time zone, in which the prompt writes START and STOP (T-53)."""
     max_query_window: timedelta = MAX_QUERY_WINDOW
     """How far apart START and STOP may be in one query of the agent's profile."""
 
@@ -275,7 +272,6 @@ class VerificationAgent:
                 "evidence": render_context_evidence(task.evidence, nonce=nonce) or NO_EVIDENCE,
                 "time_window": render_time_window(
                     task.task.time_window,
-                    self.console_zone,
                     limit=EXAMPLE_LIMIT,
                     max_span=self.max_query_window,
                 ),
@@ -425,7 +421,6 @@ def build_verification_agent(
     gateway: GatewayClient,
     model: Model,
     capabilities: Sequence[AbstractCapability[RunDeps]] = (),
-    console_zone: ZoneInfo = CONSOLE_ZONE,
     max_query_window: timedelta = MAX_QUERY_WINDOW,
 ) -> VerificationAgent:
     """Build the agent once, outside any workflow (TemporalDurability requires it).
@@ -437,9 +432,8 @@ def build_verification_agent(
     describe a verification agent, its prompt, shared rules or profile is not the one given, or
     the prompt does not take this agent's inputs.
 
-    `console_zone` is the QRadar console's time zone and `max_query_window` the profile's longest
-    AQL window: the prompt writes the task's START and STOP in that zone, widened by at most an
-    hour on each side and never further apart than that window allows (decision T-53).
+    `max_query_window` is the profile's longest AQL window. Longer task windows are rendered as
+    consecutive epoch-millisecond bounds that each fit that limit (decision T-55).
     """
     profile = check_agent_config(SPEC, manifest, prompt, profiles)
     agent = create_agent(
@@ -456,7 +450,6 @@ def build_verification_agent(
         prompt=prompt,
         profile=profile,
         agent=agent,
-        console_zone=console_zone,
         max_query_window=max_query_window,
     )
 

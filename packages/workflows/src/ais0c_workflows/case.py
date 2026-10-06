@@ -53,6 +53,7 @@ from temporalio.exceptions import (
 from ais0c_workflows._activity import SOURCE_TIMEOUT, call
 from ais0c_workflows.agent import AgentOutcome, AgentRequest
 from ais0c_workflows.names import (
+    AGENT_RETRY_DELAY,
     AGENT_WORKFLOW,
     CANDIDATE_SKILLS,
     CASE_STATE,
@@ -70,7 +71,6 @@ from ais0c_workflows.names import (
     RECORD_PLAN,
     REEVALUATION_INTERVAL,
     START_EVALUATION,
-    TRIAGE_RETRY_DELAY,
     TRIAGE_WORKFLOW,
     agent_workflow_id,
     triage_workflow_id,
@@ -287,7 +287,7 @@ class CaseWorkflow:
         """The wait before an update with only more events is evaluated: the re-evaluation
         interval, or the retry wait while the case has no AI decision (T-30 (2))."""
         name = (
-            TRIAGE_RETRY_DELAY
+            AGENT_RETRY_DELAY
             if self._status is CaseStatus.NO_AI_DECISION
             else REEVALUATION_INTERVAL
         )
@@ -650,7 +650,7 @@ class CaseWorkflow:
             return None
 
     async def _retry_wait(self, run_id: str, failure: str) -> None:
-        delay = await call(TRIAGE_RETRY_DELAY, result_type=timedelta)
+        delay = await call(AGENT_RETRY_DELAY, result_type=timedelta)
         workflow.logger.warning("agent run %s is retried in %s: %s", run_id, delay, failure)
         await workflow.sleep(delay, summary="agent retry")
 

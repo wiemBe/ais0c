@@ -51,6 +51,7 @@ from ais0c_workflows.agent_runtime import (
 )
 from ais0c_workflows.names import (
     ADMIT_OFFENSES,
+    AGENT_RETRY_DELAY,
     AGENT_WORKFLOW,
     BEGIN_TRIAGE_RUN,
     CANDIDATE_SKILLS,
@@ -73,7 +74,6 @@ from ais0c_workflows.names import (
     REEVALUATION_INTERVAL,
     START_CASE,
     START_EVALUATION,
-    TRIAGE_RETRY_DELAY,
     TRIAGE_WORKFLOW,
 )
 
@@ -598,7 +598,7 @@ class CaseFakes:
             self.enrich_offense,
             self.start_evaluation,
             self.scripted_triage,
-            self.triage_retry_delay,
+            self.agent_retry_delay,
             self.record_decision,
             self.mark_no_ai_decision,
             self.close_case,
@@ -630,8 +630,8 @@ class CaseFakes:
     async def reevaluation_interval(self) -> timedelta:
         return self.interval
 
-    @activity.defn(name=TRIAGE_RETRY_DELAY)
-    async def triage_retry_delay(self) -> timedelta:
+    @activity.defn(name=AGENT_RETRY_DELAY)
+    async def agent_retry_delay(self) -> timedelta:
         await self.events.add("retry")
         return self.retry_delay
 

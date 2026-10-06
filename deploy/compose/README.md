@@ -117,7 +117,9 @@ Dizinler `0700`, dosyalar `0644` izinlidir: Konteynerler dosyaları başka kulla
      uv run alembic -c packages/storage/alembic.ini upgrade head
    ```
 
-Bu makinede çalışan worker gateway'e `AIS0C_GATEWAY_URL=http://127.0.0.1:8090` ve `AIS0C_WORKER_SECRETS_DIR=deploy/compose/secrets/agents` ile bağlanır. Action Executor yalnızca `deploy/compose/secrets/executor` dizinini alır; not token'ı hiçbir ajan worker'ına verilmez. Gateway de bu profili yalnızca `action-executor` sahte ajanının çalışmalarına açar.
+Bu makinede çalışan worker gateway'e `AIS0C_GATEWAY_URL=http://127.0.0.1:8090` ve `AIS0C_WORKER_SECRETS_DIR=deploy/compose/secrets/agents` ile bağlanır. Ariel sorgularının `START`/`STOP` sınırları saat diliminden bağımsız epoch milisaniye olarak üretilir (T-55).
+
+Action Executor yalnızca `deploy/compose/secrets/executor` dizinini alır; not token'ı hiçbir ajan worker'ına verilmez. Gateway de bu profili yalnızca `action-executor` sahte ajanının çalışmalarına açar.
 
 ### Batch worker (katalog senkronu)
 

@@ -110,11 +110,13 @@ DOC: dict[str, Table] = {
     "qa_items": table(
         "id uuid",
         "case_id text",
+        "evaluation_no int",
         "reason text",
         "status text",
         "resolved_by text?",
         "resolved_at timestamptz?",
         pk=("id",),
+        unique=(("case_id", "evaluation_no", "reason"),),
         fk=CASES_FK,
     ),
     "operator_feedback": table(
@@ -143,6 +145,7 @@ DOC: dict[str, Table] = {
         "status text?",
         "task jsonb",
         "result jsonb?",
+        "error text?",
         "tokens int",
         "tool_calls int",
         "skill jsonb?",

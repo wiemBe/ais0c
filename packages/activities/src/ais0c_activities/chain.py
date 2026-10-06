@@ -147,7 +147,9 @@ class ChainActivities:
         self, offense: OffenseSnapshot, enrichment: EnrichmentContext
     ) -> list[tuple[str, SkillRef, Budget]]:
         """The router's candidates of each plan agent: (agent, skill, the skill's budget)."""
-        return candidates(self._skills, offense, enrichment, now=self._clock())
+        return candidates(
+            self._skills, offense, enrichment, now=self._clock(), mode=self._skills_mode
+        )
 
     @activity.defn(name=PLAN_BUDGETS)
     async def plan_budgets(self) -> tuple[Budget, dict[str, Budget]]:
@@ -327,4 +329,5 @@ class ChainActivities:
                 tokens=usage.tokens,
                 tool_calls=usage.tool_calls,
                 ended_at=self._clock(),
+                error=error,
             )

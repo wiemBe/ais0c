@@ -12,7 +12,6 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Annotated, Final
-from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 from pydantic_ai import Agent, AgentRetries, ModelRetry, RunContext
@@ -94,15 +93,8 @@ NO_CONTEXT_EVIDENCE: Final = "Triage handed over no context evidence."
 NO_KNOWLEDGE: Final = "No external knowledge is available for this offense."
 RUN_PROMPT: Final = "Investigate the case described in the instructions and return the result."
 EPOCH: Final = datetime(1970, 1, 1, tzinfo=UTC)
-MINUTE: Final = timedelta(minutes=1)
 MILLISECOND: Final = timedelta(milliseconds=1)
-CONSOLE_ZONE: Final = ZoneInfo("Europe/Istanbul")
-"""The default QRadar console time zone (S-13); the agent builders take another."""
-WINDOW_MARGIN: Final = timedelta(hours=1)
-"""How far START and STOP reach past the window on each side: a clock change or a skewed clock
-still falls inside, and `starttime` keeps the exact bound (decision T-53)."""
-AQL_TIME_FORMAT: Final = "%Y-%m-%d %H:%M"
-"""START/STOP as 'yyyy-MM-dd HH:mm', a format the AQL Guard and QRadar accept."""
+MAX_WINDOW_PARTS: Final = 6
 EXAMPLE_USERNAME: Final = "svc_example"
 EXAMPLE_LIMIT: Final = 100
 
@@ -247,108 +239,95 @@ def render_triage_claims(task: InvestigationTask, *, nonce: str) -> str:
 
 @dataclass(frozen=True)
 class AqlWindow:
-    """A time window as the two AQL parts a model copies into a query (decision T-53)."""
+    """One epoch-millisecond AQL time bound a model copies whole (decision T-55)."""
 
-    starttime: str
-    """`starttime BETWEEN <start ms> AND <end ms>`: the exact bound, for WHERE."""
     start_stop: str
-    """`START '<yyyy-MM-dd HH:mm>' STOP '<yyyy-MM-dd HH:mm>'` in the console's time zone."""
+    """`START <epoch ms> STOP <epoch ms>`, independent of a console time zone."""
     span: timedelta
-    """How far apart START and STOP are as written, which is what the AQL Guard measures."""
+    """How far apart START and STOP are."""
 
 
 def aql_window(
     window: TimeWindow,
-    console_zone: ZoneInfo,
-    *,
-    margin: timedelta = WINDOW_MARGIN,
-    max_span: timedelta | None = None,
 ) -> AqlWindow:
-    """The window as AQL parts, START and STOP widened by `margin` on each side.
+    """Render a window as one exact epoch-millisecond START/STOP part."""
 
-    QRadar reads START and STOP in its console's time zone and selects the data to scan with
-    them, so they are written in `console_zone`, the start rounded down and the stop up to the
-    minute; `starttime` in epoch milliseconds bounds the events exactly. With `max_span` (a
-    profile's longest AQL window) the margin shrinks a minute at a time until START and STOP
-    fit, down to none; a window longer than `max_span` stays longer.
-    """
-
-    start_ms = (window.start - EPOCH) // MILLISECOND
-    end_ms = -((EPOCH - window.end) // MILLISECOND)
-    minutes = margin // MINUTE
-    start, stop = _start_stop(window, console_zone, minutes * MINUTE)
-    while max_span is not None and stop - start > max_span and minutes > 0:
-        minutes -= 1
-        start, stop = _start_stop(window, console_zone, minutes * MINUTE)
+    start_ms = _epoch_milliseconds(window.start)
+    end_ms = _epoch_milliseconds(window.end, round_up=True)
     return AqlWindow(
-        starttime=f"starttime BETWEEN {start_ms} AND {end_ms}",
-        start_stop=f"START '{start:{AQL_TIME_FORMAT}}' STOP '{stop:{AQL_TIME_FORMAT}}'",
-        span=stop - start,
+        start_stop=f"START {start_ms} STOP {end_ms}",
+        span=timedelta(milliseconds=end_ms - start_ms),
     )
 
 
 def example_query(window: AqlWindow, *, limit: int) -> str:
-    """An Ariel query that uses `window`'s parts as they are, for a prompt."""
+    """An Ariel query that uses `window`'s time bound as-is, for a prompt."""
 
     # Prompt text built from platform constants and the window's numbers, never from input.
     return (
         "SELECT DATEFORMAT(starttime, 'yyyy-MM-dd HH:mm:ss') AS event_time, username, sourceip, "  # noqa: S608
-        f"qid FROM events WHERE username = '{EXAMPLE_USERNAME}' AND {window.starttime} "
+        f"qid FROM events WHERE username = '{EXAMPLE_USERNAME}' "
         f"LIMIT {limit} {window.start_stop}"
     )
 
 
 def render_time_window(
     window: TimeWindow,
-    console_zone: ZoneInfo,
     *,
     limit: int = EXAMPLE_LIMIT,
     max_span: timedelta | None = None,
 ) -> str:
-    """A task's window for the prompt: UTC, the two AQL parts and an example query (T-53).
+    """Render the window in UTC for reading and as copy-ready epoch bounds (decision T-55).
 
-    `max_span` is the profile's longest AQL window (aql_window). When START and STOP do not fit
-    in it even without a margin, the example gives way to how to query a part of the window.
+    The bounds are split to the profile limit and capped at MAX_WINDOW_PARTS parts.
     """
 
-    parts = aql_window(window, console_zone, max_span=max_span)
-    lines = [
-        f"UTC: {_utc(window.start)} to {_utc(window.end)}",
-        f"QRadar console time zone: {console_zone.key}",
-        f"WHERE part: {parts.starttime}",
-        f"START/STOP part: {parts.start_stop}",
-    ]
-    if max_span is not None and parts.span > max_span:
-        lines.append(
-            f"These START and STOP are more than {_hours(max_span)} apart, longer than one query "
-            f"may cover. Query at most {_hours(max_span)} at a time: change only the date and "
-            "time inside their quotes, which are console time already, and do not convert them."
-        )
+    parts, omitted = _aql_windows(window, max_span=max_span)
+    lines = [f"Window in UTC, for reading only: {_utc(window.start)} to {_utc(window.end)}"]
+    if len(parts) == 1:
+        lines.append("Ready AQL time bound (copy this exact complete part after LIMIT):")
     else:
-        lines.append(f"Example: {example_query(parts, limit=limit)}")
+        lines.append("Ready AQL time bounds (copy one exact complete part after LIMIT):")
+    lines.extend(
+        part.start_stop if len(parts) == 1 else f"{index}. {part.start_stop}"
+        for index, part in enumerate(parts, start=1)
+    )
+    if omitted:
+        lines.append(
+            f"Only the first {MAX_WINDOW_PARTS} consecutive parts are shown; the rest is omitted."
+        )
+    lines.append(f"Example: {example_query(parts[0], limit=limit)}")
     return "\n".join(lines)
 
 
-def _hours(span: timedelta) -> str:
-    hours = span / timedelta(hours=1)
-    return f"{hours:g} hour" if hours == 1 else f"{hours:g} hours"
+def _aql_windows(
+    window: TimeWindow, *, max_span: timedelta | None
+) -> tuple[tuple[AqlWindow, ...], bool]:
+    """Return at most six consecutive bounds; say whether later bounds were omitted."""
 
-
-def _start_stop(
-    window: TimeWindow, console_zone: ZoneInfo, margin: timedelta
-) -> tuple[datetime, datetime]:
-    """START and STOP as the console reads them: naive times in its time zone."""
-
-    start = (window.start - margin).astimezone(console_zone).replace(tzinfo=None)
-    stop = (window.end + margin).astimezone(console_zone).replace(tzinfo=None)
-    start = start.replace(second=0, microsecond=0)
-    if stop.second or stop.microsecond:
-        stop = stop.replace(second=0, microsecond=0) + MINUTE
-    return start, stop
+    if max_span is None or window.end - window.start <= max_span:
+        return (aql_window(window),), False
+    parts: list[AqlWindow] = []
+    start = window.start
+    while start < window.end and len(parts) < MAX_WINDOW_PARTS:
+        end = min(start + max_span, window.end)
+        parts.append(aql_window(TimeWindow(start=start, end=end)))
+        start = end
+    return tuple(parts), start < window.end
 
 
 def _utc(moment: datetime) -> str:
     return moment.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _epoch_milliseconds(moment: datetime, *, round_up: bool = False) -> int:
+    """Convert an aware datetime to epoch milliseconds, optionally rounding upward."""
+
+    delta = moment.astimezone(UTC) - EPOCH
+    milliseconds = delta // MILLISECOND
+    if round_up and EPOCH + milliseconds * MILLISECOND < moment.astimezone(UTC):
+        milliseconds += 1
+    return milliseconds
 
 
 def _wrapped_rows(rows: Sequence[JsonValue], *, source: str, nonce: str, empty: str) -> str:
@@ -362,8 +341,6 @@ class InvestigationAgent:
     profile: ToolsetProfile
     aql_rules: AqlRules
     agent: Agent[RunDeps, InvestigationOutput]
-    console_zone: ZoneInfo = CONSOLE_ZONE
-    """The QRadar console's time zone, in which the prompt writes START and STOP (T-53)."""
 
     def render_instructions(self, task: InvestigationTask, *, nonce: str, tool_budget: int) -> str:
         """Render one run without the policy-only floor level or group ID."""
@@ -411,7 +388,9 @@ class InvestigationAgent:
                     or NO_CONTEXT_EVIDENCE
                 ),
                 "knowledge": knowledge or NO_KNOWLEDGE,
-                "time_window": render_time_window(task.task.time_window, self.console_zone),
+                "time_window": render_time_window(
+                    task.task.time_window, max_span=self.aql_rules.aql.max_window
+                ),
                 "skill": render_skill(task.skill),
                 "tools": ", ".join(tool.id for tool in self.profile.tools),
                 "tool_budget": str(tool_budget),
@@ -479,13 +458,8 @@ def build_investigation_agent(
     model: Model,
     aql_rules_path: Path,
     capabilities: Sequence[AbstractCapability[RunDeps]] = (),
-    console_zone: ZoneInfo = CONSOLE_ZONE,
 ) -> InvestigationAgent:
-    """Build the agent once, outside workflows, with only its manifest profile.
-
-    `console_zone` is the QRadar console's time zone: the prompt writes the window's START and
-    STOP in it, ready for the model to copy (decision T-53).
-    """
+    """Build the agent once, outside workflows, with only its manifest profile."""
 
     profile = check_agent_config(SPEC, manifest, prompt, profiles)
     aql_rules = load_aql_rules(aql_rules_path, profile=profile.name)
@@ -504,5 +478,4 @@ def build_investigation_agent(
         profile=profile,
         aql_rules=aql_rules,
         agent=agent,
-        console_zone=console_zone,
     )

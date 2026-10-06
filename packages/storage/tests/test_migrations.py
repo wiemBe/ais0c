@@ -65,7 +65,7 @@ def test_upgrade_head_then_downgrade_base(server: Server, empty_database: str) -
     upgraded = alembic("upgrade", "head", url=url)
     assert upgraded.returncode == 0, upgraded.stderr
     current = alembic("current", url=url)
-    assert "0007 (head)" in current.stdout
+    assert "0008 (head)" in current.stdout
     objects = public_objects(url)
     assert set(Base.metadata.tables) <= objects["relations"]
     assert objects["functions"] == {"audit_log_append_only"}
@@ -160,6 +160,70 @@ def test_offline_mode_prints_the_sql(server: Server, empty_database: str) -> Non
     assert "UPDATE notes_written SET status='disabled'" in printed.stdout
     assert "CREATE TABLE notification_routes" in printed.stdout
     assert "NULLS NOT DISTINCT" in printed.stdout
+    assert "ADD COLUMN evaluation_no INTEGER" in printed.stdout
+    assert "ADD COLUMN error TEXT" in printed.stdout
+
+
+def test_revision_0008_backfills_qa_evaluation_and_keeps_data_on_downgrade(
+    server: Server, empty_database: str
+) -> None:
+    url = server.app_url(empty_database)
+    first = alembic("upgrade", "0007", url=url)
+    assert first.returncode == 0, first.stderr
+    engine = create_sync_engine(url)
+    try:
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "INSERT INTO cases (case_id, source, offense_id, status, evaluation_no,"
+                    " sla_due_at, workflow_id, run_id) VALUES ('case-8', 'offense', 8, 'decided',"
+                    " 3, now(), 'case-8', 'case-run-8')"
+                )
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO qa_items (id, case_id, reason, status) VALUES"
+                    " (gen_random_uuid(), 'case-8', 'low_confidence', 'open'),"
+                    " (gen_random_uuid(), 'case-8', 'low_confidence', 'open')"
+                )
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO agent_runs (run_id, case_id, agent_id, agent_version,"
+                    " prompt_version, model_alias, model_target, toolset_profile, task, tokens,"
+                    " tool_calls, started_at) VALUES ('case-8-triage-3', 'case-8', 'triage',"
+                    " '1', 'v1', 'soc-fast', 'lab-model', 'qradar-triage-read', '{}', 0, 0, now())"
+                )
+            )
+
+        upgraded = alembic("upgrade", "head", url=url)
+        assert upgraded.returncode == 0, upgraded.stderr
+        with engine.connect() as connection:
+            assert connection.scalar(text("SELECT evaluation_no FROM qa_items")) == 3
+            assert connection.scalar(text("SELECT count(*) FROM qa_items")) == 1
+            assert connection.scalar(text("SELECT error FROM agent_runs")) is None
+        with pytest.raises(IntegrityError):
+            with engine.begin() as connection:
+                connection.execute(
+                    text(
+                        "INSERT INTO qa_items (id, case_id, evaluation_no, reason, status) VALUES"
+                        " (gen_random_uuid(), 'case-8', 3, 'low_confidence', 'open')"
+                    )
+                )
+
+        downgraded = alembic("downgrade", "0007", url=url)
+        assert downgraded.returncode == 0, downgraded.stderr
+        with engine.connect() as connection:
+            assert connection.scalar(text("SELECT count(*) FROM qa_items")) == 1
+            assert connection.scalar(text("SELECT count(*) FROM agent_runs")) == 1
+            qa_columns = {column["name"] for column in inspect(connection).get_columns("qa_items")}
+            run_columns = {
+                column["name"] for column in inspect(connection).get_columns("agent_runs")
+            }
+        assert "evaluation_no" not in qa_columns
+        assert "error" not in run_columns
+    finally:
+        engine.dispose()
 
 
 # The recipient rows as revision 0006 holds them: the three groups T-020 knew about, plus one an

@@ -1,6 +1,6 @@
 """Acceptance criterion 4: candidate_skills is deterministic, looks at the offense's rule IDs,
-log source types and ATT&CK techniques, and returns only approved, unexpired skills that allow
-the agent's role, as SkillRefs in a fixed order.
+log source types and ATT&CK techniques, and returns unexpired skills allowed by the mode and
+agent role, as SkillRefs in a fixed order.
 
 The log source types and techniques come from the offense's Analysis Catalog entries in its
 EnrichmentContext (decision T-26)."""
@@ -14,6 +14,7 @@ import pytest
 from ais0c_contracts import EnrichmentContext, SkillRef
 from ais0c_knowledge.skills import (
     AgentRole,
+    Mode,
     SkillRegistry,
     candidate_skills,
     load_skill,
@@ -78,6 +79,7 @@ def candidates(
     catalog: EnrichmentContext = CATALOG,
     role: AgentRole = "investigation",
     now: datetime = NOW,
+    mode: Mode = "prod",
 ) -> list[str]:
     refs = candidate_skills(
         registry,
@@ -85,6 +87,7 @@ def candidates(
         catalog,
         agent_role=role,
         now=now,
+        mode=mode,
     )
     return [ref.skill_id for ref in refs]
 
@@ -171,11 +174,12 @@ def test_candidates_are_skill_refs_with_the_content_hash(registry: SkillRegistry
 # --- what is never offered -----------------------------------------------------------------
 
 
-def test_a_draft_is_never_a_candidate(tmp_path: Path) -> None:
+def test_the_same_draft_is_a_candidate_in_dev_but_not_prod(tmp_path: Path) -> None:
     write_skill(tmp_path, manifest_data(id="draft-skill", triggers=triggers(rule_ids=[RULE])))
     registry = load_skills(tmp_path, mode="dev")
     assert len(registry) == 1
     assert candidates(registry, rule_ids=[RULE]) == []
+    assert candidates(registry, rule_ids=[RULE], mode="dev") == ["draft-skill"]
 
 
 def test_an_expired_skill_is_not_a_candidate(tmp_path: Path) -> None:

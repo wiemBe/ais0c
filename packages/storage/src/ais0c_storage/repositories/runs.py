@@ -19,6 +19,8 @@ from ais0c_storage.repositories._common import (
     update_one,
 )
 
+MAX_ERROR_LENGTH = 2000
+
 
 async def start_agent_run(
     session: AsyncSession,
@@ -61,6 +63,7 @@ async def start_agent_run(
         status=None,
         task=task,
         result=None,
+        error=None,
         tokens=0,
         tool_calls=0,
         skill=skill,
@@ -80,10 +83,12 @@ async def finish_agent_run(
     tokens: int,
     tool_calls: int,
     ended_at: datetime,
+    error: str | None = None,
 ) -> AgentRunRow:
     """Store how the run ended. `result` is the agent's output model, if it produced one; its
     `status` must be the run's status.
 
+    `error` is the failure or budget exhaustion reason and is truncated to 2000 characters.
     Calling it again overwrites the outcome, so a retried activity is harmless.
     """
     if result is not None:
@@ -96,6 +101,7 @@ async def finish_agent_run(
         .values(
             status=status,
             result=result,
+            error=None if error is None else error[:MAX_ERROR_LENGTH],
             tokens=tokens,
             tool_calls=tool_calls,
             ended_at=ended_at,

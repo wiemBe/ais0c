@@ -71,6 +71,18 @@ async def test_an_allowed_query_reaches_qradar_unchanged(harness: Harness) -> No
     assert harness.fake.tool_calls("create_ariel_search") == [{"query_expression": ALLOWED}]
 
 
+async def test_epoch_millisecond_bounds_reach_qradar_unchanged(harness: Harness) -> None:
+    query = (
+        "SELECT sourceip, qid FROM events WHERE username = 'svc_backup_7731' "
+        "LIMIT 50 START 1791057600000 STOP 1791061200000"
+    )
+
+    status, reason = await create(harness, INVESTIGATE, query)
+
+    assert (status, reason) == (ToolStatus.OK, None)
+    assert harness.fake.tool_calls("create_ariel_search") == [{"query_expression": query}]
+
+
 async def test_the_guard_applies_the_profile_rules(harness: Harness) -> None:
     # Two hours is within the verify profile's limit; three are not.
     allowed = "SELECT qid FROM events WHERE username = 'svc' LIMIT 10 LAST 2 HOURS"

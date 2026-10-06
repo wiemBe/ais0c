@@ -75,15 +75,15 @@ def claim(number: int, *evidence: int) -> Claim:
     return Claim(text=f"Claim {number}.", evidence_ids=[f"ev_{n}" for n in evidence])
 
 
-def ref(number: int) -> EvidenceRef:
+def ref(number: int, *, window: TimeWindow = WINDOW) -> EvidenceRef:
     return EvidenceRef.model_validate(
         {
             "evidence_id": f"ev_{number}",
             "source": "qradar",
             "query_hash": "sha256:5d41402abc4b2a76",
             "query_text": "SELECT username FROM events",
-            "time_start": WINDOW.start,
-            "time_end": WINDOW.end,
+            "time_start": window.start,
+            "time_end": window.end,
             "identifiers": {"qid": "5000849"},
             "excerpt": f"Event {number}",
             "retrieved_at": NOW,
@@ -251,6 +251,43 @@ def test_verification_keeps_to_its_claim_limit() -> None:
     built = verification_task(task("verification"), Inputs(claims=claims), [ref(1)])
 
     assert len(built.claims) == 20
+
+
+def test_verification_unions_and_clips_the_claims_evidence_windows() -> None:
+    first = TimeWindow(
+        start=WINDOW.start - timedelta(hours=1), end=WINDOW.start + timedelta(minutes=20)
+    )
+    second = TimeWindow(
+        start=WINDOW.end - timedelta(minutes=30), end=WINDOW.end + timedelta(hours=1)
+    )
+
+    built = verification_task(
+        task("verification"),
+        Inputs(claims=(claim(1, 1), claim(2, 2))),
+        [ref(1, window=first), ref(2, window=second)],
+    )
+
+    assert built.task.time_window == WINDOW
+
+
+def test_verification_uses_the_evidence_window_when_it_is_inside_the_case() -> None:
+    evidence_window = TimeWindow(
+        start=WINDOW.start + timedelta(minutes=15), end=WINDOW.end - timedelta(minutes=20)
+    )
+
+    built = verification_task(
+        task("verification"), Inputs(claims=(claim(1, 1),)), [ref(1, window=evidence_window)]
+    )
+
+    assert built.task.time_window == evidence_window
+
+
+def test_verification_uses_the_case_window_when_claim_evidence_has_no_window() -> None:
+    built = verification_task(
+        task("verification"), Inputs(claims=(claim(1, 1), claim(2, 9))), [ref(1)]
+    )
+
+    assert built.task.time_window == WINDOW
 
 
 def test_reporting_gets_the_decision_claims_candidates_and_their_evidence() -> None:

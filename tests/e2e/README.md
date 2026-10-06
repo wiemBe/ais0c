@@ -11,7 +11,7 @@ Test `@pytest.mark.lab` ile işaretlidir. `QRADAR_LAB_URL` ve `QRADAR_LAB_TOKEN`
 3. Bu makinede üç süreç başlatır:
    - **qradar-mcp fork'u** (`--profile qradar-read`): QRadar token'ı yalnızca bu süreçtedir.
    - **MCP Policy Gateway** (`python -m ais0c_mcp_gateway`): araçlı ajanların profilleri açıktır: `qradar-triage-read`, `qradar-investigate-read`, `qradar-verify-read`.
-   - **Case worker** (`python -m ais0c_worker`): intake Schedule'ını kurar, ajanları `TemporalDurability` ile çalıştırır. Skill'ler `AIS0C_SKILLS_MODE=dev` ile yüklenir; repodaki skill'ler taslak olduğu için router hiçbirini aday göstermez.
+   - **Case worker** (`python -m ais0c_worker`): intake Schedule'ını kurar, ajanları `TemporalDurability` ile çalıştırır. Skill'ler `AIS0C_SKILLS_MODE=dev` ile yüklenir; dev router repodaki taslakları da aday gösterebilir.
 
    Token'lar her çalıştırmada rastgele üretilir ve pytest'in geçici dizinine yazılır.
 4. Schedule'ı bir kez tetikleyerek devreye alır, ardından T-008'in `s2-dcsync` senaryosunu lab QRadar'a syslog (TCP) ile gönderir.

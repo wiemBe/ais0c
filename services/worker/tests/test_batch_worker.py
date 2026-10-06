@@ -338,9 +338,7 @@ def test_the_command_line_names_the_worker_and_reports_a_bad_start_up(
     secrets_dir: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """Criterion 1 and 3: no command is the case worker, whose first missing setting is the model
-    registry's; `batch` builds the batch runtime, which needs none, and stops with what the
-    gateway serves."""
+    """No command names the case worker; `batch` selects the separate batch worker."""
     worker_environ = environ(database_url, gateway, secrets_dir)
 
     assert main([], worker_environ) == EXIT_CONFIG_ERROR

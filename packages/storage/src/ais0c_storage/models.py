@@ -175,9 +175,12 @@ class CaseRow(Base):
 
 class QAItemRow(Base):
     __tablename__ = "qa_items"
+    # One reason per evaluation (T-57).
+    __table_args__ = (UniqueConstraint("case_id", "evaluation_no", "reason"),)
 
     id: Mapped[uuid.UUID] = _uuid_pk()
     case_id: Mapped[str] = mapped_column(ForeignKey("cases.case_id"), index=True)
+    evaluation_no: Mapped[int]
     reason: Mapped[QAReason] = mapped_column(EnumText(QAReason))
     status: Mapped[QAStatus] = mapped_column(EnumText(QAStatus))
     resolved_by: Mapped[str | None]
@@ -217,6 +220,7 @@ class AgentRunRow(Base):
     status: Mapped[RunStatus | None] = mapped_column(EnumText(RunStatus))
     task: Mapped[AgentTask] = mapped_column(ContractJSONB(AgentTask))
     result: Mapped[AgentRunResult | None] = mapped_column(ContractJSONB(AGENT_RUN_RESULT))
+    error: Mapped[str | None]
     tokens: Mapped[int]
     tool_calls: Mapped[int]
     skill: Mapped[SkillRef | None] = mapped_column(ContractJSONB(SkillRef))

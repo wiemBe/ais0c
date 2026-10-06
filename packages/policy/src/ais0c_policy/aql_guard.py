@@ -19,7 +19,7 @@ import hashlib
 import re
 from collections.abc import Iterable
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from typing import Annotated, Literal
 
@@ -74,8 +74,8 @@ class AqlProfile(BaseModel):
 class QueryWindow(BaseModel):
     """The time window a query covers.
 
-    `start` and `stop` are the START/STOP values as written. QRadar reads them in its own
-    time zone, which the guard does not know, so they carry no time zone.
+    Numeric START/STOP values are epoch milliseconds and therefore UTC-aware. Text values keep
+    their historical naive representation because QRadar supplies their interpretation.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -318,6 +318,7 @@ _LAST_UNITS = {
 # Larger LAST counts overflow timedelta (at most 999999999 days) and exceed any profile.
 _MAX_LAST_DIGITS = 9
 _MAX_LIMIT_DIGITS = 18
+_MIN_EPOCH_MILLIS_DIGITS = 13
 # START/STOP formats QRadar documents, except the ones with a time zone suffix.
 _START_STOP_FORMATS = (
     "%Y-%m-%d %H:%M",
@@ -411,6 +412,8 @@ def _start_stop_window(tokens: list[_Token], index: int) -> QueryWindow | AqlRej
     stop = _at(tokens, index + 3)
     if start is None or stop is None or stop_keyword is None or not stop_keyword.is_word("STOP"):
         return AqlRejectReason.TIME_BOUND_INVALID
+    if start.kind is not stop.kind or start.kind not in {_Kind.STRING, _Kind.NUMBER}:
+        return AqlRejectReason.TIME_BOUND_INVALID
     start_time = _parse_time(start)
     stop_time = _parse_time(stop)
     if start_time is None or stop_time is None or stop_time <= start_time:
@@ -421,6 +424,16 @@ def _start_stop_window(tokens: list[_Token], index: int) -> QueryWindow | AqlRej
 
 
 def _parse_time(token: _Token) -> datetime | None:
+    if token.kind is _Kind.NUMBER:
+        if not token.text.isdigit() or len(token.text) < _MIN_EPOCH_MILLIS_DIGITS:
+            return None
+        milliseconds = int(token.text)
+        if milliseconds <= 0:
+            return None
+        try:
+            return datetime(1970, 1, 1, tzinfo=UTC) + timedelta(milliseconds=milliseconds)
+        except OverflowError:
+            return None
     if token.kind is not _Kind.STRING:
         return None  # PARSEDATETIME(...) and other expressions cannot be checked
     value = token.text[1:-1]

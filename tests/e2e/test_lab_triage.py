@@ -188,7 +188,7 @@ async def test_a_lab_offense_is_triaged_end_to_end(
         "AIS0C_MODEL_REGISTRY": MODEL_REGISTRY,
         "LITELLM_BASE_URL": settings.litellm_base_url,
         "LITELLM_API_KEY": settings.litellm_api_key,
-        # The repository's skills are drafts; the router lists none of them either way.
+        # Dev deliberately exposes draft skills to the planner (T-58).
         "AIS0C_SKILLS_MODE": "dev",
     }
     workers: list[Process] = []

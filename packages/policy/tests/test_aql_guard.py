@@ -5,7 +5,7 @@
 
 import hashlib
 from collections.abc import Iterable
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from pydantic import ValidationError
@@ -74,6 +74,22 @@ def test_start_stop_window_is_computed(start: str, stop: str) -> None:
     assert result.window.start == datetime(2026, 9, 1, 10, 0)  # noqa: DTZ001
     assert result.window.stop == datetime(2026, 9, 3, 10, 30)  # noqa: DTZ001
     assert result.window.duration == timedelta(days=2, minutes=30)
+
+
+def test_epoch_millisecond_start_stop_is_utc_aware() -> None:
+    query = (
+        "SELECT * FROM events WHERE sourceip = '192.0.2.10' "
+        "LIMIT 50 START 1791208620000 STOP 1791215940000"
+    )
+
+    result = check(query)
+
+    assert result.allowed, result.reasons
+    assert result.window is not None
+    assert result.window.clause == "start_stop"
+    assert result.window.start == datetime(2026, 10, 5, 13, 57, tzinfo=UTC)
+    assert result.window.stop == datetime(2026, 10, 5, 15, 59, tzinfo=UTC)
+    assert result.window.duration == timedelta(hours=2, minutes=2)
 
 
 @pytest.mark.parametrize(
@@ -154,6 +170,12 @@ def test_rejects_limit_after_time_bound(time_clause: str, literal: str) -> None:
     assert rejected_for(query) == (R.LIMIT_AFTER_TIME_BOUND,)
 
 
+def test_rejects_limit_after_epoch_time_bound() -> None:
+    query = "SELECT * FROM events START 1791208620000 STOP 1791215940000 LIMIT 10"
+
+    assert rejected_for(query) == (R.LIMIT_AFTER_TIME_BOUND,)
+
+
 @pytest.mark.parametrize(
     "time_clause",
     ["LAST 5 MINUTES", "START '2026-09-01 00:00' STOP '2026-09-01 01:00'"],
@@ -186,6 +208,14 @@ def test_limit_after_time_bound_is_reported_with_other_limit_reasons() -> None:
 )
 def test_rejects_window_wider_than_profile(time_clause: str) -> None:
     query = f"SELECT * FROM events WHERE username = 'a' LIMIT 10 {time_clause}"
+    assert rejected_for(query) == (R.WINDOW_EXCEEDS_PROFILE,)
+
+
+def test_rejects_epoch_window_wider_than_profile() -> None:
+    query = (
+        "SELECT * FROM events WHERE username = 'a' LIMIT 10 START 1791208620000 STOP 1791903420001"
+    )
+
     assert rejected_for(query) == (R.WINDOW_EXCEEDS_PROFILE,)
 
 
@@ -367,6 +397,25 @@ def test_limit_and_time_bound_inside_parentheses_do_not_count() -> None:
 )
 def test_rejects_invalid_time_bound(time_clause: str) -> None:
     query = f"SELECT * FROM events WHERE username = 'a' LIMIT 10 {time_clause}"
+    assert rejected_for(query) == (R.TIME_BOUND_INVALID,)
+
+
+@pytest.mark.parametrize(
+    "time_clause",
+    [
+        "START 1791208620 STOP 1791215940",  # seconds, not milliseconds
+        "START -1791208620000 STOP 1791215940000",
+        "START 0000000000000 STOP 1791215940000",
+        "START 1791208620000.5 STOP 1791215940000",
+        "START 1791208620000 STOP 1791208620000",
+        "START 1791215940000 STOP 1791208620000",
+        "START '2026-10-05 13:57' STOP 1791215940000",
+        "START 1791208620000 STOP '2026-10-05 16:59'",
+    ],
+)
+def test_rejects_invalid_epoch_time_bound(time_clause: str) -> None:
+    query = f"SELECT * FROM events WHERE username = 'a' LIMIT 10 {time_clause}"
+
     assert rejected_for(query) == (R.TIME_BOUND_INVALID,)
 
 

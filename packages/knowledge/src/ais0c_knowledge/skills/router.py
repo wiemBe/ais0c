@@ -8,7 +8,7 @@ chosen skill's role, status, version and budget (T-026).
 from datetime import datetime
 
 from ais0c_contracts import EnrichmentContext, OffenseSnapshot, SkillRef
-from ais0c_knowledge.skills.loader import SkillRegistry
+from ais0c_knowledge.skills.loader import Mode, SkillRegistry
 from ais0c_knowledge.skills.manifest import AgentRole
 
 
@@ -19,17 +19,18 @@ def candidate_skills(
     *,
     agent_role: AgentRole,
     now: datetime,
+    mode: Mode = "prod",
 ) -> list[SkillRef]:
     """The skills an agent in `agent_role` may use on `offense`, sorted by skill ID.
 
-    A skill is a candidate when the latest approved version of it
+    A skill is a candidate when its latest version allowed by `mode`
     - allows `agent_role`,
     - has not expired at `now`, and
     - has a trigger the offense matches: one of the offense's rule IDs, the type of one of its
       log sources, or one of its ATT&CK techniques. Each kind of trigger is enough on its own.
 
-    Drafts are never candidates. A newer approved version replaces every older one, so when it
-    cannot be used the skill is left out rather than falling back to an older version.
+    Drafts are candidates only in dev. A newer eligible version replaces every older one, so
+    when it cannot be used the skill is left out rather than falling back to an older version.
 
     The log source types and ATT&CK techniques come from the offense's Analysis Catalog entries
     in `enrichment`: the `type_name` of its log sources and the `attack_techniques` of its
@@ -56,8 +57,8 @@ def candidate_skills(
     )
     return [
         skill.ref
-        for skill in registry.latest_approved()
-        if skill.usable_by(agent_role, now)
+        for skill in registry.latest(mode=mode)
+        if skill.usable_by(agent_role, now, mode=mode)
         and skill.manifest.triggers.matches(
             rule_ids=rule_ids, log_source_types=types, attack_techniques=techniques
         )

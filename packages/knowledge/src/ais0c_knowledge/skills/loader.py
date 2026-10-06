@@ -15,7 +15,7 @@ Loading one skill:
 
 In mode "prod" drafts are not loaded: their manifest is validated, since the status is read
 from it, and nothing else. Mode "dev" loads them so the harness can evaluate them before
-approval. The router never offers a draft in either mode.
+approval and the router can offer them (T-58).
 """
 
 import hashlib
@@ -66,11 +66,11 @@ class Skill:
             content_hash=self.content_hash,
         )
 
-    def usable_by(self, agent_role: AgentRole, now: datetime) -> bool:
-        """Whether the skill is approved, not expired at `now` and allowed for `agent_role`."""
+    def usable_by(self, agent_role: AgentRole, now: datetime, *, mode: Mode = "prod") -> bool:
+        """Whether the skill's status, expiry and role allow it in `mode`."""
         manifest = self.manifest
         return (
-            manifest.status == "approved"
+            (manifest.status == "approved" or mode == "dev")
             and not manifest.is_expired(now)
             and agent_role in manifest.allowed_agent_roles
         )
@@ -121,6 +121,15 @@ class SkillRegistry:
         for skill in self._skills:
             if skill.manifest.status == "approved":
                 latest[skill.manifest.id] = skill
+        return list(latest.values())
+
+    def latest(self, *, mode: Mode) -> list[Skill]:
+        """The latest loaded version of each skill allowed by `mode`, sorted by skill ID."""
+        if mode == "prod":
+            return self.latest_approved()
+        latest: dict[str, Skill] = {}
+        for skill in self._skills:
+            latest[skill.manifest.id] = skill
         return list(latest.values())
 
 

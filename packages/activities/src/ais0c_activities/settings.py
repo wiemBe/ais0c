@@ -7,7 +7,7 @@
 | `AIS0C_SLA_HIGH_MINUTES` | 10 | Agent SLA for critical and high offenses |
 | `AIS0C_SLA_LOW_MINUTES` | 60 | Agent SLA for medium, low and unrated offenses |
 | `AIS0C_REEVALUATION_MINUTES` | 30 | An update that only brings more events is evaluated again once this long has passed since the last evaluation (D-31) |
-| `AIS0C_TRIAGE_RETRY_MINUTES` | 5 | Wait before a Triage run that the model's outage ended runs once more (D-33) |
+| `AIS0C_AGENT_RETRY_MINUTES` | 5 | Wait before an agent run that the model's outage ended runs once more (D-33) |
 | `AIS0C_PLAN_TOKENS` | 400000 | Plan budget: tokens of all the steps of one evaluation's plan together (T-41) |
 | `AIS0C_PLAN_TOOL_CALLS` | 40 | Plan budget: tool calls of all the steps together |
 | `AIS0C_PLAN_SECONDS` | 480 | Plan budget: wall-clock seconds of all the steps together |
@@ -36,7 +36,7 @@ GROUP_FULL_ANALYSES_PER_HOUR_ENV: Final = "AIS0C_GROUP_FULL_ANALYSES_PER_HOUR"
 SLA_HIGH_MINUTES_ENV: Final = "AIS0C_SLA_HIGH_MINUTES"
 SLA_LOW_MINUTES_ENV: Final = "AIS0C_SLA_LOW_MINUTES"
 REEVALUATION_MINUTES_ENV: Final = "AIS0C_REEVALUATION_MINUTES"
-TRIAGE_RETRY_MINUTES_ENV: Final = "AIS0C_TRIAGE_RETRY_MINUTES"
+AGENT_RETRY_MINUTES_ENV: Final = "AIS0C_AGENT_RETRY_MINUTES"
 PLAN_TOKENS_ENV: Final = "AIS0C_PLAN_TOKENS"
 PLAN_TOOL_CALLS_ENV: Final = "AIS0C_PLAN_TOOL_CALLS"
 PLAN_SECONDS_ENV: Final = "AIS0C_PLAN_SECONDS"
@@ -51,7 +51,7 @@ class CaseSettings:
     sla_high: timedelta = timedelta(minutes=10)
     sla_low: timedelta = timedelta(minutes=60)
     reevaluation_interval: timedelta = timedelta(minutes=30)
-    triage_retry_delay: timedelta = timedelta(minutes=5)
+    agent_retry_delay: timedelta = timedelta(minutes=5)
     plan_tokens: int = 400000
     plan_tool_calls: int = 40
     plan_seconds: int = 480
@@ -65,9 +65,9 @@ class CaseSettings:
             raise ValueError("group_full_analyses_per_hour must be at least 1")
         if self.sla_high <= timedelta(0) or self.sla_low <= timedelta(0):
             raise ValueError("SLA durations must be positive")
-        if self.reevaluation_interval <= timedelta(0) or self.triage_retry_delay <= timedelta(0):
+        if self.reevaluation_interval <= timedelta(0) or self.agent_retry_delay <= timedelta(0):
             raise ValueError(
-                "the re-evaluation interval and the triage retry delay must be positive"
+                "the re-evaluation interval and the agent retry delay must be positive"
             )
         if min(self.plan_tokens, self.plan_tool_calls, self.plan_seconds) < 1:
             raise ValueError("the plan budget must be positive")
@@ -109,9 +109,9 @@ class CaseSettings:
                     env, REEVALUATION_MINUTES_ENV, _minutes(defaults.reevaluation_interval)
                 )
             ),
-            triage_retry_delay=timedelta(
+            agent_retry_delay=timedelta(
                 minutes=_positive_int(
-                    env, TRIAGE_RETRY_MINUTES_ENV, _minutes(defaults.triage_retry_delay)
+                    env, AGENT_RETRY_MINUTES_ENV, _minutes(defaults.agent_retry_delay)
                 )
             ),
             plan_tokens=_positive_int(env, PLAN_TOKENS_ENV, defaults.plan_tokens),

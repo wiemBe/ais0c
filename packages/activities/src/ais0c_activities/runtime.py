@@ -114,6 +114,7 @@ async def load_case_runtime(environ: Mapping[str, str] | None = None) -> CaseRun
     missing or invalid setting, file, token or skill rather than run with less.
     """
     env = os.environ if environ is None else environ
+    settings = _configured(lambda: CaseSettings.from_env(env))
     root = Path(env.get(ROOT_ENV, ".") or ".")
     registry_path = root / _required(env, MODEL_REGISTRY_ENV)
     registry = load_model_registry(registry_path)
@@ -217,7 +218,7 @@ async def load_case_runtime(environ: Mapping[str, str] | None = None) -> CaseRun
             model_release=triage.release,
         ),
         chain=chain,
-        settings=CaseSettings.from_env(env),
+        settings=settings,
         model_releases=releases,
         engine=engine,
     )

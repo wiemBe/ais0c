@@ -28,11 +28,14 @@ def candidates(
     enrichment: EnrichmentContext,
     *,
     now: datetime,
+    mode: Mode,
 ) -> list[tuple[str, SkillRef, Budget]]:
     """The router's candidates of every plan agent: (agent, skill, the skill's budget)."""
     listed: list[tuple[str, SkillRef, Budget]] = []
     for role in PLAN_AGENT_ROLES:
-        for ref in candidate_skills(registry, offense, enrichment, agent_role=role, now=now):
+        for ref in candidate_skills(
+            registry, offense, enrichment, agent_role=role, now=now, mode=mode
+        ):
             skill = registry.get(ref.skill_id, ref.version)
             if skill is not None:  # always: the router lists skills of this registry
                 listed.append((role, ref, skill_budget(skill)))

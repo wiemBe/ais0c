@@ -7,8 +7,8 @@ and the gateway policy.
 
 - `load_skills(root, mode=...)` loads and checks every skill: manifest, layout, content hash,
   injection scan. Mode "prod" leaves drafts out.
-- `candidate_skills(...)` is the deterministic router: the approved, unexpired skills an agent
-  role may use on an offense.
+- `candidate_skills(...)` is the deterministic router: approved skills in prod, and approved
+  or draft skills in dev, when unexpired and allowed for an agent role (T-58).
 - `python -m ais0c_knowledge.skills hash <dir>` prints the content hash an approver records.
 """
 

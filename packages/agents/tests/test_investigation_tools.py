@@ -63,7 +63,7 @@ def test_model_sees_exactly_the_profile_and_no_write_tool() -> None:
     )
     assert "get_ariel_search_status with wait_seconds" in text
     assert "Keep only one search active" in text
-    assert "the START/STOP part goes after LIMIT" in text
+    assert "START <ms> STOP <ms>" in text
     assert "UTF8(payload)" in text
     assert "Budget: at most 22 tool calls." in text
 

@@ -7,7 +7,7 @@ TriageWorkflow and AgentWorkflow; their activities are in `ais0c_activities.tria
 out or triage gives no decision. `close_case` ends the case when the offense is closed in QRadar.
 
 An update of the offense is fetched and recorded (`record_offense_update`) whether or not it is
-evaluated again (D-31). `reevaluation_interval` and `triage_retry_delay` hand the workflow its
+evaluated again (D-31). `reevaluation_interval` and `agent_retry_delay` hand the workflow its
 settings, which it may not read itself.
 """
 
@@ -22,6 +22,7 @@ from ais0c_activities.db import SessionFactory
 from ais0c_activities.enrichment import IocMatcher, NoIocMatcher, build_enrichment
 from ais0c_activities.levels import at_least, max_level
 from ais0c_activities.names import (
+    AGENT_RETRY_DELAY,
     CLOSE_CASE,
     ENRICH_OFFENSE,
     FETCH_OFFENSE,
@@ -30,7 +31,6 @@ from ais0c_activities.names import (
     RECORD_OFFENSE_UPDATE,
     REEVALUATION_INTERVAL,
     START_EVALUATION,
-    TRIAGE_RETRY_DELAY,
 )
 from ais0c_activities.offense_source import OffenseSource
 from ais0c_activities.qa import sample_applies, sampled
@@ -103,7 +103,7 @@ class CaseActivities:
             self.reevaluation_interval,
             self.enrich_offense,
             self.start_evaluation,
-            self.triage_retry_delay,
+            self.agent_retry_delay,
             self.record_decision,
             self.mark_no_ai_decision,
             self.close_case,
@@ -144,11 +144,11 @@ class CaseActivities:
         again (D-31)."""
         return self._settings.reevaluation_interval
 
-    @activity.defn(name=TRIAGE_RETRY_DELAY)
-    async def triage_retry_delay(self) -> timedelta:
+    @activity.defn(name=AGENT_RETRY_DELAY)
+    async def agent_retry_delay(self) -> timedelta:
         """How long to wait before a Triage run that the model's outage ended runs once more
         (D-33)."""
-        return self._settings.triage_retry_delay
+        return self._settings.agent_retry_delay
 
     @activity.defn(name=ENRICH_OFFENSE)
     async def enrich_offense(self, offense: OffenseSnapshot) -> EnrichmentContext:
@@ -261,7 +261,7 @@ class CaseActivities:
                 await replace_recommendations(
                     session, case_id, evaluation_no, report.recommendations
                 )
-            await add_qa_items(session, case_id, reasons)
+            await add_qa_items(session, case_id, evaluation_no, reasons)
         return level
 
     async def _sample_percent(self, session: AsyncSession, rule_ids: list[int]) -> int:

@@ -283,4 +283,5 @@ class TriageRunActivities:
                 tokens=usage.tokens,
                 tool_calls=usage.tool_calls,
                 ended_at=self._clock(),
+                error=error,
             )

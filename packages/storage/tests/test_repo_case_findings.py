@@ -3,6 +3,7 @@ and 7)."""
 
 import pytest
 import storage_payloads as payloads
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from storage_payloads import CASE_ID, T1
 
@@ -37,16 +38,31 @@ async def case(session: AsyncSession) -> None:
 async def test_qa_items_open_one_per_reason(session: AsyncSession) -> None:
     reasons = [QAReason.LOW_CONFIDENCE, QAReason.VERIFIER_CONFLICT, QAReason.LOW_CONFIDENCE]
 
-    added = await add_qa_items(session, CASE_ID, reasons)
+    added = await add_qa_items(session, CASE_ID, 1, reasons)
 
-    assert [(row.reason, row.status) for row in added] == [
-        (QAReason.LOW_CONFIDENCE, QAStatus.OPEN),
-        (QAReason.VERIFIER_CONFLICT, QAStatus.OPEN),
+    assert [(row.evaluation_no, row.reason, row.status) for row in added] == [
+        (1, QAReason.LOW_CONFIDENCE, QAStatus.OPEN),
+        (1, QAReason.VERIFIER_CONFLICT, QAStatus.OPEN),
     ]
     listed = await list_qa_items(session, CASE_ID)
     assert {row.reason for row in listed} == {QAReason.LOW_CONFIDENCE, QAReason.VERIFIER_CONFLICT}
     assert await list_qa_items(session, CASE_ID, statuses=[QAStatus.RESOLVED]) == []
-    assert await add_qa_items(session, CASE_ID, []) == []
+    assert await add_qa_items(session, CASE_ID, 1, []) == []
+
+
+async def test_qa_reason_is_unique_within_an_evaluation(session: AsyncSession) -> None:
+    await add_qa_items(session, CASE_ID, 1, [QAReason.LOW_CONFIDENCE])
+    await session.commit()
+
+    with pytest.raises(IntegrityError):
+        await add_qa_items(session, CASE_ID, 1, [QAReason.LOW_CONFIDENCE])
+
+    await session.rollback()
+    await add_qa_items(session, CASE_ID, 2, [QAReason.LOW_CONFIDENCE])
+    await session.commit()
+
+    assert [row.evaluation_no for row in await list_qa_items(session, CASE_ID)] == [1, 2]
+    assert len(await list_qa_items(session, CASE_ID, evaluation_no=2)) == 1
 
 
 async def test_urgent_events_of_an_evaluation_are_replaced_not_added(

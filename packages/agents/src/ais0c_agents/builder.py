@@ -24,6 +24,7 @@ from ais0c_agents.aql import AqlRules, SuggestedAqlCheck
 from ais0c_agents.evidence import check_evidence, check_evidence_fields
 from ais0c_agents.manifest import AgentManifest
 from ais0c_agents.prompts import SHARED_RULES_PLACEHOLDER, PromptTemplate
+from ais0c_agents.runner import FinalAnswer
 from ais0c_agents.toolset import RunDeps, ToolsetProfile
 
 OUTPUT_TOOL: Final = "final_result"
@@ -135,7 +136,8 @@ def create_agent[OutputT: BaseModel](
         toolsets=list(toolsets),
         retries=spec.retries,
         name=manifest.id,
-        capabilities=list(capabilities),
+        # Bound at construction, as TemporalDurability requires; it holds no per-run state.
+        capabilities=[FinalAnswer(enabled=bool(toolsets)), *capabilities],
     )
     agent.output_validator(check_evidence)
     if aql is not None:

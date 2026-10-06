@@ -247,6 +247,11 @@ async def test_a_finished_run_cannot_begin_again(
         "UnexpectedModelBehavior",
     )
 
+    async with sessions() as session:
+        failed = await get_agent_run(session, "case-7-investigation-1")
+    assert failed is not None
+    assert failed.error == "UnexpectedModelBehavior"
+
     with pytest.raises(ApplicationError) as error:
         await begin(chain)
     assert error.value.non_retryable
@@ -477,15 +482,18 @@ async def test_the_router_lists_the_candidates_of_each_plan_agent(
     )
 
 
-async def test_drafts_are_never_candidates(sessions: SessionFactory, tmp_path: Path) -> None:
+async def test_drafts_are_candidates_in_dev(sessions: SessionFactory, tmp_path: Path) -> None:
     write_skill(tmp_path, approved=False)
-    chain = activities(sessions, load_skills(tmp_path, mode="dev"), mode="dev")
+    registry = load_skills(tmp_path, mode="dev")
+    chain = activities(sessions, registry, mode="dev")
 
     listed = await ActivityEnvironment().run(
         chain.candidate_skills, offense(7, rule_ids=(DCSYNC_RULE,)), dcsync_enrichment()
     )
 
-    assert listed == []
+    assert listed == [
+        ("investigation", ref_of(registry), Budget(tokens=250000, tool_calls=24, seconds=300))
+    ]
 
 
 async def test_the_plan_budgets_are_the_settings_and_the_manifests(

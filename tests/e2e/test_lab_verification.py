@@ -23,9 +23,7 @@ claims from it, one the rows show and one the rows refute. The agent then runs o
 dev stack's gateway and the real `soc-verifier`, without Temporal, and the test prints what the
 PR reports: which claim was contested, the re-fetch calls, the tokens and the duration.
 
-AQL's `START`/`STOP` literals are read in the lab console's own time zone, which this test does
-not know, so it tries `CONSOLE_ZONES` and keeps the query that returns rows. The agent is built
-with the zone that query found (T-048): its prompt writes START and STOP in it.
+AQL uses epoch-millisecond `START`/`STOP` bounds, independent of a console time zone (T-55).
 
 Whether the model actually contested the refutable claim is a measurement, not an assertion: a
 dev model may read less than a prod one (D-39). The harness measures that (T-030); here the
@@ -43,7 +41,6 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import pytest
 import yaml
@@ -70,6 +67,7 @@ from ais0c_agents import (
     load_model_registry,
 )
 from ais0c_agents.gateway_http import HttpGatewayClient
+from ais0c_agents.investigation import aql_window
 from ais0c_agents.runner import FINAL_ANSWER_PROMPT
 from ais0c_contracts import (
     AgentTask,
@@ -87,7 +85,6 @@ from ais0c_contracts import (
     VerificationResult,
 )
 from ais0c_policy import new_nonce
-from ais0c_querylang import bound_query
 from ais0c_storage import (
     create_engine,
     create_session_factory,
@@ -126,7 +123,6 @@ MIN_WINDOW = timedelta(minutes=1)
 SETUP_BUDGET = Budget(tokens=0, tool_calls=8, seconds=300)
 # The window every call of this test declares (the profiles allow 31 days).
 DECLARED_WINDOW = timedelta(days=30)
-CONSOLE_ZONES = ("Europe/Istanbul", "UTC")
 # Documentation addresses (RFC 5737) for the refutable claim: one no row holds.
 ABSENT_ADDRESSES = tuple(f"198.51.100.{octet}" for octet in (7, 8, 9))
 # An account name that cannot close the AQL string literal it goes into.
@@ -248,7 +244,7 @@ async def test_a_lab_decision_is_checked_against_the_source(
 
     # The evidence: one Ariel query in the offense's window, in the verify profile.
     window = _query_window(before)
-    rows, ref, zone = await _collect_evidence(sessions, lab, case_id, account, window)
+    rows, ref = await _collect_evidence(sessions, lab, case_id, account, window)
     claims, absent = _claims(rows, account, ref.evidence_id)
     task = VerificationTask(
         task=_agent_task(manifest, run_id, case_id, window),
@@ -269,7 +265,6 @@ async def test_a_lab_decision_is_checked_against_the_source(
                 },
                 "claims": [{"text": item.claim.text, "critical": item.critical} for item in claims],
                 "refutable_claim_address": absent,
-                "console_zone": zone,
             },
             indent=2,
         )
@@ -301,7 +296,6 @@ async def test_a_lab_decision_is_checked_against_the_source(
             profiles={lab.verify.name: lab.verify},
             gateway=lab.verify_client,
             model=model,
-            console_zone=_zone(zone),
         )
         run = await agent.run(task, run_id=run_id, nonce=new_nonce())
     async with sessions.begin() as session:
@@ -429,12 +423,11 @@ async def _collect_evidence(
     case_id: str,
     account: str,
     window: TimeWindow,
-) -> tuple[list[dict[str, Any]], EvidenceRef, str]:
+) -> tuple[list[dict[str, Any]], EvidenceRef]:
     """One Ariel query in the offense's window, in a recorded system run.
 
-    Returns its rows, the `EvidenceRef` the gateway recorded for the result, so the claims
-    under review rest on evidence QRadar really returned, and the console's time zone. That
-    zone is unknown, so each candidate zone is tried until a query returns rows.
+    Returns its rows and the `EvidenceRef` the gateway recorded for the result, so the claims
+    under review rest on evidence QRadar really returned.
     """
     # The account comes from the lab's own scenario, but a value that could close the literal
     # is refused here rather than sent to QRadar.
@@ -446,16 +439,10 @@ async def _collect_evidence(
             f"WHERE username = '{account}'",
         )
     )
-    tried: list[str] = []
-    for zone in CONSOLE_ZONES:
-        rows, ref = await _search(sessions, lab, case_id, query, window, zone)
-        if rows and ref is not None:
-            return rows, ref, zone
-        tried.append(zone)
-    pytest.fail(
-        f"the query for {account} returned no rows in {', '.join(tried)}; add the lab console's "
-        "time zone to CONSOLE_ZONES"
-    )
+    rows, ref = await _search(sessions, lab, case_id, query, window)
+    if rows and ref is not None:
+        return rows, ref
+    pytest.fail(f"the epoch-bounded query for {account} returned no rows")
 
 
 async def _search(
@@ -464,11 +451,10 @@ async def _search(
     case_id: str,
     query: str,
     window: TimeWindow,
-    zone: str,
 ) -> tuple[list[dict[str, Any]], EvidenceRef | None]:
     """The four calls of one Ariel search: its rows and the evidence of its result."""
     now = datetime.now(UTC)
-    expression = bound_query(query, window=window, limit=QUERY_LIMIT, tz=_zone(zone))
+    expression = f"{query} LIMIT {QUERY_LIMIT} {aql_window(window).start_stop}"
     async with system_run(
         sessions=sessions,
         gateway=lab.verify_client,
@@ -522,13 +508,6 @@ async def _call(run: SystemRun, tool_id: str, arguments: dict[str, Any]) -> Tool
         reason="The lab test reads QRadar to build the evidence of the reviewed decision.",
         expected_evidence="The rows the Verification agent will read again at the source.",
     )
-
-
-def _zone(name: str) -> ZoneInfo:
-    try:
-        return ZoneInfo(name)
-    except ZoneInfoNotFoundError:  # pragma: no cover - the candidates ship with the image
-        return ZoneInfo("UTC")
 
 
 def _claims(
@@ -614,7 +593,8 @@ def _agent_task(
         agent_version=manifest.version,
         objective=f"Check the decision on the QRadar offense of {case_id} (evaluation 1).",
         context_refs=[],
-        time_window=TimeWindow(start=window.start, end=datetime.now(UTC)),
+        # T-56: the workflow narrows Verification to the claim evidence window.
+        time_window=window,
         budget=Budget(
             tokens=manifest.budgets.tokens,
             tool_calls=manifest.budgets.tool_calls,

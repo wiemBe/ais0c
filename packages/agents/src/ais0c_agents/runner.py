@@ -19,8 +19,8 @@ The wall-clock budget is not enforced here: the Temporal activity and workflow t
 
 import time
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass, field
-from typing import ClassVar, Final
+from dataclasses import dataclass
+from typing import Final
 
 from pydantic_ai import Agent, RunContext, capture_run_messages
 from pydantic_ai.capabilities import AbstractCapability
@@ -83,12 +83,15 @@ def budget_spent(
 ) -> bool:
     """Whether the run must answer now instead of calling another tool (decision T-52).
 
-    True when the tool call budget is used up, or when fewer tokens remain than
-    TOKEN_RESERVE_FACTOR times the total tokens of the last model request: the next request
-    sends the whole conversation again, so it costs at least as much as the last one.
+    True when only one model request remains, the tool call budget is used up, or when fewer
+    tokens remain than TOKEN_RESERVE_FACTOR times the total tokens of the last model request:
+    the next request sends the whole conversation again, so it costs at least as much as the
+    last one.
     """
     if limits is None:
         return False
+    if limits.request_limit is not None and limits.request_limit - usage.requests <= 1:
+        return True
     if limits.tool_calls_limit is not None and usage.tool_calls >= limits.tool_calls_limit:
         return True
     if limits.total_tokens_limit is None:
@@ -104,36 +107,33 @@ class FinalAnswer(AbstractCapability[RunDeps]):
 
     From the first request at which budget_spent holds, every request offers only the output
     tool and carries FINAL_ANSWER_PROMPT; the tools do not come back in that run. An agent
-    without function tools is left alone. One instance serves one run: run_agent makes it and
-    reads `withdrawn` afterwards.
-
-    Pydantic AI refuses a capability added per run inside a durable workflow unless it is safe
-    there. This one is: it contributes no toolset and no durable operation, and its hooks read
-    only the run context, so a replay of the workflow makes the same decisions.
+    without function tools is left alone. The capability is stateless: a retry sees the prompt
+    marker in the run's history, so a replay and another run cannot share withdrawal state.
     """
 
-    _safe_at_runtime: ClassVar[bool] = True
-
-    withdrawn: bool = field(default=False, init=False)
-    """Whether the run's tools were withdrawn."""
+    enabled: bool
+    """Whether the agent has function tools to withdraw."""
 
     async def prepare_tools(
         self, ctx: RunContext[RunDeps], tool_defs: list[ToolDefinition]
     ) -> list[ToolDefinition]:
-        if not tool_defs:
+        if not self.enabled or not tool_defs:
             return tool_defs
-        if not self.withdrawn and budget_spent(ctx.usage, ctx.usage_limits, ctx.messages):
-            self.withdrawn = True
-        return [] if self.withdrawn else tool_defs
+        return [] if self._withdraw_now(ctx) else tool_defs
 
     async def before_model_request(
         self, ctx: RunContext[RunDeps], request_context: ModelRequestContext
     ) -> ModelRequestContext:
         request = request_context.messages[-1] if request_context.messages else None
-        if self.withdrawn and isinstance(request, ModelRequest):
+        if self.enabled and self._withdraw_now(ctx) and isinstance(request, ModelRequest):
             # The request this step made: the sentence stays in the run's history.
             request.parts = [*request.parts, UserPromptPart(FINAL_ANSWER_PROMPT)]
         return request_context
+
+    def _withdraw_now(self, ctx: RunContext[RunDeps]) -> bool:
+        return _tools_were_withdrawn(ctx.messages) or budget_spent(
+            ctx.usage, ctx.usage_limits, ctx.messages
+        )
 
 
 async def run_agent[OutputT, ResultT](
@@ -159,7 +159,6 @@ async def run_agent[OutputT, ResultT](
     output: OutputT | None = None
     status = RunStatus.COMPLETED
     error: str | None = None
-    final_answer = FinalAnswer()
     with capture_run_messages() as messages:
         try:
             result = await agent.run(
@@ -168,7 +167,6 @@ async def run_agent[OutputT, ResultT](
                 instructions=instructions,
                 usage_limits=limits,
                 usage=usage,
-                capabilities=[final_answer],
             )
         except UsageLimitExceeded as exc:
             status, error = RunStatus.BUDGET_EXHAUSTED, _describe(exc)
@@ -182,7 +180,7 @@ async def run_agent[OutputT, ResultT](
         seconds=max(0.0, clock() - started),
     )
     finalized = None if output is None else finalize(output, run_usage)
-    if final_answer.withdrawn and isinstance(finalized, AgentResult):
+    if _tools_were_withdrawn(messages) and isinstance(finalized, AgentResult):
         gap = DataGap(
             source=agent.name or UNNAMED_AGENT,
             period_start=deps.time_window.start,
@@ -203,3 +201,15 @@ async def run_agent[OutputT, ResultT](
 
 def _describe(error: Exception) -> str:
     return f"{type(error).__name__}: {error}"[:MAX_ERROR_LENGTH]
+
+
+def _tools_were_withdrawn(messages: Sequence[ModelMessage]) -> bool:
+    """Whether FinalAnswer marked any request in this run."""
+    return any(
+        isinstance(message, ModelRequest)
+        and any(
+            isinstance(part, UserPromptPart) and part.content == FINAL_ANSWER_PROMPT
+            for part in message.parts
+        )
+        for message in messages
+    )

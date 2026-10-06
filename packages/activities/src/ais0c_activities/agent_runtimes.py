@@ -74,6 +74,7 @@ from ais0c_contracts import (
     ModelRelease,
     OffenseSnapshot,
     SkillRef,
+    TimeWindow,
     UrgentEvent,
     VerificationResult,
 )
@@ -255,7 +256,7 @@ def verification_task(
         keep_unsupported=True,
     )
     return VerificationTask(
-        task=task,
+        task=task.model_copy(update={"time_window": _verification_window(task, claims, cited)}),
         reviewed=ReviewedDecision(
             verdict=inputs.verdict, confidence=inputs.confidence, ai_level=inputs.ai_level
         ),
@@ -263,6 +264,25 @@ def verification_task(
         evidence=cited,
         offense=inputs.offense,
     )
+
+
+def _verification_window(
+    task: AgentTask, claims: Sequence[Claim], evidence: Sequence[EvidenceRef]
+) -> TimeWindow:
+    """Union the claims' evidence windows and clip them to the case's planned window (T-56).
+
+    Storage may no longer have a cited piece of evidence. Without every cited window there is
+    no safe narrower range, so Verification keeps the case window.
+    """
+    cited_ids = {evidence_id for claim in claims for evidence_id in claim.evidence_ids}
+    windows = [ref for ref in evidence if ref.evidence_id in cited_ids]
+    if not cited_ids or {ref.evidence_id for ref in windows} != cited_ids:
+        return task.time_window
+    start = max(task.time_window.start, min(ref.time_start for ref in windows))
+    end = min(task.time_window.end, max(ref.time_end for ref in windows))
+    if start > end:
+        return task.time_window
+    return TimeWindow(start=start, end=end)
 
 
 def reporting_task(

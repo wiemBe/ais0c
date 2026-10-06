@@ -514,10 +514,10 @@ async def test_the_workflow_gets_its_timings_from_the_settings(sessions: Session
         sessions=sessions,
         source=FakeOffenseSource(),
         settings=CaseSettings(
-            reevaluation_interval=timedelta(minutes=45), triage_retry_delay=timedelta(minutes=2)
+            reevaluation_interval=timedelta(minutes=45), agent_retry_delay=timedelta(minutes=2)
         ),
     )
     env = ActivityEnvironment()
 
     assert await env.run(activities.reevaluation_interval) == timedelta(minutes=45)
-    assert await env.run(activities.triage_retry_delay) == timedelta(minutes=2)
+    assert await env.run(activities.agent_retry_delay) == timedelta(minutes=2)

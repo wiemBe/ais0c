@@ -97,6 +97,7 @@ async def test_finish_stores_the_outcome(session: AsyncSession) -> None:
         2,
         T1,
     )
+    assert run.error is None
 
     # A retried activity may finish the run again.
     run = await finish_agent_run(
@@ -107,8 +108,10 @@ async def test_finish_stores_the_outcome(session: AsyncSession) -> None:
         tokens=1600,
         tool_calls=2,
         ended_at=T1,
+        error="x" * 2001,
     )
     assert (run.status, run.result, run.tokens) == (RunStatus.FAILED, None, 1600)
+    assert run.error == "x" * 2000
 
     with pytest.raises(ValueError, match=r"result\.status"):
         await finish_agent_run(
