@@ -11,7 +11,7 @@ Investigation lab'da bir sonuç üretsin (T-52, T-53) ve T-047 incelemesinden ka
 
 ## Okunacaklar
 
-- `docs/decisions.md`: T-27, T-38, T-48, T-52, T-53, T-54, D-44; açık soru S-13
+- `docs/decisions.md`: T-27, T-38, T-48, T-52, T-53, T-54, D-44; kapanan soru S-13 (konsol Europe/Istanbul)
 - `../ais0c-prs/PR-T-023.md` (lab bulguları, açık sorular 1–3), `../ais0c-prs/PR-T-047.md` (açık sorular 1–3)
 - `packages/agents/src/ais0c_agents/runner.py`, `investigation.py`, `verification.py`, `reporting.py`
 - Pydantic AI'nin `UsageLimits`'i ve `prepare_tools`'u (ya da eşdeğer bir capability)
@@ -60,10 +60,10 @@ Her madde en az bir testle gösterilir. Birim testleri gerçek model çağırmaz
    - Test: gateway bu dört aracı investigate token'ıyla reddeder; Investigation ajanının modele gösterdiği araç listesinde yoktur.
 4. **Zaman penceresi (T-53).** Investigation'ın ve Verification'ın prompt'u değerlendirme penceresini şu iki parçayla verir:
    - `starttime BETWEEN <başlangıç ms> AND <bitiş ms>`;
-   - pencerenin iki yanından birer gün genişletilmiş `START '<yyyy-MM-dd HH:mm>' STOP '<yyyy-MM-dd HH:mm>'`.
+   - konsolun saat diliminde yazılmış, pencerenin iki yanından birer saat genişletilmiş `START '<yyyy-MM-dd HH:mm>' STOP '<yyyy-MM-dd HH:mm>'`.
 
-   Prompt, modelin bu iki parçayı olduğu gibi kullanmasını ve saat çevirmemesini söyler. Prompt'taki örnek AQL bu parçalarla yazılır ve investigate profilinin Guard'ından geçer.
-   - Test: verilen bir pencere için iki parçanın metni birebir beklenen değerdir; örnek AQL Guard'dan geçer; çift tırnak yoktur.
+   Konsolun saat dilimi `build_investigation_agent` ve `build_verification_agent`'ın bir parametresidir (`zoneinfo.ZoneInfo`, varsayılan `Europe/Istanbul`; S-13). Prompt, modelin bu iki parçayı olduğu gibi kullanmasını ve saat çevirmemesini söyler. Prompt'taki örnek AQL bu parçalarla yazılır ve investigate profilinin Guard'ından geçer.
+   - Test: verilen bir UTC pencere için iki parçanın metni birebir beklenen değerdir (Europe/Istanbul'da ve başka bir saat diliminde); yaz saati geçişini kesen bir pencere doğru çevrilir; örnek AQL Guard'dan geçer; çift tırnak yoktur.
 5. **Verification'ın hedefi (T-54 (1)).** Plan adımının `objective`'i Verification'ın prompt'unda `agent.objective` bloğundadır; kullanıcı prompt'u platformun sabit cümlesidir. Test: hedefteki kapanış etiketi bloktan kaçamaz ve hedef metni blok dışında geçmez.
 6. **Reporting özeti (T-54 (2)).** `summary_tr` bir kanıt takma adı (`ev_c<n>`, `ev_<n>`, `ev_none`) taşırsa `ModelRetry` ile geri gönderilir. Prompt bunu söyler. Test: kabul ve red.
 7. **Tutarlılık (T-54 (3), (4)).** `RunDeps.context_excerpts` boştur ya da `context_evidence` ile aynı uzunluktadır; aksi doğrulama hatasıdır. `ReportingTask`, her claim'in kanıtının `evidence`'ta olduğunu denetler. Test: her ikisinin reddi.
@@ -77,7 +77,7 @@ Her madde en az bir testle gösterilir. Birim testleri gerçek model çağırmaz
 
 - Workflow bağlantısı (T-026)
 - Bütçelerin ve prompt kalitesinin ölçümü (T-030)
-- Konsolun saat dilimini bir ayar yapmak (S-13'ün cevabından sonra)
+- Konsolun saat dilimini bir ortam ayarına bağlamak (worker kurucuya varsayılanı verir; ayar gerekirse T-026 veya T-031)
 
 ## Bağımlılıklar
 
