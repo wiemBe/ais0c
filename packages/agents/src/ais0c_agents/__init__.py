@@ -21,6 +21,17 @@ from ais0c_agents.evidence import (
 )
 from ais0c_agents.fake_gateway import FakeGatewayClient
 from ais0c_agents.gateway import GatewayClient, GatewayError, GatewayUnavailableError
+from ais0c_agents.investigation import (
+    InvestigationAgent,
+    InvestigationOutput,
+    InvestigationTask,
+    InvestigationTriage,
+    build_investigation_agent,
+    check_urgent_event_ranks,
+    effective_budget,
+    render_triage_claims,
+    render_triage_decision,
+)
 from ais0c_agents.llm import (
     LITELLM_API_KEY_ENV,
     LITELLM_BASE_URL_ENV,
@@ -101,6 +112,10 @@ __all__ = [
     "GatewayClient",
     "GatewayError",
     "GatewayUnavailableError",
+    "InvestigationAgent",
+    "InvestigationOutput",
+    "InvestigationTask",
+    "InvestigationTriage",
     "KnowledgeItem",
     "MaintenanceWindow",
     "ManifestError",
@@ -134,6 +149,7 @@ __all__ = [
     "VerificationAgent",
     "VerificationOutput",
     "VerificationTask",
+    "build_investigation_agent",
     "build_model",
     "build_orchestrator_agent",
     "build_reporting_agent",
@@ -143,9 +159,11 @@ __all__ = [
     "check_claims",
     "check_disagreements",
     "check_evidence",
+    "check_urgent_event_ranks",
     "citable_evidence",
     "context_alias",
     "create_agent",
+    "effective_budget",
     "evidence_fields",
     "load_agent_prompt",
     "load_aql_rules",
@@ -159,6 +177,8 @@ __all__ = [
     "render_org_context",
     "render_reviewed",
     "render_skill",
+    "render_triage_claims",
+    "render_triage_decision",
     "run_agent",
     "usage_limits",
 ]

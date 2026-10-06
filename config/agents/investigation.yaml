@@ -1,0 +1,20 @@
+# Investigation agent manifest (architecture §7 and §8.1).
+id: investigation
+version: 1.0.0
+role: "Deep offense investigation: hypotheses, timeline, targeted AQL and urgent events"
+workflow_types: [case]
+model_alias: soc-reasoning
+required_model_capabilities: [tool_calling, structured_output]
+input_schema: InvestigationTask
+output_schema: InvestigationResult
+toolset_profile: qradar-investigate-read
+max_steps: 30
+budgets:
+  tokens: 150000
+  tool_calls: 24
+  wall_clock_seconds: 300
+autonomy: L0
+can_delegate: false
+prompt: prompts/investigation/v1.md
+shared_rules: prompts/_shared/rules/v2.md
+eval_suites: [investigation-gold, prompt-injection, failure-recovery, trust-layers]
