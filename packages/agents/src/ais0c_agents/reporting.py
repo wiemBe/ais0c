@@ -5,23 +5,26 @@ Verification did not dispute, the evidence behind them and behind the urgent eve
 the candidates from Investigation, data gaps, the offense snapshot and the enrichment.
 
 What the model returns is narrower than CaseReport, and that is the point of the agent: the
-decision (criterion 3) and the data gaps (criterion 6) are the input's, never the model's, and
-an urgent event carries the model's `rank`, `reason` and `checklist` on top of the candidate's
-identifiers copied verbatim (criterion 5). Three output validators hold those rules:
-`check_evidence` (which every agent has), `CandidatesUnchanged` and `NoLogText`. The run fills
-the rest of CaseReport from the input.
+decision and the data gaps are the input's, never the model's. An urgent event is the number
+of a candidate plus the model's `rank`, `reason` and `checklist`; the run copies the
+candidate's nine identifiers into the report, so the model never copies an evidence ID or a
+query (decision T-50). Three output validators hold the rules: `check_evidence` (which every
+agent has), `check_candidates` and `check_log_text`. The run fills the rest of CaseReport from
+the input.
 
 The agent has no tools (T-043): all evidence arrives in the input, under the `ev_c<n>` aliases
-of decision T-38. The prompt carries the Turkish report rules of docs/impl/prompts.md, and no
-log text may reach the report (criterion 7).
+of decision T-38, and no gateway evidence ID reaches the model (decision T-27). The agent is
+built once, as TemporalDurability requires; what its validators need of one run travels in
+RunDeps, which the model never sees. The prompt carries the Turkish report rules of
+docs/impl/prompts.md, and no log text may reach the report.
 """
 
 from __future__ import annotations
 
 import time
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass, field
-from typing import Annotated, Final
+from dataclasses import dataclass
+from typing import Annotated, Final, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic_ai import Agent, AgentRetries, ModelRetry, RunContext
@@ -29,7 +32,7 @@ from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.models import Model
 
 from ais0c_agents.builder import AgentSpec, check_agent_config, create_agent
-from ais0c_agents.evidence import render_context_evidence
+from ais0c_agents.evidence import context_alias, render_context_evidence
 from ais0c_agents.manifest import AgentManifest
 from ais0c_agents.prompts import PromptTemplate, render_org_context, wrap_json_lines
 from ais0c_agents.runner import AgentRun, run_agent, usage_limits
@@ -50,7 +53,6 @@ from ais0c_contracts import (
     ShortText,
     UrgentEvent,
     Usage,
-    UtcDatetime,
 )
 from ais0c_policy import neutralize_tags
 
@@ -59,7 +61,8 @@ OUTPUT_SCHEMA: Final = "CaseReport"
 SUMMARY_MAX_LENGTH: Final = 400
 """`NoteContent.summary_tr`'s limit (contracts.md); the same summary goes into the note."""
 OUTPUT_RETRIES: Final = 3
-"""Three tries: a model that answers freely miscopies an identifier or quotes an excerpt."""
+"""Three tries: a model that answers freely names a wrong candidate, cites an alias it was not
+given or quotes an excerpt, and each is a correction of its own."""
 RETRIES: Final[AgentRetries] = {"tools": 0, "output": OUTPUT_RETRIES}
 # The template's inputs besides the shared rules (prompts/reporting/v1.md).
 PLACEHOLDERS: Final = frozenset(
@@ -76,8 +79,8 @@ PLACEHOLDERS: Final = frozenset(
 MAX_CLAIMS: Final = 30
 MAX_EVIDENCE: Final = 50
 MAX_DATA_GAPS: Final = 20
+MAX_URGENT_EVENTS: Final = 15
 
-# Sources of the untrusted blocks; all are `qradar.<x>` (ais0c_policy.untrusted).
 DECISION_NOTE: Final = "The workflow decided this case; it is a fact, not evidence."
 NO_CLAIMS: Final = "Verification left no undisputed claim."
 NO_EVIDENCE: Final = "No evidence is available for this case."
@@ -85,12 +88,14 @@ NO_CANDIDATES: Final = (
     "There is no urgent event candidate for this case. Return an empty urgent_events list."
 )
 NO_DATA_GAPS: Final = "There is no data gap for this case."
-CLAIM_SOURCE: Final = "qradar.claim"
-CANDIDATE_SOURCE: Final = "qradar.urgent_event"
-DATA_GAP_SOURCE: Final = "qradar.data_gap"
+# Sources of the untrusted blocks: earlier agents' model text is `agent.<kind>` (decision T-48),
+# the offense is QRadar's own data.
+CLAIM_SOURCE: Final = "agent.claim"
+CANDIDATE_SOURCE: Final = "agent.urgent_event"
+DATA_GAP_SOURCE: Final = "agent.data_gap"
 OFFENSE_SOURCE: Final = "qradar.offense"
 
-# The urgent event fields the model copies from a candidate, not writes (criterion 5).
+# The urgent event fields the run copies from the chosen candidate (decision T-50).
 IDENTIFIER_FIELDS: Final[tuple[str, ...]] = (
     "time",
     "log_source",
@@ -102,11 +107,14 @@ IDENTIFIER_FIELDS: Final[tuple[str, ...]] = (
     "aql",
     "evidence_id",
 )
-# The report's free text fields: no log text may be quoted in them (criterion 7).
+# What a candidate block leaves out: Investigation's rank, which the model would confuse with
+# its own; the evidence ID, which the block shows as its alias (decision T-27); and the AQL,
+# which the run copies and the model neither reads nor writes.
+CANDIDATE_HIDDEN_FIELDS: Final = frozenset({"rank", "evidence_id", "aql"})
+# The report's free text fields: no log text may be quoted in them.
 FREE_TEXT_FIELDS: Final[tuple[str, ...]] = ("summary_tr", "reason", "rationale", "checklist")
 MIN_QUOTE: Final = 20
 """A piece of this many characters or more is a copy of log text, not a summary."""
-MAX_REJECTION_VALUE: Final = 60
 
 
 # Not a ContractModel: contract models are defined only in packages/contracts.
@@ -127,60 +135,59 @@ class ReportingTask(BaseModel):
 
     task: AgentTask
     decision: CaseDecision
-    """Not the model's to compute or to change (criterion 3)."""
+    """Not the model's to compute or to change."""
     claims: Annotated[list[Claim], Field(max_length=MAX_CLAIMS)]
     """The claims Verification did not dispute (decision T-45)."""
     evidence: Annotated[list[EvidenceRef], Field(max_length=MAX_EVIDENCE)]
     """The claims' and candidates' evidence. The prompt shows each as `ev_c<n>`, `n` its
     place here from 1 (decision T-38), and the run cites them under those aliases."""
-    urgent_event_candidates: Annotated[list[UrgentEvent], Field(max_length=15)]
+    urgent_event_candidates: Annotated[list[UrgentEvent], Field(max_length=MAX_URGENT_EVENTS)]
+    """The model names the n-th as candidate n; each one's evidence is in `evidence`."""
     data_gaps: Annotated[list[DataGap], Field(max_length=MAX_DATA_GAPS)]
     offense: OffenseSnapshot
     enrichment: EnrichmentContext
     """Organization context; only its catalog and critical assets reach the prompt."""
 
+    @model_validator(mode="after")
+    def _candidates_evidence_given(self) -> Self:
+        """A candidate's evidence is in `evidence`, so the prompt can show it as `ev_c<n>`."""
+        given = {ref.evidence_id for ref in self.evidence}
+        missing = [
+            number
+            for number, candidate in enumerate(self.urgent_event_candidates, start=1)
+            if candidate.evidence_id not in given
+        ]
+        if missing:
+            raise ValueError(
+                f"urgent event candidates {', '.join(map(str, missing))} cite evidence that is "
+                "not in the task's evidence"
+            )
+        return self
 
+
+# An urgent event as the model returns it: the candidate it chose and its own Turkish text.
+# `candidate` is the number of the candidate's block, from 1, and is not bounded in the schema:
+# check_candidates sends a wrong number back with the numbers the model may use, which a schema
+# error would not name. No docstring: Pydantic AI would put it into the output tool's schema.
 class ReportedEvent(BaseModel):
-    """An urgent event as the model returns it: a candidate's identifiers, its own Turkish text.
-
-    `rank`, `reason` and `checklist` are the model's (criterion 5); every other field is the
-    candidate's and must be copied verbatim, which `CandidatesUnchanged` checks.
-    """
-
     model_config = ConfigDict(extra="forbid")
 
+    candidate: int
     rank: Annotated[int, Field(ge=1)]
-    time: UtcDatetime
-    """Typed as the candidate's, so a model that writes a local or offset time is converted to
-    UTC and compared as the same instant instead of as different text."""
-    log_source: Annotated[str, Field(max_length=120)]
-    event_name: Annotated[str, Field(max_length=200)]
-    qid: int | None = None
-    source: Annotated[str, Field(max_length=100)] | None = None
-    destination: Annotated[str, Field(max_length=100)] | None = None
-    username: Annotated[str, Field(max_length=100)] | None = None
     reason: ShortText
     checklist: Annotated[list[ShortText], Field(max_length=5)]
-    aql: Annotated[str, Field(max_length=2000)] | None = None
-    evidence_id: str
-
-    def identifiers(self) -> dict[str, object]:
-        return {name: getattr(self, name) for name in IDENTIFIER_FIELDS}
 
 
+# What the model returns: the Turkish text of the report, and nothing else. It names itself
+# `CaseReport` for the model, as the prompt says (docs/impl/prompts.md, "Output"), and holds
+# only the fields the model owns: the decision and the data gaps are the input's, and
+# `task_id`, `status`, `claims` and `usage` are the run's. No docstring: Pydantic AI would add
+# it to the output tool's description.
 class ReportingOutput(BaseModel):
-    """What the model returns: the Turkish text of the report, and nothing else.
-
-    It names itself `CaseReport` for the model, as the prompt says (docs/impl/prompts.md,
-    "Output"), and holds only the fields the model owns: the decision (criterion 3) and the
-    data gaps (criterion 6) are the input's, and `task_id`, `status`, `claims` and `usage` are
-    the run's. No docstring: Pydantic AI would add it to the output tool's description.
-    """
-
     model_config = ConfigDict(extra="forbid", title="CaseReport")
 
     summary_tr: Annotated[str, Field(min_length=1, max_length=SUMMARY_MAX_LENGTH)]
-    urgent_events: Annotated[list[ReportedEvent], Field(max_length=15)]
+    urgent_events: Annotated[list[ReportedEvent], Field(max_length=MAX_URGENT_EVENTS)]
     recommendations: Annotated[list[Recommendation], Field(max_length=8)] = []
     injection_suspected: bool = False
 
@@ -207,85 +214,60 @@ SPEC: Final = AgentSpec(
 # --- output validators ------------------------------------------------------------------------
 
 
-def _short(value: object) -> str:
-    """`value` quoted and cut short: it may hold log text (architecture §9)."""
-    text = " ".join(str(value).split())
-    return repr(text if len(text) <= MAX_REJECTION_VALUE else text[:MAX_REJECTION_VALUE] + "…")
+def check_candidates(ctx: RunContext[RunDeps], output: ReportingOutput) -> ReportingOutput:
+    """Output validator: every urgent event names a candidate of this run, each at most once.
 
-
-def _piece_is_copied(candidate: UrgentEvent, identifiers: dict[str, object]) -> bool:
-    return all(getattr(candidate, name) == identifiers[name] for name in IDENTIFIER_FIELDS)
-
-
-class CandidatesUnchanged[OutputT: BaseModel]:
-    """Output validator: every urgent event is one candidate, identifiers unchanged.
-
-    The model may pick candidates, drop some and reorder them, and it ranks what it keeps
-    from 1; it may not invent an event or change an identifier of one it keeps (criterion 5).
-    Anything else goes back to the model with the candidate's own values, so it corrects
-    itself from them instead of from memory (decision T-27's copy failures).
+    The model may pick candidates, drop some and reorder them; it may not name a number the
+    prompt did not show or one it already used (decision T-50). The run's candidate count
+    travels in RunDeps.urgent_event_candidate_count; the model never sees RunDeps. A wrong
+    output goes back to the model with the numbers it may use.
     """
-
-    def __init__(self, candidates: Sequence[UrgentEvent]) -> None:
-        self.candidates = tuple(candidates)
-
-    def __call__(self, ctx: RunContext[RunDeps], output: OutputT) -> OutputT:
-        unused = list(self.candidates)
-        for event in getattr(output, "urgent_events", ()):
-            found = next((c for c in unused if _piece_is_copied(c, event.identifiers())), None)
-            if found is None:
-                raise ModelRetry(_rejection(event, self.candidates))
-            unused.remove(found)
-        return output
-
-
-def _rejection(event: ReportedEvent, candidates: Sequence[UrgentEvent]) -> str:
-    """Why one urgent event was rejected, and the candidate to copy instead."""
-    same_name = [c for c in candidates if c.event_name == event.event_name]
-    if not same_name:
-        available = ", ".join(_short(c.event_name) for c in candidates) or "none"
-        return (
-            f"No urgent event candidate has these identifiers. Copy one of the candidates you "
-            f"were given ({available}) and change nothing but its rank, reason and checklist. "
-            "Add no event of your own."
-        )
-    candidate = same_name[0]
-    changed = [
-        name for name in IDENTIFIER_FIELDS if getattr(candidate, name) != event.identifiers()[name]
-    ]
-    corrected = ", ".join(f"{name}={_short(getattr(candidate, name))}" for name in changed)
-    return (
-        f"The identifiers of this urgent event differ from its candidate in {', '.join(changed)}. "
-        f"Copy the candidate's own value: {corrected}."
+    count = ctx.deps.urgent_event_candidate_count
+    numbers = [event.candidate for event in output.urgent_events]
+    unknown = sorted({number for number in numbers if not 1 <= number <= count})
+    repeated = sorted(
+        {number for number in numbers if 1 <= number <= count and numbers.count(number) > 1}
     )
+    if not unknown and not repeated:
+        return output
+    problems: list[str] = []
+    if unknown:
+        problems.append(f"there is no candidate {_listed(unknown)}")
+    if repeated:
+        problems.append(f"candidate {_listed(repeated)} is chosen more than once")
+    if count == 0:
+        allowed = "This case has no urgent event candidate: return an empty urgent_events list."
+    else:
+        allowed = (
+            f"The candidates are {_listed(range(1, count + 1))}: name each one at most once, "
+            "by its number."
+        )
+    raise ModelRetry(f"In urgent_events, {'; '.join(problems)}. {allowed}")
 
 
-class NoLogText[OutputT: BaseModel]:
-    """Output validator: no evidence excerpt is quoted in the report (criterion 7).
+def _listed(numbers: Sequence[int]) -> str:
+    return ", ".join(str(number) for number in numbers)
+
+
+def check_log_text(ctx: RunContext[RunDeps], output: ReportingOutput) -> ReportingOutput:
+    """Output validator: no evidence excerpt is quoted in the report.
 
     A piece of MIN_QUOTE characters or more of an excerpt in `summary_tr`, a `reason`, a
     `rationale` or a `checklist` item is a copy of log text, which may carry what an attacker
-    wrote into the log (architecture §22). The output goes back to the model naming the
-    evidence and the field, without repeating the log.
+    wrote into the log (architecture §22). The excerpts travel in RunDeps.context_excerpts, in
+    the order of the context evidence, so the n-th is `ev_c<n>`'s. The output goes back to the
+    model naming the evidence and the field, without repeating the log.
     """
-
-    def __init__(self, evidence: Sequence[EvidenceRef]) -> None:
-        self.excerpts = tuple(
-            (f"ev_c{position}", ref.excerpt)
-            for position, ref in enumerate(evidence, start=1)
-            if ref.excerpt
-        )
-
-    def __call__(self, ctx: RunContext[RunDeps], output: OutputT) -> OutputT:
-        for alias, excerpt in self.excerpts:
-            for piece in _quoted_pieces(excerpt):
-                for field_name in _fields_holding(output, piece):
-                    raise ModelRetry(
-                        f"Your {field_name} copies {MIN_QUOTE} or more characters of the "
-                        f"evidence excerpt of {alias}. Summarize it in your own Turkish words; "
-                        "only structural fields (time, IP, user, event name) may be repeated."
-                    )
-        return output
+    for position, excerpt in enumerate(ctx.deps.context_excerpts, start=1):
+        for piece in _quoted_pieces(excerpt):
+            for field_name in _fields_holding(output, piece):
+                raise ModelRetry(
+                    f"Your {field_name} copies {MIN_QUOTE} or more characters of the "
+                    f"evidence excerpt of {context_alias(position)}. Summarize it in your own "
+                    "Turkish words; only structural fields (time, IP, user, event name) may be "
+                    "repeated."
+                )
+    return output
 
 
 def _quoted_pieces(excerpt: str) -> list[str]:
@@ -346,27 +328,7 @@ class ReportingAgent:
 
     manifest: AgentManifest
     prompt: PromptTemplate
-    model: Model
-    capabilities: Sequence[AbstractCapability[RunDeps]] = field(default_factory=tuple)
-
-    def bind(self, task: ReportingTask) -> Agent[RunDeps, ReportingOutput]:
-        """The Pydantic AI agent for one run: the output validators of this run's input.
-
-        `create_agent` gives every agent `check_evidence`; Reporting adds the two checks that
-        need the run's candidates and evidence. Building them here keeps them out of workflow
-        code and off every other run of the same ReportingAgent.
-        """
-        agent = create_agent(
-            SPEC,
-            manifest=self.manifest,
-            model=self.model,
-            toolsets=[],
-            aql=None,
-            capabilities=self.capabilities,
-        )
-        agent.output_validator(CandidatesUnchanged(task.urgent_event_candidates))
-        agent.output_validator(NoLogText(task.evidence))
-        return agent
+    agent: Agent[RunDeps, ReportingOutput]
 
     def render_instructions(self, task: ReportingTask, *, nonce: str) -> str:
         """The prompt for one run; `nonce` is that run's `untrusted_*` tag suffix."""
@@ -375,9 +337,7 @@ class ReportingAgent:
                 "decision": _render_decision(task.decision),
                 "claims": _render_claims(task.claims, nonce=nonce),
                 "evidence": render_context_evidence(task.evidence, nonce=nonce) or NO_EVIDENCE,
-                "urgent_event_candidates": _render_candidates(
-                    task.urgent_event_candidates, nonce=nonce
-                ),
+                "urgent_event_candidates": render_candidates(task, nonce=nonce),
                 "data_gaps": _render_data_gaps(task.data_gaps, nonce=nonce),
                 "offense": wrap_json_lines(
                     [task.offense.model_dump(mode="json")],
@@ -400,9 +360,10 @@ class ReportingAgent:
     ) -> AgentRun[CaseReport]:
         """Produce the Turkish case report as the agent run `run_id` (`agent_runs.run_id`).
 
-        The decision, the data gaps and the claims come from `task`, never from the model
-        (criteria 3 and 6); only the Turkish text is the model's. `nonce` must be fresh for
-        every run (policy.new_nonce()). Raises ValueError when the task is for another agent.
+        The decision, the data gaps, the claims and the urgent events' identifiers come from
+        `task`, never from the model; only the Turkish text and the choice of candidates are
+        the model's. `nonce` must be fresh for every run (policy.new_nonce()). Raises
+        ValueError when the task is for another agent.
         """
         if task.task.agent_id != self.manifest.id:
             raise ValueError(f"task is for agent {task.task.agent_id!r}, not {self.manifest.id!r}")
@@ -414,13 +375,19 @@ class ReportingAgent:
             time_window=task.task.time_window,
             nonce=nonce,
             context_evidence=tuple(ref.evidence_id for ref in task.evidence),
+            context_excerpts=tuple(ref.excerpt for ref in task.evidence),
+            urgent_event_candidate_count=len(task.urgent_event_candidates),
         )
 
         def finalize(output: ReportingOutput, usage: Usage) -> CaseReport:
+            # check_candidates let only numbers 1..len(candidates) through, each once.
+            candidates = task.urgent_event_candidates
             events = [
                 UrgentEvent.model_validate(
                     {
-                        **event.identifiers(),
+                        **candidates[event.candidate - 1].model_dump(
+                            include=set(IDENTIFIER_FIELDS)
+                        ),
                         "rank": event.rank,
                         "reason": event.reason,
                         "checklist": event.checklist,
@@ -446,7 +413,7 @@ class ReportingAgent:
             )
 
         return await run_agent(
-            self.bind(task),
+            self.agent,
             user_prompt=neutralize_tags(task.task.objective),
             instructions=self.render_instructions(task, nonce=nonce),
             deps=deps,
@@ -482,13 +449,34 @@ def _render_claims(claims: Sequence[Claim], *, nonce: str) -> str:
     )
 
 
-def _render_candidates(candidates: Sequence[UrgentEvent], *, nonce: str) -> str:
-    """The urgent event candidates, one untrusted block each, for the model to copy."""
-    if not candidates:
+def render_candidates(task: ReportingTask, *, nonce: str) -> str:
+    """The urgent event candidates, one untrusted block each, numbered for the model to choose.
+
+    A block holds one JSON line: the candidate's number (`candidate`, from 1), what describes
+    the event, Investigation's reason and checklist, and the alias of its evidence as
+    `evidence` (`ev_c<n>`, decision T-38). CANDIDATE_HIDDEN_FIELDS stay out, so no gateway
+    evidence ID reaches the model (decision T-27). Returns NO_CANDIDATES when there is none.
+    """
+    if not task.urgent_event_candidates:
         return NO_CANDIDATES
+    aliases = {
+        ref.evidence_id: context_alias(position)
+        for position, ref in enumerate(task.evidence, start=1)
+    }
     return "\n\n".join(
-        wrap_json_lines([candidate.model_dump(mode="json")], source=CANDIDATE_SOURCE, nonce=nonce)
-        for candidate in candidates
+        wrap_json_lines(
+            [
+                {
+                    "candidate": number,
+                    **candidate.model_dump(mode="json", exclude=set(CANDIDATE_HIDDEN_FIELDS)),
+                    # ReportingTask holds every candidate's evidence in `evidence`.
+                    "evidence": aliases[candidate.evidence_id],
+                }
+            ],
+            source=CANDIDATE_SOURCE,
+            nonce=nonce,
+        )
+        for number, candidate in enumerate(task.urgent_event_candidates, start=1)
     )
 
 
@@ -509,8 +497,18 @@ def build_reporting_agent(
 ) -> ReportingAgent:
     """Build the agent once, outside any workflow (TemporalDurability requires it).
 
-    Raises ValueError when the manifest does not describe a reporting agent, its prompt or
-    shared rules is not the one given, or the prompt does not take this agent's inputs.
+    The agent has no tools. `capabilities` are attached when the agent is built, the only time
+    Pydantic AI binds them; a workflow passes TemporalDurability here. Every run uses the same
+    Pydantic AI agent: its validators read the run's candidates and excerpts from RunDeps. The
+    output holds no query of its own (the run copies the candidates' checked AQL), so no AQL
+    rules are needed. Raises ValueError when the manifest does not describe a reporting agent,
+    names a toolset profile, its prompt or shared rules is not the one given, or the prompt
+    does not take this agent's inputs.
     """
     check_agent_config(SPEC, manifest, prompt)
-    return ReportingAgent(manifest=manifest, prompt=prompt, model=model, capabilities=capabilities)
+    agent = create_agent(
+        SPEC, manifest=manifest, model=model, toolsets=[], aql=None, capabilities=capabilities
+    )
+    agent.output_validator(check_candidates)
+    agent.output_validator(check_log_text)
+    return ReportingAgent(manifest=manifest, prompt=prompt, agent=agent)

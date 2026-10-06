@@ -57,6 +57,7 @@ from ais0c_agents.registry import (
     load_model_registry,
 )
 from ais0c_agents.reporting import (
+    CaseDecision,
     ReportingAgent,
     ReportingOutput,
     ReportingTask,
@@ -94,6 +95,7 @@ __all__ = [
     "AqlRulesError",
     "Budgets",
     "CandidateSkill",
+    "CaseDecision",
     "ClaimCheck",
     "FakeGatewayClient",
     "GatewayClient",

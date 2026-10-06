@@ -1,24 +1,33 @@
-"""T-025: the Reporting agent (architecture §7, §9).
+"""T-025 and T-047: the Reporting agent (architecture §7, §9; decisions T-45, T-48, T-50).
 
 The agent has no tools. Its input is the workflow's decision, the verified claims with their
 evidence, the urgent event candidates and the data gaps; its output is the Turkish summary,
 the urgent events and the recommendations.
 
-Each test names the acceptance criterion it shows:
+Each test names the acceptance criterion it shows. T-025:
 
 - 1 the manifest,
 - 2 the input and its trust layers,
 - 3 the decision comes from the input, never from the model,
 - 4 the summary's limit and the Turkish report rules in the prompt,
-- 5 the urgent events copy their candidate's identifiers, and rank 1..n,
+- 5 the urgent events carry their candidate's identifiers, and rank 1..n,
 - 6 the recommendations and the data gaps,
 - 7 no log text is copied into the report.
+
+T-047:
+
+- 1 the Pydantic AI agent is built once; a run's validator data travels in RunDeps,
+- 2 the model chooses a candidate by its number and the run copies its identifiers,
+- 3 no gateway evidence ID reaches the model,
+- 4 the `agent.<kind>` sources of decision T-48,
+- 5 the log text check reads the excerpts from RunDeps.
 """
 
 import asyncio
 import json
 import re
-from typing import Any, cast
+from collections.abc import Awaitable, Callable, Sequence
+from typing import Any
 
 import pytest
 from pydantic import ValidationError
@@ -28,22 +37,31 @@ from pydantic_ai.models import Model
 from pydantic_ai.models.test import TestModel
 from pydantic_ai.usage import RunUsage
 
-from ais0c_agents import AgentRun, RunDeps, check_agent_config, load_manifest, load_prompt
+from ais0c_agents import (
+    AgentRun,
+    CaseDecision,
+    RunDeps,
+    check_agent_config,
+    load_manifest,
+    load_prompt,
+)
+from ais0c_agents import reporting as reporting_module
 from ais0c_agents.evidence import check_evidence_fields
 from ais0c_agents.reporting import (
+    IDENTIFIER_FIELDS,
     NO_CANDIDATES,
     NO_CLAIMS,
     NO_DATA_GAPS,
     NO_EVIDENCE,
-    CandidatesUnchanged,
-    CaseDecision,
-    NoLogText,
     ReportingAgent,
     ReportingOutput,
     ReportingTask,
     build_reporting_agent,
+    check_candidates,
+    check_log_text,
 )
 from ais0c_agents.reporting import SPEC as REPORTING_SPEC
+from ais0c_agents.runner import run_agent
 from ais0c_contracts import (
     AgentTask,
     Budget,
@@ -78,6 +96,7 @@ from .helpers import (
     context_evidence,
     enrichment,
     evidence_ref,
+    model_inputs,
     offense,
     registry,
     retry_prompts,
@@ -86,6 +105,8 @@ from .helpers import (
 REPORTING_MANIFEST_PATH = REPO_ROOT / "config/agents/reporting.yaml"
 REPORTING_PROMPT_PATH = "prompts/reporting/v1.md"
 REPORTING_RUN_ID = "case-4711-reporting-1"
+# A gateway evidence ID as the gateway writes it: `ev_` and a UUIDv7's 32 hex digits.
+GATEWAY_EVIDENCE_ID = re.compile(r"ev_[0-9a-f]{32}")
 
 # The synthetic case of the helpers: 412 logon failures for svc_backup_7731 from 203.0.113.77,
 # an IOC address, against a critical asset.
@@ -141,6 +162,8 @@ SUMMARY_TR = (
     "Karar supheli, kaynak IP bir IOC ile eslesti. "
     "Operator once 203.0.113.77 kaynakli basarili girisleri kontrol etmeli."
 )
+# What a candidate block leaves out (T-047 criterion 3).
+HIDDEN_CANDIDATE_FIELDS = {"rank", "evidence_id", "aql"}
 
 
 def reporting_task(
@@ -150,11 +173,12 @@ def reporting_task(
     evidence: list[EvidenceRef] | None = None,
     candidates: list[UrgentEvent] | None = None,
     data_gaps: list[DataGap] | None = None,
+    task_id: str = "task-4711-reporting-1",
 ) -> ReportingTask:
     """A synthetic ReportingTask: every field T-45 lists, with the helpers' case."""
     return ReportingTask(
         task=AgentTask(
-            task_id="task-4711-reporting-1",
+            task_id=task_id,
             parent_run_id="case-4711-triage-1",
             case_id="case-4711",
             agent_id="reporting",
@@ -174,12 +198,15 @@ def reporting_task(
     )
 
 
-def reported_event(
-    candidate: UrgentEvent, *, rank: int = 1, **overrides: object
-) -> dict[str, object]:
-    """A valid model answer for one candidate: its identifiers, its own rank, reason, checklist."""
-    event = candidate.model_dump(mode="json")
-    return event | {"rank": rank, "checklist": ["Bu kullanicinin VPN girisi var mi?"]} | overrides
+def reported_event(candidate: int = 1, *, rank: int = 1, **overrides: object) -> dict[str, object]:
+    """A valid model answer for the candidate numbered `candidate`: its own rank and text."""
+    event: dict[str, object] = {
+        "candidate": candidate,
+        "rank": rank,
+        "reason": "IOC adresinden gelen girisler oncelikli.",
+        "checklist": ["Bu kullanicinin VPN girisi var mi?"],
+    }
+    return event | overrides
 
 
 def reporting_output(*events: dict[str, object], **overrides: object) -> dict[str, object]:
@@ -198,6 +225,11 @@ def reporting_output(*events: dict[str, object], **overrides: object) -> dict[st
         "injection_suspected": True,
     }
     return output | overrides
+
+
+def identifiers(event: UrgentEvent) -> dict[str, object]:
+    """The nine fields the run copies from the chosen candidate (decision T-50)."""
+    return {name: getattr(event, name) for name in IDENTIFIER_FIELDS}
 
 
 def run_reporting(
@@ -221,8 +253,11 @@ def _agent(model: Model) -> ReportingAgent:
     )
 
 
-def _ctx() -> RunContext[RunDeps]:
-    """The run context a validator sees; Reporting has no tools, so no tool results."""
+def _ctx(*, evidence: Sequence[EvidenceRef] = (), candidates: int = 1) -> RunContext[RunDeps]:
+    """The run context a validator sees: the run's evidence and candidate count in RunDeps.
+
+    Reporting has no tools, so there are no tool results.
+    """
     return RunContext(
         deps=RunDeps(
             run_id=REPORTING_RUN_ID,
@@ -230,6 +265,9 @@ def _ctx() -> RunContext[RunDeps]:
             hunt_id=None,
             time_window=TimeWindow(start=START, end=END),
             nonce=NONCE,
+            context_evidence=tuple(ref.evidence_id for ref in evidence),
+            context_excerpts=tuple(ref.excerpt for ref in evidence),
+            urgent_event_candidate_count=candidates,
         ),
         model=TestModel(),
         usage=RunUsage(),
@@ -237,7 +275,30 @@ def _ctx() -> RunContext[RunDeps]:
     )
 
 
-# --- criterion 1: the manifest ---------------------------------------------------------------
+type Call = tuple[tuple[object, ...], dict[str, object]]
+
+
+def _recording[**P, R](
+    calls: list[Call], func: Callable[P, Awaitable[R]]
+) -> Callable[P, Awaitable[R]]:
+    """`func`, recording the arguments of every call in `calls`."""
+
+    async def recorded(*args: P.args, **kwargs: P.kwargs) -> R:
+        calls.append((args, dict(kwargs)))
+        return await func(*args, **kwargs)
+
+    return recorded
+
+
+def _candidate_blocks(text: str) -> list[dict[str, Any]]:
+    return [
+        json.loads(block["content"])
+        for block in BLOCK.finditer(text)
+        if block["source"] == "agent.urgent_event"
+    ]
+
+
+# --- T-025 criterion 1: the manifest ---------------------------------------------------------
 
 
 def test_the_manifest_holds_the_values_the_task_lists() -> None:
@@ -271,7 +332,7 @@ def test_the_model_alias_is_a_known_alias() -> None:
     assert "soc-report" in MODEL_ALIASES
 
 
-# --- criterion 2: the input -------------------------------------------------------------------
+# --- T-025 criterion 2: the input --------------------------------------------------------------
 
 
 def test_the_task_carries_the_fields_t45_lists() -> None:
@@ -329,20 +390,11 @@ def test_the_prompt_shows_the_evidence_under_its_context_alias() -> None:
     assert CONTEXT_QUERY in text
 
 
-def test_the_candidate_evidence_id_is_copied_not_cited() -> None:
-    # Criterion 5 lists `evidence_id` among the identifiers the model copies, so it appears in
-    # the candidate block; the model never guesses it, and `CandidatesUnchanged` compares it.
-    text = _agent(TestModel()).render_instructions(reporting_task(), nonce=NONCE)
-
-    [block] = [b for b in BLOCK.finditer(text) if b["source"] == "qradar.urgent_event"]
-    assert json.loads(block["content"])["evidence_id"] == CONTEXT_EVIDENCE[0]
-
-
 def test_the_claims_evidence_ids_do_not_reach_the_model() -> None:
     text = _agent(TestModel()).render_instructions(reporting_task(), nonce=NONCE)
 
     claim_block = next(
-        block["content"] for block in BLOCK.finditer(text) if block["source"] == "qradar.claim"
+        block["content"] for block in BLOCK.finditer(text) if block["source"] == "agent.claim"
     )
     assert VERIFIED_CLAIM.text in claim_block
     assert "evidence_ids" not in claim_block
@@ -365,11 +417,49 @@ def test_the_offense_name_and_rule_names_stay_inside_an_untrusted_block() -> Non
     assert text.count("</org_context>") == 1
 
 
-def test_the_candidates_reach_the_model_whole_and_untrusted() -> None:
+def test_a_candidate_block_holds_its_number_its_description_and_its_evidence_alias() -> None:
+    # T-047 criteria 2 and 3: the model chooses a candidate by its number and sees its
+    # evidence as `ev_c<n>`, `n` the evidence's place in the task. Investigation's rank, the
+    # gateway's evidence ID and the AQL stay out; the run copies the last two.
+    text = _agent(TestModel()).render_instructions(
+        reporting_task(candidates=[CANDIDATE, SECOND_CANDIDATE]), nonce=NONCE
+    )
+
+    assert _candidate_blocks(text) == [
+        {
+            "candidate": 1,
+            **CANDIDATE.model_dump(mode="json", exclude=HIDDEN_CANDIDATE_FIELDS),
+            "evidence": "ev_c1",
+        },
+        {
+            "candidate": 2,
+            **SECOND_CANDIDATE.model_dump(mode="json", exclude=HIDDEN_CANDIDATE_FIELDS),
+            "evidence": "ev_c2",
+        },
+    ]
+    for candidate in (CANDIDATE, SECOND_CANDIDATE):
+        assert candidate.aql is not None
+        assert candidate.aql not in text
+
+
+def test_a_candidate_block_is_not_citable_evidence_itself() -> None:
+    # The block is an earlier agent's text about the evidence; the evidence is its ev_c<n>
+    # block, so the candidate's own tag carries ev_none (docs/impl/prompts.md).
     text = _agent(TestModel()).render_instructions(reporting_task(), nonce=NONCE)
 
-    [block] = [b for b in BLOCK.finditer(text) if b["source"] == "qradar.urgent_event"]
-    assert json.loads(block["content"]) == CANDIDATE.model_dump(mode="json")
+    [block] = [b for b in BLOCK.finditer(text) if b["source"] == "agent.urgent_event"]
+    assert block["evidence_id"] == "ev_none"
+
+
+def test_a_candidate_whose_evidence_is_not_in_the_task_is_refused() -> None:
+    # T-047 criterion 3: the prompt can show a candidate's evidence only as an alias of the
+    # task's evidence, so a candidate citing anything else is not a valid task.
+    stray = CANDIDATE.model_copy(update={"evidence_id": "ev_0199a1b2c3d47e8f9a0b1c2d3e4f5a6f"})
+
+    with pytest.raises(ValidationError, match="urgent event candidates 2 cite evidence"):
+        reporting_task(candidates=[SECOND_CANDIDATE, stray])
+    with pytest.raises(ValidationError, match="urgent event candidates 1 cite evidence"):
+        reporting_task(candidates=[CANDIDATE], evidence=[])
 
 
 def test_an_empty_case_gets_no_block_but_a_line_per_section() -> None:
@@ -417,7 +507,7 @@ def test_the_objective_cannot_close_the_untrusted_wrapper() -> None:
     assert "&lt;/untrusted_" in text
 
 
-# --- criterion 3: the decision is the input's -------------------------------------------------
+# --- T-025 criterion 3: the decision is the input's --------------------------------------------
 
 
 @pytest.mark.parametrize("field", ["verdict", "confidence", "notify_level"])
@@ -524,7 +614,7 @@ def test_the_decision_section_is_not_wrapped_as_untrusted() -> None:
     assert not any("verdict: suspicious" in block["content"] for block in BLOCK.finditer(text))
 
 
-# --- criterion 4: the summary -----------------------------------------------------------------
+# --- T-025 criterion 4: the summary ------------------------------------------------------------
 
 
 def test_a_summary_over_400_characters_is_rejected() -> None:
@@ -587,127 +677,134 @@ def test_a_summary_within_the_limit_is_accepted() -> None:
     assert len(run.result.summary_tr) <= 400
 
 
-# --- criterion 5: the urgent events -----------------------------------------------------------
+# --- T-025 criterion 5, T-047 criterion 2: choosing urgent events -------------------------------
 
 
-def test_the_events_carry_the_candidates_identifiers_verbatim() -> None:
+def test_a_chosen_candidate_reaches_the_report_with_its_nine_identifiers() -> None:
+    script = ScriptedModel(answer(reporting_output(reported_event(2))))
+
     run = run_reporting(
-        _agent(ScriptedModel(answer(reporting_output(reported_event(CANDIDATE)))).model)
+        _agent(script.model), reporting_task(candidates=[CANDIDATE, SECOND_CANDIDATE])
     )
 
     assert run.status is RunStatus.COMPLETED
     assert run.result is not None
     [event] = run.result.urgent_events
-    copied = CANDIDATE.model_dump(exclude={"reason", "checklist"})
-    assert event.model_dump(exclude={"reason", "checklist"}) == copied
-    assert event.aql == CANDIDATE.aql
-    assert event.evidence_id == CANDIDATE.evidence_id
-    assert event.qid == CANDIDATE.qid
-    assert event.username == CANDIDATE.username
+    assert identifiers(event) == identifiers(SECOND_CANDIDATE)
+    assert len(identifiers(event)) == 9
+    assert event.evidence_id == CONTEXT_EVIDENCE[1]
+    assert event.aql == SECOND_CANDIDATE.aql
+    # rank, reason and checklist are the model's.
+    assert event.rank == 1
+    assert event.reason == "IOC adresinden gelen girisler oncelikli."
+    assert event.checklist == ["Bu kullanicinin VPN girisi var mi?"]
 
 
 def test_the_candidates_aql_is_copied_and_not_rewritten_or_rechecked() -> None:
-    # T-047 (1): the AQL passed the Guard as a candidate's, so Reporting copies it as it is.
+    # T-025: the AQL passed the Guard as a candidate's, so the run copies it as it is.
     # Reporting creates its agent with `aql=None`: it does not re-run the Guard.
-    run = run_reporting(
-        _agent(ScriptedModel(answer(reporting_output(reported_event(CANDIDATE)))).model)
-    )
+    run = run_reporting(_agent(ScriptedModel(answer(reporting_output(reported_event(1)))).model))
 
     assert run.result is not None
     assert run.result.urgent_events[0].aql == CANDIDATE.aql
 
 
-def test_a_fabricated_event_is_sent_back_to_the_model() -> None:
-    invented = reported_event(CANDIDATE, event_name="Successful Logon", qid=4624)
-    script = ScriptedModel(
-        answer(reporting_output(invented)),
-        answer(reporting_output(reported_event(CANDIDATE))),
+@pytest.mark.parametrize("field", IDENTIFIER_FIELDS)
+def test_the_model_cannot_write_an_identifier(field: str) -> None:
+    # The model names a candidate; an identifier of its own is an unknown field (T-50).
+    value = CANDIDATE.model_dump(mode="json")[field]
+
+    with pytest.raises(ValidationError, match="extra_forbidden"):
+        ReportingOutput.model_validate(reporting_output(reported_event(1, **{field: value})))
+
+
+@pytest.mark.parametrize("number", [0, -1, 3, 16])
+def test_a_number_outside_the_candidates_is_sent_back_with_the_valid_numbers(number: int) -> None:
+    output = ReportingOutput.model_validate(reporting_output(reported_event(number)))
+
+    with pytest.raises(ModelRetry) as raised:
+        check_candidates(_ctx(candidates=2), output)
+
+    assert f"there is no candidate {number}" in str(raised.value)
+    assert "The candidates are 1, 2" in str(raised.value)
+
+
+def test_the_same_candidate_twice_is_sent_back_with_the_valid_numbers() -> None:
+    output = ReportingOutput.model_validate(
+        reporting_output(reported_event(1, rank=1), reported_event(1, rank=2))
     )
+
+    with pytest.raises(ModelRetry) as raised:
+        check_candidates(_ctx(candidates=2), output)
+
+    assert "candidate 1 is chosen more than once" in str(raised.value)
+    assert "The candidates are 1, 2: name each one at most once" in str(raised.value)
+
+
+def test_both_mistakes_are_named_in_one_message() -> None:
+    output = ReportingOutput.model_validate(
+        reporting_output(
+            reported_event(2, rank=1), reported_event(2, rank=2), reported_event(7, rank=3)
+        )
+    )
+
+    with pytest.raises(ModelRetry, match="there is no candidate 7; candidate 2 is chosen"):
+        check_candidates(_ctx(candidates=3), output)
+
+
+def test_a_case_without_candidates_takes_no_urgent_event() -> None:
+    output = ReportingOutput.model_validate(reporting_output(reported_event(1)))
+
+    with pytest.raises(ModelRetry, match="no urgent event candidate: return an empty"):
+        check_candidates(_ctx(candidates=0), output)
+
+
+def test_valid_numbers_pass_the_candidate_check_unchanged() -> None:
+    output = ReportingOutput.model_validate(
+        reporting_output(reported_event(2, rank=1), reported_event(1, rank=2))
+    )
+
+    assert check_candidates(_ctx(candidates=2), output) is output
+
+
+def test_a_wrong_number_is_corrected_in_the_run() -> None:
+    script = ScriptedModel(
+        answer(reporting_output(reported_event(3))),
+        answer(reporting_output(reported_event(2))),
+    )
+
+    run = run_reporting(
+        _agent(script.model), reporting_task(candidates=[CANDIDATE, SECOND_CANDIDATE])
+    )
+
+    [retry] = retry_prompts(run.messages)
+    assert "there is no candidate 3" in retry.model_response()
+    assert "The candidates are 1, 2" in retry.model_response()
+    assert run.status is RunStatus.COMPLETED
+    assert run.result is not None
+    assert identifiers(run.result.urgent_events[0]) == identifiers(SECOND_CANDIDATE)
+
+
+def test_a_doubled_candidate_is_corrected_in_the_run() -> None:
+    doubled = reporting_output(reported_event(1, rank=1), reported_event(1, rank=2))
+    script = ScriptedModel(answer(doubled), answer(reporting_output(reported_event(1))))
 
     run = run_reporting(_agent(script.model))
 
     [retry] = retry_prompts(run.messages)
-    assert "No urgent event candidate has these identifiers" in retry.model_response()
-    assert "Add no event of your own" in retry.model_response()
+    assert "candidate 1 is chosen more than once" in retry.model_response()
     assert run.status is RunStatus.COMPLETED
     assert run.result is not None
-    assert run.result.urgent_events[0].event_name == CANDIDATE.event_name
+    assert [identifiers(event) for event in run.result.urgent_events] == [identifiers(CANDIDATE)]
 
 
-def test_a_changed_identifier_is_sent_back_with_the_candidates_own_value() -> None:
-    changed = reported_event(CANDIDATE, source="198.51.100.99")
-    script = ScriptedModel(
-        answer(reporting_output(changed)),
-        answer(reporting_output(reported_event(CANDIDATE))),
-    )
+def test_a_model_that_keeps_doubling_a_candidate_fails_the_run() -> None:
+    doubled = reporting_output(reported_event(1, rank=1), reported_event(1, rank=2))
 
-    run = run_reporting(_agent(script.model))
+    run = run_reporting(_agent(ScriptedModel(answer(doubled)).model))
 
-    [retry] = retry_prompts(run.messages)
-    assert "differ from its candidate in source" in retry.model_response()
-    assert "source='203.0.113.77'" in retry.model_response()
-    assert run.status is RunStatus.COMPLETED
-    assert run.result is not None
-    assert run.result.urgent_events[0].source == "203.0.113.77"
-
-
-def test_a_reformatted_time_is_rejected_too() -> None:
-    changed = reported_event(CANDIDATE, time="2026-10-02T15:00:00Z")
-    script = ScriptedModel(
-        answer(reporting_output(changed)),
-        answer(reporting_output(reported_event(CANDIDATE))),
-    )
-
-    run = run_reporting(_agent(script.model))
-
-    assert retry_prompts(run.messages)
-    assert run.result is not None
-    assert run.result.urgent_events[0].time == CANDIDATE.time
-
-
-@pytest.mark.parametrize(
-    ("field", "value"),
-    [
-        pytest.param(
-            "aql",
-            "SELECT * FROM events LIMIT 1 START '2026-10-02 13:00' STOP '2026-10-02 14:00'",
-            id="aql",
-        ),
-        pytest.param("log_source", "413 Başka Log Kaynağı", id="log_source"),
-        pytest.param("username", "svc_backup_9999", id="username"),
-        pytest.param("destination", "198.51.100.99", id="destination"),
-        pytest.param("qid", 4624, id="qid"),
-        pytest.param("source", "198.51.100.99", id="source"),
-        pytest.param("time", "2026-10-02T15:00:00Z", id="time"),
-    ],
-)
-def test_every_identifier_field_is_compared(field: str, value: str | int) -> None:
-    changed = reported_event(CANDIDATE, **cast("dict[str, Any]", {field: value}))
-
-    with pytest.raises(ModelRetry, match=f"differ from its candidate in {field}"):
-        CandidatesUnchanged([CANDIDATE])(
-            _ctx(), ReportingOutput.model_validate(reporting_output(changed))
-        )
-
-
-def test_a_changed_evidence_id_is_refused() -> None:
-    changed = reported_event(CANDIDATE, evidence_id=CONTEXT_EVIDENCE[1])
-
-    with pytest.raises(ModelRetry, match="differ from its candidate in evidence_id"):
-        CandidatesUnchanged([CANDIDATE])(
-            _ctx(), ReportingOutput.model_validate(reporting_output(changed))
-        )
-
-
-def test_a_changed_event_name_is_refused_as_an_unknown_candidate() -> None:
-    # With no candidate of that name, the model invented an event; the message says so instead
-    # of listing identifiers of a candidate it did not choose.
-    changed = reported_event(CANDIDATE, event_name="Successful Logon")
-
-    with pytest.raises(ModelRetry, match="No urgent event candidate has these identifiers"):
-        CandidatesUnchanged([CANDIDATE])(
-            _ctx(), ReportingOutput.model_validate(reporting_output(changed))
-        )
+    assert run.status is RunStatus.FAILED
+    assert run.result is None
 
 
 @pytest.mark.parametrize(
@@ -720,10 +817,7 @@ def test_a_changed_event_name_is_refused_as_an_unknown_candidate() -> None:
     ],
 )
 def test_rank_starts_at_one_and_is_consecutive_and_unique(ranks: list[int]) -> None:
-    events = [
-        reported_event(CANDIDATE, rank=ranks[0]),
-        reported_event(SECOND_CANDIDATE, rank=ranks[1]),
-    ]
+    events = [reported_event(1, rank=ranks[0]), reported_event(2, rank=ranks[1])]
 
     # rank 0 is refused by the field's own `ge=1`; the rest by the output's own validator.
     match = "greater than or equal to 1" if 0 in ranks else "ranked 1, 2"
@@ -731,18 +825,29 @@ def test_rank_starts_at_one_and_is_consecutive_and_unique(ranks: list[int]) -> N
         ReportingOutput.model_validate(reporting_output(*events))
 
 
+def test_a_rank_mistake_is_sent_back_in_the_run() -> None:
+    script = ScriptedModel(
+        answer(reporting_output(reported_event(1, rank=2))),
+        answer(reporting_output(reported_event(1, rank=1))),
+    )
+
+    run = run_reporting(_agent(script.model))
+
+    [retry] = retry_prompts(run.messages)
+    assert "ranked 1, 2" in retry.model_response()
+    assert run.status is RunStatus.COMPLETED
+
+
 def test_consecutive_ranks_in_order_are_accepted() -> None:
     output = ReportingOutput.model_validate(
-        reporting_output(
-            reported_event(SECOND_CANDIDATE, rank=1), reported_event(CANDIDATE, rank=2)
-        )
+        reporting_output(reported_event(2, rank=1), reported_event(1, rank=2))
     )
 
     assert [event.rank for event in output.urgent_events] == [1, 2]
 
 
 def test_at_most_fifteen_urgent_events() -> None:
-    many = [reported_event(CANDIDATE, rank=n) for n in range(1, 17)]
+    many = [reported_event(n, rank=n) for n in range(1, 17)]
 
     with pytest.raises(ValidationError, match="at most 15"):
         ReportingOutput.model_validate(reporting_output(*many))
@@ -752,12 +857,7 @@ def test_at_most_fifteen_urgent_events() -> None:
 
 def test_the_model_may_keep_a_subset_and_reorder_it() -> None:
     script = ScriptedModel(
-        answer(
-            reporting_output(
-                reported_event(SECOND_CANDIDATE, rank=1),
-                reported_event(CANDIDATE, rank=2),
-            )
-        )
+        answer(reporting_output(reported_event(2, rank=1), reported_event(1, rank=2)))
     )
 
     run = run_reporting(
@@ -767,9 +867,9 @@ def test_the_model_may_keep_a_subset_and_reorder_it() -> None:
     assert run.status is RunStatus.COMPLETED
     assert run.result is not None
     assert [event.rank for event in run.result.urgent_events] == [1, 2]
-    assert [event.event_name for event in run.result.urgent_events] == [
-        SECOND_CANDIDATE.event_name,
-        CANDIDATE.event_name,
+    assert [identifiers(event) for event in run.result.urgent_events] == [
+        identifiers(SECOND_CANDIDATE),
+        identifiers(CANDIDATE),
     ]
 
 
@@ -781,19 +881,9 @@ def test_the_model_may_return_no_events_at_all() -> None:
     assert run.result.urgent_events == []
 
 
-def test_a_candidate_cannot_be_returned_twice() -> None:
-    doubled = reporting_output(reported_event(CANDIDATE, rank=1), reported_event(CANDIDATE, rank=2))
-    script = ScriptedModel(answer(doubled))
-
-    run = run_reporting(_agent(script.model))
-
-    assert run.status is RunStatus.FAILED  # no retry can fix a doubled event
-    assert run.result is None
-
-
 def test_reason_and_checklist_are_the_models_own_fields() -> None:
     script = ScriptedModel(
-        answer(reporting_output(reported_event(CANDIDATE, reason="Operatore ilk bakilacak kayit.")))
+        answer(reporting_output(reported_event(1, reason="Operatore ilk bakilacak kayit.")))
     )
 
     run = run_reporting(_agent(script.model))
@@ -801,31 +891,28 @@ def test_reason_and_checklist_are_the_models_own_fields() -> None:
     assert run.result is not None
     # `reason` and `checklist` are the model's: the candidate's own text is not carried over.
     assert run.result.urgent_events[0].reason == "Operatore ilk bakilacak kayit."
+    assert run.result.urgent_events[0].reason != CANDIDATE.reason
     assert run.result.urgent_events[0].checklist == ["Bu kullanicinin VPN girisi var mi?"]
     assert run.result.urgent_events[0].checklist != CANDIDATE.checklist
 
 
-def test_the_candidates_own_reason_never_reaches_the_report() -> None:
-    # Only rank, reason and checklist are Reporting's, so the candidate's `reason` is input text
-    # the model may read but must not copy (docs/impl/prompts.md).
-    script = ScriptedModel(
-        answer(reporting_output(reported_event(CANDIDATE, reason="Kontrol edilecek kayit.")))
-    )
-
-    run = run_reporting(_agent(script.model))
-
-    assert run.result is not None
-    assert CANDIDATE.reason not in run.result.urgent_events[0].reason
-
-
 def test_at_most_five_checklist_items() -> None:
-    six = reported_event(CANDIDATE, checklist=["a", "b", "c", "d", "e", "f"])
+    six = reported_event(1, checklist=["a", "b", "c", "d", "e", "f"])
 
     with pytest.raises(ValidationError, match="at most 5"):
         ReportingOutput.model_validate(reporting_output(six))
 
 
-# --- criterion 6: recommendations and data gaps ------------------------------------------------
+def test_the_prompt_asks_for_the_candidate_number_and_not_the_identifiers() -> None:
+    text = _agent(TestModel()).prompt.template
+
+    assert "`candidate` is the number of the candidate you chose" in text
+    assert "you do not write them" in text
+    assert "each at most once" in text
+    assert "character for character" not in text
+
+
+# --- T-025 criterion 6: recommendations and data gaps ------------------------------------------
 
 
 def test_the_recommendations_are_the_models_own_and_turkish() -> None:
@@ -940,11 +1027,11 @@ def test_a_gapless_case_reports_no_gaps() -> None:
 def test_the_data_gaps_reach_the_model_untrusted() -> None:
     text = _agent(TestModel()).render_instructions(reporting_task(data_gaps=[GAP]), nonce=NONCE)
 
-    [block] = [b for b in BLOCK.finditer(text) if b["source"] == "qradar.data_gap"]
+    [block] = [b for b in BLOCK.finditer(text) if b["source"] == "agent.data_gap"]
     assert json.loads(block["content"]) == GAP.model_dump(mode="json")
 
 
-# --- criterion 7: no log text is copied -------------------------------------------------------
+# --- T-025 criterion 7, T-047 criterion 5: no log text is copied --------------------------------
 
 
 def test_a_quoted_excerpt_in_the_summary_is_rejected() -> None:
@@ -969,7 +1056,7 @@ def test_a_quoted_excerpt_in_the_summary_is_rejected() -> None:
 def test_a_quoted_excerpt_in_any_free_text_field_is_rejected(field: str) -> None:
     excerpt = evidence_ref(CONTEXT_EVIDENCE[0]).excerpt
     if field == "checklist":
-        bad = reporting_output(reported_event(CANDIDATE, checklist=[f"Log: {excerpt}"]))
+        bad = reporting_output(reported_event(1, checklist=[f"Log: {excerpt}"]))
     elif field == "rationale":
         bad = reporting_output(
             recommendations=[
@@ -982,7 +1069,7 @@ def test_a_quoted_excerpt_in_any_free_text_field_is_rejected(field: str) -> None
             ]
         )
     else:
-        bad = reporting_output(reported_event(CANDIDATE, reason=f"Log {excerpt}"))
+        bad = reporting_output(reported_event(1, reason=f"Log {excerpt}"))
     script = ScriptedModel(answer(bad), answer(reporting_output()))
 
     run = run_reporting(_agent(script.model))
@@ -994,9 +1081,7 @@ def test_a_quoted_excerpt_in_any_free_text_field_is_rejected(field: str) -> None
 
 
 def test_output_without_the_quoted_text_is_accepted() -> None:
-    run = run_reporting(
-        _agent(ScriptedModel(answer(reporting_output(reported_event(CANDIDATE)))).model)
-    )
+    run = run_reporting(_agent(ScriptedModel(answer(reporting_output(reported_event(1)))).model))
 
     assert run.status is RunStatus.COMPLETED
     assert retry_prompts(run.messages) == []
@@ -1007,7 +1092,7 @@ def test_structural_fields_may_be_repeated() -> None:
     run = run_reporting(
         _agent(
             ScriptedModel(
-                answer(reporting_output(reported_event(CANDIDATE, reason="203.0.113.77 kaynakli.")))
+                answer(reporting_output(reported_event(1, reason="203.0.113.77 kaynakli.")))
             ).model
         )
     )
@@ -1025,7 +1110,7 @@ def test_the_check_finds_a_quote_wherever_in_the_excerpt_it_sits() -> None:
     )
 
     with pytest.raises(ModelRetry, match="copies 20 or more characters"):
-        NoLogText([evidence_ref(CONTEXT_EVIDENCE[0])])(_ctx(), output)
+        check_log_text(_ctx(evidence=[evidence_ref(CONTEXT_EVIDENCE[0])]), output)
 
 
 def test_a_quote_spanning_a_space_is_still_a_quote() -> None:
@@ -1037,7 +1122,7 @@ def test_a_quote_spanning_a_space_is_still_a_quote() -> None:
     )
 
     with pytest.raises(ModelRetry, match="copies 20 or more characters"):
-        NoLogText([ref])(_ctx(), output)
+        check_log_text(_ctx(evidence=[ref]), output)
 
 
 def test_a_short_structural_repeat_is_not_a_quote() -> None:
@@ -1045,15 +1130,15 @@ def test_a_short_structural_repeat_is_not_a_quote() -> None:
     short = evidence_ref(CONTEXT_EVIDENCE[0]).excerpt[:10]
     output = ReportingOutput.model_validate(reporting_output(summary_tr=f"IP {short}."))
 
-    assert NoLogText([evidence_ref(CONTEXT_EVIDENCE[0])])(_ctx(), output) is output
+    assert check_log_text(_ctx(evidence=[evidence_ref(CONTEXT_EVIDENCE[0])]), output) is output
 
 
 def test_evidence_without_an_excerpt_copies_nothing() -> None:
-    # A 30-day-old evidence has an empty excerpt (T-047 (2)): there is nothing to quote.
+    # A 30-day-old evidence has an empty excerpt (T-47 (2)): there is nothing to quote.
     old = evidence_ref(CONTEXT_EVIDENCE[0], excerpt="")
     output = ReportingOutput.model_validate(reporting_output(summary_tr="Bir iki cumle."))
 
-    assert NoLogText([old])(_ctx(), output) is output
+    assert check_log_text(_ctx(evidence=[old]), output) is output
 
 
 def test_the_check_looks_at_every_evidence_of_the_run() -> None:
@@ -1063,7 +1148,7 @@ def test_the_check_looks_at_every_evidence_of_the_run() -> None:
     output = ReportingOutput.model_validate(reporting_output(summary_tr=f"Kayit: {excerpt}."))
 
     with pytest.raises(ModelRetry, match="ev_c2"):
-        NoLogText([evidence_ref(CONTEXT_EVIDENCE[0]), second])(_ctx(), output)
+        check_log_text(_ctx(evidence=[evidence_ref(CONTEXT_EVIDENCE[0]), second]), output)
 
 
 def test_the_rejection_does_not_repeat_the_quoted_log_text() -> None:
@@ -1075,9 +1160,36 @@ def test_the_rejection_does_not_repeat_the_quoted_log_text() -> None:
     )
 
     with pytest.raises(ModelRetry) as raised:
-        NoLogText([ref])(_ctx(), output)
+        check_log_text(_ctx(evidence=[ref]), output)
 
     assert "saldirgan metni" not in str(raised.value)
+
+
+def test_a_run_without_excerpts_in_its_deps_checks_nothing() -> None:
+    # RunDeps from before T-047 have no excerpts: the check has nothing to compare against.
+    excerpt = evidence_ref(CONTEXT_EVIDENCE[0]).excerpt
+    output = ReportingOutput.model_validate(reporting_output(summary_tr=f"Olay {excerpt}."))
+
+    assert check_log_text(_ctx(), output) is output
+
+
+def test_the_run_names_the_evidence_by_its_place_even_after_an_empty_excerpt() -> None:
+    # The excerpts travel in RunDeps in the order of the evidence, "" included, so the alias in
+    # the message is the quoted evidence's own.
+    quoted = "Falcon tarafindan toplandı ve maskelendi"
+    evidence = [
+        evidence_ref(CONTEXT_EVIDENCE[0], excerpt=""),
+        evidence_ref(CONTEXT_EVIDENCE[1], excerpt=f'[{{"note":"{quoted}"}}]'),
+    ]
+    script = ScriptedModel(
+        answer(reporting_output(summary_tr=f"Kayit: {quoted}.")), answer(reporting_output())
+    )
+
+    run = run_reporting(_agent(script.model), reporting_task(evidence=evidence))
+
+    [retry] = retry_prompts(run.messages)
+    assert "evidence excerpt of ev_c2" in retry.model_response()
+    assert run.status is RunStatus.COMPLETED
 
 
 def test_the_prompt_tells_the_model_about_the_twenty_character_rule() -> None:
@@ -1087,11 +1199,211 @@ def test_the_prompt_tells_the_model_about_the_twenty_character_rule() -> None:
     assert "rejected" in text
 
 
+# --- T-047 criterion 1: one agent, the run's data in RunDeps ------------------------------------
+
+
+def test_one_agent_serves_every_run_and_checks_each_against_its_own_candidates(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Candidate 2 exists in the first task and not in the second: the same agent object
+    # accepts it in one run and sends it back in the other.
+    script = ScriptedModel(
+        answer(reporting_output(reported_event(2))),
+        answer(reporting_output(reported_event(2))),
+        answer(reporting_output(reported_event(1))),
+    )
+    reporting = _agent(script.model)
+    calls: list[Call] = []
+
+    def no_create_agent(*args: object, **kwargs: object) -> None:
+        raise AssertionError("a run created an agent")
+
+    monkeypatch.setattr(reporting_module, "run_agent", _recording(calls, run_agent))
+    monkeypatch.setattr(reporting_module, "create_agent", no_create_agent)
+
+    two = run_reporting(
+        reporting,
+        reporting_task(candidates=[CANDIDATE, SECOND_CANDIDATE], task_id="task-4711-reporting-1"),
+    )
+    one = run_reporting(
+        reporting,
+        reporting_task(candidates=[CANDIDATE], task_id="task-4711-reporting-2"),
+        run_id="case-4711-reporting-2",
+    )
+
+    [first, second] = [args[0] for args, _ in calls]
+    assert first is reporting.agent
+    assert second is reporting.agent
+    assert two.status is RunStatus.COMPLETED
+    assert two.result is not None
+    assert retry_prompts(two.messages) == []
+    assert identifiers(two.result.urgent_events[0]) == identifiers(SECOND_CANDIDATE)
+    assert one.status is RunStatus.COMPLETED
+    assert one.result is not None
+    [retry] = retry_prompts(one.messages)
+    assert "there is no candidate 2. The candidates are 1:" in retry.model_response()
+    assert identifiers(one.result.urgent_events[0]) == identifiers(CANDIDATE)
+
+
+def test_the_run_hands_its_validator_data_to_run_deps(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[Call] = []
+    monkeypatch.setattr(reporting_module, "run_agent", _recording(calls, run_agent))
+    task = reporting_task(candidates=[CANDIDATE, SECOND_CANDIDATE])
+
+    run_reporting(_agent(ScriptedModel(answer(reporting_output())).model), task)
+
+    [(_, kwargs)] = calls
+    run_deps = kwargs["deps"]
+    assert isinstance(run_deps, RunDeps)
+    assert run_deps.context_evidence == CONTEXT_EVIDENCE
+    assert run_deps.context_excerpts == tuple(ref.excerpt for ref in task.evidence)
+    assert run_deps.urgent_event_candidate_count == 2
+    assert run_deps.run_id == REPORTING_RUN_ID
+
+
+def test_the_model_never_sees_the_run_deps() -> None:
+    # RunDeps holds the gateway's evidence IDs; none of them is in anything the model received.
+    script = ScriptedModel(answer(reporting_output(reported_event(1))))
+
+    run_reporting(_agent(script.model), reporting_task(candidates=[CANDIDATE, SECOND_CANDIDATE]))
+
+    [(messages, info)] = script.requests
+    seen = "\n".join(model_inputs(messages, info))
+    seen += json.dumps([tool.parameters_json_schema for tool in info.output_tools])
+    for evidence_id in CONTEXT_EVIDENCE:
+        assert evidence_id not in seen
+    assert "urgent_event_candidate_count" not in seen
+    assert "context_excerpts" not in seen
+
+
+def test_run_deps_from_before_t047_stay_valid() -> None:
+    # A Temporal payload written before T-047 has none of the new fields; it still loads and
+    # the validators then find nothing to check.
+    old = {
+        "run_id": REPORTING_RUN_ID,
+        "case_id": "case-4711",
+        "hunt_id": None,
+        "time_window": {"start": START.isoformat(), "end": END.isoformat()},
+        "nonce": NONCE,
+        "context_evidence": list(CONTEXT_EVIDENCE),
+        "reviewed_claim_texts": [],
+    }
+
+    deps = RunDeps.model_validate_json(json.dumps(old))
+
+    assert deps.context_excerpts == ()
+    assert deps.urgent_event_candidate_count == 0
+    assert RunDeps.model_validate_json(deps.model_dump_json()) == deps
+
+
+def test_a_negative_candidate_count_is_refused() -> None:
+    with pytest.raises(ValidationError, match="greater than or equal to 0"):
+        RunDeps(
+            run_id=REPORTING_RUN_ID,
+            case_id="case-4711",
+            hunt_id=None,
+            time_window=TimeWindow(start=START, end=END),
+            nonce=NONCE,
+            urgent_event_candidate_count=-1,
+        )
+
+
+# --- T-047 criterion 3: no gateway evidence ID reaches the model --------------------------------
+
+
+def test_no_message_the_model_sees_holds_a_gateway_evidence_id() -> None:
+    # Three corrections, each with a message of its own, then a valid answer: a wrong candidate
+    # number, a citation of an alias the run does not have and a quoted excerpt.
+    excerpt = evidence_ref(CONTEXT_EVIDENCE[0]).excerpt
+    unknown_alias = {
+        "action_type": "investigate_further",
+        "target": "203.0.113.77",
+        "rationale": "Kaynak IP bir IOC ile eslesti.",
+        "evidence_ids": ["ev_c9"],
+    }
+    script = ScriptedModel(
+        answer(reporting_output(reported_event(5))),
+        answer(reporting_output(reported_event(2), recommendations=[unknown_alias])),
+        answer(reporting_output(reported_event(2), summary_tr=f"Olay {excerpt}.")),
+        answer(reporting_output(reported_event(2, rank=1), reported_event(1, rank=2))),
+    )
+    task = reporting_task(candidates=[CANDIDATE, SECOND_CANDIDATE], data_gaps=[GAP])
+
+    run = run_reporting(_agent(script.model), task)
+
+    assert run.status is RunStatus.COMPLETED
+    assert len(retry_prompts(run.messages)) == 3
+    for messages, info in script.requests:
+        seen = "\n".join(model_inputs(messages, info))
+        seen += json.dumps([tool.parameters_json_schema for tool in info.output_tools])
+        seen += "".join(tool.description or "" for tool in info.output_tools)
+        assert GATEWAY_EVIDENCE_ID.search(seen) is None
+        # Every evidence name the model saw, but the prompt's own `ev_<n>`/`ev_c<n>` notation.
+        assert set(re.findall(r"\bev_\w+\b(?!<)", seen)) <= {
+            "ev_c1",
+            "ev_c2",
+            "ev_c9",
+            "ev_none",
+        }
+    # The run itself still carries the gateway's IDs, from the input, into the report.
+    assert run.result is not None
+    assert [event.evidence_id for event in run.result.urgent_events] == [
+        CONTEXT_EVIDENCE[1],
+        CONTEXT_EVIDENCE[0],
+    ]
+
+
+def test_the_output_tool_says_nothing_but_its_own_description() -> None:
+    # The output models carry no docstring: Pydantic AI would add it to what the model reads.
+    script = ScriptedModel(answer(reporting_output()))
+
+    run_reporting(_agent(script.model))
+
+    [(_, info)] = script.requests
+    [tool] = info.output_tools
+    assert tool.description == "Return the CaseReport for this case."
+    assert "description" not in json.dumps(tool.parameters_json_schema)
+
+
+# --- T-047 criterion 4: the sources of the untrusted blocks -------------------------------------
+
+
+def test_earlier_agents_text_is_wrapped_as_agent_sources() -> None:
+    # Decision T-48: model text of earlier agents is `agent.<kind>`; `qradar.*` is QRadar's own
+    # data. The literal names are checked: `qradar.<x>` would also pass the policy's pattern.
+    text = _agent(TestModel()).render_instructions(
+        reporting_task(candidates=[CANDIDATE, SECOND_CANDIDATE], data_gaps=[GAP]), nonce=NONCE
+    )
+
+    sources = [block["source"] for block in BLOCK.finditer(text)]
+    assert sources == [
+        "agent.claim",
+        "qradar.evidence",
+        "falcon.evidence",
+        "agent.urgent_event",
+        "agent.urgent_event",
+        "agent.data_gap",
+        "qradar.offense",
+    ]
+    assert not {"qradar.claim", "qradar.urgent_event", "qradar.data_gap"} & set(sources)
+
+
+def test_the_source_names_are_the_policy_packages_agent_sources() -> None:
+    from ais0c_policy.untrusted import AGENT_SOURCES
+
+    assert {
+        reporting_module.CLAIM_SOURCE,
+        reporting_module.CANDIDATE_SOURCE,
+        reporting_module.DATA_GAP_SOURCE,
+    } <= AGENT_SOURCES
+    assert reporting_module.OFFENSE_SOURCE == "qradar.offense"
+
+
 # --- the run -----------------------------------------------------------------------------------
 
 
 def test_a_complete_run_returns_a_case_report_and_records_the_run() -> None:
-    script = ScriptedModel(answer(reporting_output(reported_event(CANDIDATE))))
+    script = ScriptedModel(answer(reporting_output(reported_event(1))))
 
     run = run_reporting(_agent(script.model))
 
@@ -1148,15 +1460,14 @@ def test_output_that_stays_invalid_fails_the_run() -> None:
 
 
 def test_the_output_model_passes_the_evidence_field_check() -> None:
-    # UrgentEvent.evidence_id and Recommendation.evidence_ids are typed EvidenceId, so
-    # check_evidence can map the model's `ev_c<n>` to the gateway's ID (decision T-38).
+    # Recommendation.evidence_ids is typed EvidenceId, so check_evidence maps the model's
+    # `ev_c<n>` to the gateway's ID (decision T-38). An urgent event holds no evidence field:
+    # the run copies the candidate's evidence ID.
     check_evidence_fields(ReportingOutput)
 
 
 def test_the_evidence_id_of_an_event_reaches_the_report_unchanged() -> None:
-    run = run_reporting(
-        _agent(ScriptedModel(answer(reporting_output(reported_event(CANDIDATE)))).model)
-    )
+    run = run_reporting(_agent(ScriptedModel(answer(reporting_output(reported_event(1)))).model))
 
     assert run.result is not None
     assert run.result.urgent_events[0].evidence_id == CONTEXT_EVIDENCE[0]

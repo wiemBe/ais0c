@@ -151,6 +151,14 @@ class RunDeps(BaseModel):
     """The texts of the claims the prompt shows (verification.py), in their order: an output
     validator checks that every disagreement names one of them exactly, so the workflow can
     tell which claim the agent contested. The default keeps runs that never set it valid."""
+    context_excerpts: tuple[str, ...] = ()
+    """The excerpts of the context evidence, in the order of `context_evidence` ("" for evidence
+    without one), so the n-th belongs to `ev_c<n>`: an output validator checks that no report
+    text quotes one (reporting.py). The default keeps runs that never set it valid."""
+    urgent_event_candidate_count: Annotated[int, Field(ge=0)] = 0
+    """How many urgent event candidates the prompt shows, numbered from 1 (reporting.py): an
+    output validator checks that every urgent event names one of them, once. The default keeps
+    runs that never set it valid."""
 
 
 class GatewayCallRecord(BaseModel):
