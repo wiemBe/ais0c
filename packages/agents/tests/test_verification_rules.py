@@ -247,6 +247,7 @@ def test_an_instruction_in_a_claim_text_cannot_escape_the_wrapper() -> None:
     [claim_block] = [
         item for item in BLOCK.finditer(everything) if "is a machine account" in item["content"]
     ]
+    assert claim_block["source"] == "agent.claim"
     assert claim_block["evidence_id"] == NO_EVIDENCE_ID
     assert lenient_tags(claim_block["content"]) == []
     assert f"&lt;/untrusted_{NONCE}>" in claim_block["content"]

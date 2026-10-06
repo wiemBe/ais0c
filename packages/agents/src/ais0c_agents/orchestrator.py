@@ -9,8 +9,10 @@ budgets and the plan budget. Each part reaches the model in its trust layer (arc
   "Seçim" 4), as are the agents, the budgets, the evaluation window and Triage's verdict,
   confidence, level and flags, which are platform values;
 - Triage's investigation focus and data gaps are model text, and the offense's fields come from
-  QRadar, so both are inside the `untrusted_*` wrapper. The offense's free text (`description`,
-  `rule_names`) stays out: the agent gets the offense's structured fields (T-45).
+  QRadar, so all three are inside the `untrusted_*` wrapper, each in its own block: the focus as
+  `agent.focus`, the data gaps as `agent.data_gap` (decision T-48), the offense as
+  `qradar.offense`. The offense's free text (`description`, `rule_names`) stays out: the agent
+  gets the offense's structured fields (T-45).
 
 The model returns an OrchestratorOutput, checked against its schema only. Whether the plan may
 run is decided by the workflow (ais0c_workflows.plan, decision T-41), which replaces an invalid
@@ -23,7 +25,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Annotated, Final, Self
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 from pydantic_ai import Agent, AgentRetries
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.models import Model
@@ -69,8 +71,9 @@ PLACEHOLDERS: Final = frozenset(
     }
 )
 OFFENSE_SOURCE: Final = "qradar.offense"
-# Triage's model text about the offense: what it derived from QRadar's data.
-TRIAGE_SOURCE: Final = "qradar.triage"
+# Triage's model text about the offense (decision T-48): neither QRadar data nor knowledge.
+FOCUS_SOURCE: Final = "agent.focus"
+DATA_GAP_SOURCE: Final = "agent.data_gap"
 # The offense's free-text fields; the Orchestrator gets the structured ones (T-45).
 OFFENSE_FREE_TEXT: Final = frozenset({"description", "rule_names"})
 NO_CANDIDATES: Final = "No skill is a candidate for this offense: plan every step without a skill."
@@ -186,10 +189,8 @@ class OrchestratorAgent:
         """The prompt for one run; `nonce` is that run's `untrusted_*` tag suffix."""
         triage = task.triage
         window = task.task.time_window
-        notes = {
-            "investigation_focus": list(triage.investigation_focus),
-            "data_gaps": [gap.model_dump(mode="json") for gap in triage.data_gaps],
-        }
+        focus: JsonValue = {"investigation_focus": list(triage.investigation_focus)}
+        gaps: JsonValue = {"data_gaps": [gap.model_dump(mode="json") for gap in triage.data_gaps]}
         return self.prompt.render(
             {
                 "evaluation_window": f"{_utc(window.start)} to {_utc(window.end)}",
@@ -202,7 +203,12 @@ class OrchestratorAgent:
                         f"- injection suspected: {_yes_no(triage.injection_suspected)}",
                     ]
                 ),
-                "triage_notes": wrap_json_lines([notes], source=TRIAGE_SOURCE, nonce=nonce),
+                "triage_notes": "\n\n".join(
+                    [
+                        wrap_json_lines([focus], source=FOCUS_SOURCE, nonce=nonce),
+                        wrap_json_lines([gaps], source=DATA_GAP_SOURCE, nonce=nonce),
+                    ]
+                ),
                 "offense": wrap_json_lines(
                     [task.offense.model_dump(mode="json", exclude=set(OFFENSE_FREE_TEXT))],
                     source=OFFENSE_SOURCE,

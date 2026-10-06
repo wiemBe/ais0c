@@ -15,9 +15,11 @@ nonce. Case, whitespace, invisible format characters (such as zero-width spaces)
 compatibility forms (such as the fullwidth less-than sign) do not hide such a tag.
 
 The source says where the content came from, and only known sources are accepted: a
-connector's results (`qradar.<x>`, `falcon.<x>`) and external knowledge (`kb.<kind>`).
-Knowledge has a known origin but is wrapped like log data: a CTI report or a runbook can
-carry an attacker's text.
+connector's results (`qradar.<x>`, `falcon.<x>`), external knowledge (`kb.<kind>`) and an
+earlier agent's model text (`agent.<kind>`, decision T-48). Knowledge has a known origin but is
+wrapped like log data: a CTI report or a runbook can carry an attacker's text. So can an earlier
+agent's text, which may derive from log data an attacker wrote; it is neither QRadar data nor
+knowledge, so it has its own family.
 """
 
 import re
@@ -48,6 +50,12 @@ class KnowledgeKind(StrEnum):
 # Connectors whose results reach a prompt; such a block's source is `<connector>.<x>`.
 CONNECTOR_SOURCES: Final = ("qradar", "falcon")
 KNOWLEDGE_SOURCES: Final = frozenset(kind.source for kind in KnowledgeKind)
+# An earlier agent's model text that reaches the next agent's prompt (decision T-48): a claim's
+# text, Triage's investigation focus, a data gap, an urgent event candidate and a plan step's
+# objective. The list is fixed; no other `agent.` source exists.
+AGENT_SOURCES: Final = frozenset(
+    {"agent.claim", "agent.focus", "agent.data_gap", "agent.urgent_event", "agent.objective"}
+)
 
 _NONCE = re.compile(r"[0-9a-f]{8,64}")
 _CONNECTOR_SOURCE = re.compile(rf"(?:{'|'.join(CONNECTOR_SOURCES)})\.[a-z0-9][a-z0-9_.-]*")
@@ -63,14 +71,18 @@ def new_nonce() -> str:
 
 def is_known_source(source: str) -> bool:
     """Whether `source` may name an untrusted block: `qradar.<x>`, `falcon.<x>` or one of
-    KNOWLEDGE_SOURCES.
+    KNOWLEDGE_SOURCES and AGENT_SOURCES.
 
     `<x>` is lowercase letters, digits, `_`, `.` and `-`, and the whole source is at most
     MAX_SOURCE_LENGTH characters.
     """
     if len(source) > MAX_SOURCE_LENGTH:
         return False
-    return source in KNOWLEDGE_SOURCES or _CONNECTOR_SOURCE.fullmatch(source) is not None
+    return (
+        source in KNOWLEDGE_SOURCES
+        or source in AGENT_SOURCES
+        or _CONNECTOR_SOURCE.fullmatch(source) is not None
+    )
 
 
 def wrap_untrusted(content: str, source: str, evidence_id: str, nonce: str) -> str:

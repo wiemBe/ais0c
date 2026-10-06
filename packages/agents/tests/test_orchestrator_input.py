@@ -5,9 +5,11 @@
 - The candidate skills' manifest information is approved content: part of the prompt, not
   wrapped.
 - Triage's investigation focus and data gaps, and the offense's fields, are inside the
-  `untrusted_*` wrapper.
+  `untrusted_*` wrapper, each in its own block: `agent.focus`, `agent.data_gap` and
+  `qradar.offense` (T-046, decision T-48).
 """
 
+import inspect
 import json
 
 import pytest
@@ -19,8 +21,14 @@ from ais0c_agents import (
     OrchestratorTask,
     PlanAgent,
     TriageDecision,
+    orchestrator,
 )
-from ais0c_agents.orchestrator import NO_CANDIDATES, OFFENSE_SOURCE, TRIAGE_SOURCE
+from ais0c_agents.orchestrator import (
+    DATA_GAP_SOURCE,
+    FOCUS_SOURCE,
+    NO_CANDIDATES,
+    OFFENSE_SOURCE,
+)
 
 from .helpers import (
     BLOCK,
@@ -187,28 +195,63 @@ def test_the_offense_is_untrusted_data_with_its_structured_fields() -> None:
     assert "203.0.113.77" not in outside_blocks(text)
 
 
-def test_triages_focus_and_data_gaps_are_untrusted_data() -> None:
+def test_triages_focus_and_data_gaps_are_untrusted_data_in_their_own_blocks() -> None:
     text = instructions()
 
-    notes = json.loads(blocks(text)[TRIAGE_SOURCE])
-    assert list(notes) == ["investigation_focus", "data_gaps"]
-    assert notes["investigation_focus"][0].startswith("Successful logons by svc_backup_7731")
-    assert notes["data_gaps"][0]["reason"] == "not_parsed"
+    found = blocks(text)
+    focus = json.loads(found["agent.focus"])
+    gaps = json.loads(found["agent.data_gap"])
+    assert list(focus) == ["investigation_focus"]
+    assert focus["investigation_focus"][0].startswith("Successful logons by svc_backup_7731")
+    assert list(gaps) == ["data_gaps"]
+    assert gaps["data_gaps"][0]["reason"] == "not_parsed"
+    # Each block holds only its own kind of text.
+    assert "Successful logons" not in found["agent.data_gap"]
+    assert "Security Event Log" not in found["agent.focus"]
     outside = outside_blocks(text)
     assert "Successful logons" not in outside
     assert INJECTION not in outside
     assert "Security Event Log" not in outside
 
 
+def test_the_blocks_are_named_after_their_source_in_prompt_order() -> None:
+    text = instructions()
+
+    sources = [block["source"] for block in BLOCK.finditer(text)]
+    assert sources == ["agent.focus", "agent.data_gap", "qradar.offense"]
+    assert (FOCUS_SOURCE, DATA_GAP_SOURCE, OFFENSE_SOURCE) == tuple(sources)
+
+
+def test_triage_without_focus_or_data_gaps_still_gets_both_blocks() -> None:
+    task = orchestrator_task()
+    quiet = task.triage.model_copy(update={"investigation_focus": (), "data_gaps": ()})
+
+    found = blocks(instructions(task.model_copy(update={"triage": quiet})))
+
+    assert json.loads(found["agent.focus"]) == {"investigation_focus": []}
+    assert json.loads(found["agent.data_gap"]) == {"data_gaps": []}
+
+
+def test_triages_text_is_not_named_as_qradar_data_or_knowledge() -> None:
+    text = instructions()
+
+    assert "qradar.triage" not in text
+    assert 'source="kb.' not in text
+    code = inspect.getsource(orchestrator)
+    assert "qradar.triage" not in code
+    assert "kb.case" not in code
+
+
 def test_the_attackers_text_cannot_leave_its_block() -> None:
     text = instructions()
 
     found = blocks(text)
-    assert set(found) == {TRIAGE_SOURCE, OFFENSE_SOURCE}
+    assert set(found) == {"agent.focus", "agent.data_gap", "qradar.offense"}
     for content in found.values():
         assert lenient_tags(content) == []
-    # The escape's closing tag only closes the real blocks: one per block.
-    assert text.count(f"</untrusted_{NONCE}>") == 2
+    # The escape in the focus closes only the real blocks: one per block.
+    assert text.count(f"</untrusted_{NONCE}>") == 3
+    assert f"&lt;/untrusted_{NONCE}>" in found["agent.focus"]
     assert ESCAPE not in text
     assert all(block["evidence_id"] == "ev_none" for block in BLOCK.finditer(text))
 

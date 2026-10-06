@@ -11,7 +11,8 @@ What reaches the model, each part in its trust layer (architecture §22):
 
 - the reviewed decision, three enum values, as plain text;
 - the claim texts, model text that may derive from log data an attacker wrote, each in its own
-  `untrusted_*` block as `kb.case` together with the evidence aliases the claim rests on;
+  `untrusted_*` block as `agent.claim` (decision T-48) together with the evidence aliases the
+  claim rests on;
 - the offense's structural fields in one `untrusted_*` block, without `description` and
   `rule_names`: free text an attacker can write;
 - the evidence of the claims as `ev_c<n>` blocks (decision T-38).
@@ -75,8 +76,8 @@ MAX_EVIDENCE: Final = 40
 # The offense's free-text fields never reach this prompt (decision T-45).
 OFFENSE_TEXT_FIELDS: Final = frozenset({"description", "rule_names"})
 OFFENSE_SOURCE: Final = "qradar.offense"
-CLAIM_SOURCE: Final = "kb.case"
-"""Claim texts are another model's words about this case: untrusted case data, not evidence."""
+CLAIM_SOURCE: Final = "agent.claim"
+"""Claim texts are another model's words about this case: untrusted, not evidence (T-48)."""
 NO_CLAIMS: Final = "No claim was handed over to check."
 NO_EVIDENCE: Final = "No evidence was handed over."
 # Why code, not the model, contested a claim.

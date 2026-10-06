@@ -6,6 +6,7 @@ the fake gateway records every ToolIntent the run makes. Criterion 1 is the mani
 what the prompt holds, 3 is the deterministic pre-check, 4 is the Ariel lifecycle.
 """
 
+import inspect
 import json
 from datetime import timedelta
 
@@ -20,6 +21,7 @@ from ais0c_agents import (
     load_model_registry,
     render_claims,
     render_reviewed,
+    verification,
 )
 from ais0c_agents.verification import (
     CLAIM_SOURCE,
@@ -183,6 +185,18 @@ def test_each_claim_is_its_own_untrusted_block_with_its_evidence_aliases() -> No
     ]
 
 
+def test_claim_texts_are_earlier_agent_text_not_case_knowledge() -> None:
+    text = verification_instructions()
+
+    sources = [item["source"] for item in BLOCK.finditer(text)]
+    assert CLAIM_SOURCE == "agent.claim"
+    assert sources.count("agent.claim") == 2
+    # Claim texts are neither "past cases" knowledge (T-20) nor QRadar data (T-48).
+    assert 'source="kb.' not in text
+    assert "qradar.claim" not in text
+    assert "kb.case" not in inspect.getsource(verification)
+
+
 def test_render_claims_puts_the_claim_in_the_block_and_nothing_else() -> None:
     rendered = render_claims(
         [reviewed_claim("A claim.", "ev_a", critical=False)], {"ev_a": "ev_c1"}, nonce=NONCE
@@ -190,7 +204,7 @@ def test_render_claims_puts_the_claim_in_the_block_and_nothing_else() -> None:
 
     block = BLOCK.search(rendered)
     assert block is not None
-    assert block["source"] == CLAIM_SOURCE
+    assert block["source"] == "agent.claim"
     assert json.loads(block["content"]) == {
         "claim": "A claim.",
         "critical": False,
