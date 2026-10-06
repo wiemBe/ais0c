@@ -1,6 +1,6 @@
 # T-045: Executor'ın vaka akışına bağlanması
 
-> Bu görev T-026 birleştikten sonra verilir. Planner o zaman dosyayı T-026'nın gerçek arayüzüne göre gözden geçirir.
+> Planner 2026-10-06'da dosyayı T-026 ve T-049'dan sonraki koda göre gözden geçirdi (`main` `530c01e`). Bağlanılacak yerler aşağıdaki "Arayüzler" bölümündedir.
 
 ## Amaç
 
@@ -18,6 +18,11 @@ Shadow modunda kill switch kapalıdır: workflow aynı çağrıları yapar, exec
 - `docs/impl/data-model.md`: `notes_written`, `notifications`
 - `docs/decisions.md`: D-18, D-22, D-30, D-42, T-23, T-33, T-37, T-42
 - `../ais0c-prs/PR-T-019.md`, `PR-T-020.md`, `PR-T-041.md`
+- `../ais0c-prs/PR-T-026.md` (zincir, `record_decision`, sapmalar), `PR-T-036.md` yoksa T-036'nın commit mesajı (`598238a`: bildirim grupları ve yönlendirme), `PR-T-049.md`
+
+## Branch
+
+`agent/<araç>/T-045`, `main`'den, **ayrı bir worktree'de** (`git worktree add ../ais0c-T-045 -b agent/<araç>/T-045 main`). Ana checkout'ta (`/home/efe/Documents/ais0c`) çalışılmaz; dev stack'i görev worktree'sinden yeniden kurma. Push yapılmaz (AGENTS.md hard rule 9).
 
 ## İzinli dizinler
 
@@ -69,6 +74,14 @@ Her madde en az bir testle gösterilir.
    - kalıcı hata ve `InvalidNote`/`InvalidEmail` yeniden denenmez.
 
    Executor'ın başarısızlığı vakanın karar kaydını değiştirmez ve workflow'u bozmaz. Test.
+
+## Arayüzler
+
+- **Karar kaydı.** Zincirin sonu `packages/workflows/src/ais0c_workflows/case.py`'deki CaseWorkflow'dur; karar `record_decision` activity'siyle (`packages/activities/src/ais0c_activities/case.py`) tek transaction'da kaydedilir: karar, seviye, rapor (`CaseReport` veya None), acil event'ler, öneriler, QA satırları (`evaluation_no`'lu, T-57). Not ve e-posta bu kayıttan **sonra**, aynı değerlendirmenin verisiyle çağrılır. Rapor yoksa (Reporting başarısız) not yine yazılır; T-019'un şablonu raporsuz durumu taşıyor mu, kontrol edilir.
+- **Worker.** Case worker `services/worker` içindeki `build_case_worker(..., chain=...)` ile kurulur; executor worker'ı ayrı bir süreçtir (`python -m ais0c_worker executor`, T-037'deki `batch` gibi) ve yalnızca `soc-executor` kuyruğunu dinler.
+- **E-posta alıcıları.** T-036'dan beri `EmailSender` alıcıları yönlendirme tablosundan alır (D-41, D-42); workflow alıcı listesi vermez.
+- **Ayarlar.** Yeni ayarlar (`AIS0C_CASE_URL_BASE` ve executor'ınkiler) `packages/activities/src/ais0c_activities/settings.py`'deki mevcut düzene uyar. Yeniden deneme ayarının adı artık `AIS0C_AGENT_RETRY_MINUTES`'tir (T-57).
+- **Workflow değişikliği.** CaseWorkflow'a eklenen adımlar `workflow.patched()` ile sürümlenmez (prod yok); dev'de açık CaseWorkflow'ları planner sonlandırır.
 
 ## Kapsam dışı
 
