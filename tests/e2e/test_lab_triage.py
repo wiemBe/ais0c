@@ -190,6 +190,9 @@ async def test_a_lab_offense_is_triaged_end_to_end(
         "LITELLM_API_KEY": settings.litellm_api_key,
         # Dev deliberately exposes draft skills to the planner (T-58).
         "AIS0C_SKILLS_MODE": "dev",
+        # The case worker builds each note's case link from it (T-045). No executor worker runs
+        # here, so the case's note and e-mail wait on soc-executor and are given up after an hour.
+        "AIS0C_CASE_URL_BASE": "http://127.0.0.1:5173/cases",
     }
     workers: list[Process] = []
     try:
