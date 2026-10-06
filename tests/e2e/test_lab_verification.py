@@ -46,7 +46,14 @@ import pytest
 import yaml
 from e2e_support import MODEL_REGISTRY, REPO_ROOT
 from pydantic import BaseModel, ConfigDict
-from pydantic_ai.messages import ModelRequest, ModelResponse, UserPromptPart
+from pydantic_ai.messages import (
+    ModelMessage,
+    ModelRequest,
+    ModelResponse,
+    ToolCallPart,
+    UserPromptPart,
+)
+from pydantic_ai.usage import RunUsage, UsageLimits
 from sqlalchemy import select
 
 from ais0c_activities import SessionFactory
@@ -66,9 +73,10 @@ from ais0c_agents import (
     load_manifest,
     load_model_registry,
 )
+from ais0c_agents.builder import OUTPUT_TOOL
 from ais0c_agents.gateway_http import HttpGatewayClient
 from ais0c_agents.investigation import aql_window
-from ais0c_agents.runner import FINAL_ANSWER_PROMPT
+from ais0c_agents.runner import FINAL_ANSWER_PROMPT, budget_spent
 from ais0c_contracts import (
     AgentTask,
     Budget,
@@ -603,6 +611,55 @@ def _agent_task(
     )
 
 
+def _requests(messages: Sequence[ModelMessage], *, budget_tokens: int) -> list[dict[str, Any]]:
+    """What every model request of the run cost, and the reserve before the one after it.
+
+    T-051: the recorded run of offense 34 ended `budget_exhausted` with no result because the
+    estimate of the next request's cost left no room for the model's correction of its own
+    answer. The report needs the per-request tokens to show whether the run came close.
+    """
+    limits = UsageLimits(total_tokens_limit=budget_tokens)
+    spent = 0
+    requests: list[dict[str, Any]] = []
+    history: list[ModelMessage] = []
+    for message in messages:
+        history.append(message)
+        if not isinstance(message, ModelResponse):
+            continue
+        usage = message.usage
+        spent += usage.total_tokens
+        requests.append(
+            {
+                "request": len(requests) + 1,
+                "input_tokens": usage.input_tokens,
+                "output_tokens": usage.output_tokens,
+                "total_tokens": usage.total_tokens,
+                "spent": spent,
+                "remaining": budget_tokens - spent,
+                # Whether the tools would be withdrawn from here on (decision T-52).
+                "spent_budget": budget_spent(
+                    RunUsage(
+                        requests=len(requests) + 1,
+                        input_tokens=sum(item["input_tokens"] for item in requests),
+                        output_tokens=sum(item["output_tokens"] for item in requests),
+                    ),
+                    limits,
+                    history,
+                ),
+                "tool_calls": [
+                    part.tool_name
+                    for part in message.parts
+                    if isinstance(part, ToolCallPart) and part.tool_name != OUTPUT_TOOL
+                ],
+                "answered": any(
+                    isinstance(part, ToolCallPart) and part.tool_name == OUTPUT_TOOL
+                    for part in message.parts
+                ),
+            }
+        )
+    return requests
+
+
 def _report(
     before: _Offense,
     after: _Offense,
@@ -667,6 +724,8 @@ def _report(
         "budget_exhausted_gap": result is not None
         and any(gap.reason is DataGapReason.BUDGET_EXHAUSTED for gap in result.data_gaps),
         "model_requests": sum(isinstance(message, ModelResponse) for message in run.messages),
+        # T-051: what each request cost, and whether the reserve had run out before the next one.
+        "requests": _requests(run.messages, budget_tokens=task.task.budget.tokens),
         "tokens": run.usage.tokens,
         "tool_calls": run.usage.tool_calls,
         "agent_seconds": run.usage.seconds,

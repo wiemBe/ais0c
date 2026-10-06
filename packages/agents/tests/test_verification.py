@@ -91,7 +91,8 @@ def test_the_manifest_says_what_the_task_file_names() -> None:
     assert manifest["output_schema"] == "VerificationResult"
     assert manifest["toolset_profile"] == "qradar-verify-read"
     assert manifest["max_steps"] == 16
-    assert manifest["budgets"] == {"tokens": 80000, "tool_calls": 12, "wall_clock_seconds": 180}
+    # T-051: 120 000, raised from 80 000 after the lab e2e's run of 82 377 tokens lost its result.
+    assert manifest["budgets"] == {"tokens": 120000, "tool_calls": 12, "wall_clock_seconds": 180}
 
 
 def test_the_manifest_loads_against_the_model_registry() -> None:

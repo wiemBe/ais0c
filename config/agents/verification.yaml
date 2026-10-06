@@ -15,8 +15,10 @@ toolset_profile: qradar-verify-read
 # Model requests per run, output retries included.
 max_steps: 16
 budgets:
-  # Starting values until T-030 measures them.
-  tokens: 80000
+  # Starting values until T-030 measures them. T-051: 80 000 was under one run of the lab e2e
+  # (case-34, 2026-10-06: 8 requests, 82 377 tokens, 6 tool calls, the last of them the model's
+  # correction of a schema-invalid answer, so the run crossed the limit with no result).
+  tokens: 120000
   tool_calls: 12
   # Enforced by the Temporal activity and workflow timeouts (T-012).
   wall_clock_seconds: 180

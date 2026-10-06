@@ -22,15 +22,16 @@ def test_the_plan_budget_defaults_to_the_task_values() -> None:
         case_url_base=BASE,
     )
     assert (settings.plan_tokens, settings.plan_tool_calls, settings.plan_seconds) == (
-        400000,
+        440000,
         40,
         480,
     )
-    assert settings.plan_budget == Budget(tokens=400000, tool_calls=40, seconds=480)
+    assert settings.plan_budget == Budget(tokens=440000, tool_calls=40, seconds=480)
 
 
 def test_the_default_plan_tokens_pay_for_investigation_and_verification() -> None:
-    # T-048 criterion 2 (decision T-52): a plan of both agents fits the default plan budget.
+    # T-048 criterion 2 (decision T-52), T-051: a plan of both agents fits the default plan
+    # budget. Verification's 120 000 is what its lab run needed (82 377 tokens, 8 requests).
     tokens = [
         yaml.safe_load((REPO_ROOT / f"config/agents/{agent}.yaml").read_text(encoding="utf-8"))[
             "budgets"
@@ -38,7 +39,7 @@ def test_the_default_plan_tokens_pay_for_investigation_and_verification() -> Non
         for agent in ("investigation", "verification")
     ]
 
-    assert tokens == [300000, 80000]
+    assert tokens == [300000, 120000]
     assert (
         sum(tokens)
         <= CaseSettings(
@@ -72,7 +73,7 @@ def test_an_unset_or_blank_plan_variable_keeps_its_default() -> None:
         {**CASE_URL_BASE_ENV, "AIS0C_PLAN_TOKENS": "  ", "AIS0C_PLAN_SECONDS": "120"}
     )
 
-    assert settings.plan_budget == Budget(tokens=400000, tool_calls=40, seconds=120)
+    assert settings.plan_budget == Budget(tokens=440000, tool_calls=40, seconds=120)
 
 
 @pytest.mark.parametrize("value", ["0", "-40", "forty", "1.5", "1e5"])

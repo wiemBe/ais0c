@@ -1,20 +1,39 @@
-"""T-048 criterion 1 (decision T-52): the run keeps the agent's last answer.
+"""T-048 criterion 1 (decision T-52), T-051: the run keeps the agent's last answer.
 
-Once the tool call budget is used up, or fewer tokens remain than twice the last request's
-total, the next request offers no function tool and tells the model to answer. A run that
-answers then completes, with a `budget_exhausted` data gap; a model that calls a tool anyway
-ends `budget_exhausted` as before. Agents without tools are not touched.
+Once the tool call budget is used up, or fewer tokens remain than twice what the next request
+costs at least, the next request offers no function tool and tells the model to answer. A run
+that answers then completes, with a `budget_exhausted` data gap; a model that calls a tool
+anyway ends `budget_exhausted` as before. Agents without tools are not touched.
+
+The next request carries the whole conversation again, so what it costs at least is the last
+request's total tokens plus the tool results that came since. T-051: case-34's Verification run
+lost its answer because a tool result made the next request cost more than twice the last one
+while the rule still offered the tools.
 """
 
-from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, UserPromptPart
+from pydantic_ai.messages import (
+    ModelMessage,
+    ModelRequest,
+    ModelResponse,
+    ToolReturnPart,
+    UserPromptPart,
+)
 from pydantic_ai.models.function import AgentInfo
 from pydantic_ai.usage import RequestUsage, RunUsage, UsageLimits
 
-from ais0c_agents.runner import FINAL_ANSWER_PROMPT, budget_spent
-from ais0c_contracts import DataGap, DataGapReason, RunStatus
+from ais0c_agents.runner import (
+    FINAL_ANSWER_PROMPT,
+    TOKEN_RESERVE_FACTOR,
+    TOOL_RESULT_CHARS_PER_TOKEN,
+    budget_spent,
+)
+from ais0c_agents.toolset import render_tool_result
+from ais0c_contracts import DataGap, DataGapReason, RunStatus, ToolResult
 
 from .helpers import (
+    DOUBTED_CLAIM,
     END,
+    NONCE,
     START,
     ScriptedModel,
     Step,
@@ -23,14 +42,18 @@ from .helpers import (
     build,
     build_verification,
     call,
+    disagreement,
     gateway,
+    ok,
     run_triage,
     run_verification,
     triage_manifest,
     triage_output,
+    verification_agent_task,
     verification_gateway,
     verification_manifest,
     verification_output,
+    verification_task,
 )
 from .investigation_helpers import (
     build_investigation,
@@ -58,6 +81,24 @@ def costing(tokens: int, step: Step) -> Step:
         return response
 
     return respond
+
+
+def while_tools_remain(tool_step: Step, answer_step: Step) -> Step:
+    """`tool_step` while the request still offers tools, `answer_step` once they are withdrawn.
+
+    What a real model does depends on the tools it is offered, so the script has to look at them:
+    this is the branch the threshold decides, and the tests below need it.
+    """
+
+    def respond(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        return (tool_step if info.function_tools else answer_step)(messages, info)
+
+    return respond
+
+
+def tool_return(text: str) -> ModelRequest:
+    """The request the model reads a tool result of `text` characters back in."""
+    return ModelRequest(parts=[ToolReturnPart(tool_name="get_ariel_search_results", content=text)])
 
 
 def offered_tools(script: ScriptedModel) -> list[list[str]]:
@@ -254,11 +295,180 @@ def test_a_model_that_calls_a_tool_after_the_tool_budget_ends_budget_exhausted()
     assert len(fake.intents) == 2
 
 
+# --- case-34: the run that lost its answer (T-051 criterion 1) -------------------------------------
+
+# The Verification run of QRadar lab offense 34 on 2026-10-06 (main 530c01e), request by request:
+# what each model request cost, as the Temporal history of `case-34-verification-1` records it in
+# its `agent__verification__model_request` activities' usage. 82 377 tokens over 8 requests, 6
+# tool calls, and the run ended `budget_exhausted` with no result, so the case fell to QA as
+# `verifier_conflict`. The seventh request answered; its `claims` field held a string instead of
+# a list, so Pydantic AI sent it back and the eighth request corrected it. That correction cost
+# more than the 80 000 tokens the run had left, and Pydantic AI checks the limit after a response
+# arrives, so the corrected answer was thrown away.
+CASE_34_REQUESTS: tuple[int, ...] = (8016, 7946, 8463, 9018, 9628, 11734, 13724, 13848)
+
+
+def test_case_34_keeps_the_answer_its_eighth_request_corrected() -> None:
+    manifest = verification_manifest()
+    assert manifest.budgets.tokens > sum(CASE_34_REQUESTS), (
+        "the manifest's token budget must cover what this run measured, or its answer is lost"
+    )
+    task = verification_task()
+    task = task.model_copy(update={"task": verification_agent_task(tokens=manifest.budgets.tokens)})
+    # The first six requests are the Ariel search lifecycle of the recorded run.
+    script = ScriptedModel(
+        *(
+            costing(
+                tokens,
+                call(
+                    tool,
+                    **(
+                        {"query_expression": "SELECT 1"}
+                        if tool in {"create_ariel_search"}
+                        else {"search_id": "search-1"}
+                    ),
+                ),
+            )
+            for tokens, tool in zip(
+                CASE_34_REQUESTS[:6],
+                (
+                    "create_ariel_search",
+                    "create_ariel_search",
+                    "get_ariel_search_status",
+                    "get_ariel_search_results",
+                    "create_ariel_search",
+                    "delete_ariel_search",
+                ),
+                strict=True,
+            )
+        ),
+        # The seventh request answers, but its `claims` field is the string the model wrote.
+        costing(CASE_34_REQUESTS[6], answer(verification_output(alias(5), claims="[]"))),
+        # The eighth request corrects it and names the claim it contests.
+        costing(
+            CASE_34_REQUESTS[7],
+            answer(
+                verification_output(
+                    alias(5), agrees=False, disagreements=[disagreement(DOUBTED_CLAIM)]
+                )
+            ),
+        ),
+    )
+
+    run = run_verification(
+        build_verification(script, verification_gateway(), manifest),
+        task,
+    )
+
+    assert run.status is RunStatus.COMPLETED, run.error
+    assert run.result is not None
+    # The corrected answer is the one that is kept, not the one the validator sent back.
+    assert [item.claim_text for item in run.result.disagreements] == [DOUBTED_CLAIM]
+    assert run.usage.tokens == sum(CASE_34_REQUESTS)
+    # The budget paid for the whole run, so there is nothing to report as spent.
+    assert run.result.data_gaps == []
+
+
+# --- a tool result that costs more than the request that read it (T-051 criterion 2) ---------------
+
+# The verify profile's Ariel results carry at most 200 rows, and the gateway wraps them in one
+# untrusted block. Case-34's tool results were small (121 to 328 tokens), but a result set of
+# that shape can be bigger than the request that read it, and the next request sends it all
+# again: the cost that decides the reserve is the request's own tokens plus the result.
+BIG_RESULT = ok(
+    "ev_01JB3K4M5N6P7Q8R9W",
+    *(
+        {
+            "sourceip": "203.0.113.77",
+            "username": "svc_backup_7731",
+            "qid": "5000849",
+            "summary": "An event the gateway masked as it filtered the result set.",
+        }
+        for _ in range(120)
+    ),
+)
+"""A result set of the profile's shape: many rows in one untrusted block."""
+
+
+def result_tokens(result: ToolResult) -> int:
+    """How many tokens the model reads `result` back in, as the rule counts it."""
+    return (
+        len(
+            render_tool_result(
+                result,
+                source="qradar.get_ariel_search_results",
+                nonce=NONCE,
+                alias="ev_1",
+            )
+        )
+        // TOOL_RESULT_CHARS_PER_TOKEN
+    )
+
+
+def test_a_tool_result_bigger_than_the_request_ends_the_run_early_enough_to_answer() -> None:
+    # The budget pays for two requests of `BASE + result`, which is the tool call and the answer
+    # after it. Without the result in the estimate, the reserve after the first request is only
+    # twice BASE, so the second request still offers the tools: the model reads a second result
+    # the same size, and the request after that costs more than the budget, so the run ends
+    # `budget_exhausted` with no result. With the result counted, the reserve does not fit, the
+    # model answers at once, and the answer is kept with a `budget_exhausted` gap.
+    base = 2000
+    big = result_tokens(BIG_RESULT)
+    budget = 2 * (base + big)
+    # The gateway answers the result call with the big set, so the rule reads its real size.
+    fake = verification_gateway(get_ariel_search_results=[BIG_RESULT, BIG_RESULT])
+    script = ScriptedModel(
+        costing(base, call("get_ariel_search_results", search_id="search-1")),
+        costing(
+            base + big,
+            while_tools_remain(
+                call("get_ariel_search_results", search_id="search-2"),
+                answer(verification_output(alias(1))),
+            ),
+        ),
+        costing(base + 2 * big, answer(verification_output(alias(2)))),
+    )
+    task = verification_task().model_copy(update={"task": verification_agent_task(tokens=budget)})
+
+    run = run_verification(build_verification(script, fake), task)
+
+    assert run.status is RunStatus.COMPLETED, run.error
+    # The tools went after the first request, so only one result was read.
+    assert [bool(tools) for tools in offered_tools(script)] == [True, False]
+    assert told_to_answer(script) == [False, True]
+    assert run.result is not None
+    assert run.result.data_gaps == [budget_gap("verification")]
+    # Two requests: the tool call and the answer. The second one fits the budget exactly.
+    assert run.usage.tokens == 2 * base + big
+    assert run.usage.tokens <= budget
+    # The result is what made the reserve matter: the run could not have afforded the request
+    # that read it a second time, and the old estimate said it could.
+    assert big > TOKEN_RESERVE_FACTOR * base
+    assert base + big + base + 2 * big > budget
+
+
 # --- the rule -----------------------------------------------------------------------------------
 
 
 def response(tokens: int) -> ModelResponse:
     return ModelResponse(parts=[], usage=RequestUsage(input_tokens=tokens))
+
+
+def test_the_rule_counts_the_tool_result_that_came_after_the_last_request() -> None:
+    limits = UsageLimits(total_tokens_limit=20000)
+    last = ModelResponse(parts=[], usage=RequestUsage(input_tokens=2300))
+    text = "x" * (10_000 * TOOL_RESULT_CHARS_PER_TOKEN)
+
+    assert not budget_spent(RunUsage(input_tokens=2300), limits, [last])
+    # 17 700 left, twice the last request is 4 600, twice the next request's floor is 26 600.
+    assert budget_spent(RunUsage(input_tokens=2300), limits, [last, tool_return(text)])
+    # A result that only a part of the reserve fills leaves the run its tools.
+    short = ModelRequest(
+        parts=[ToolReturnPart(tool_name="x", content="x" * (1_000 * TOOL_RESULT_CHARS_PER_TOKEN))]
+    )
+    assert not budget_spent(RunUsage(input_tokens=2300), limits, [last, short])
+    # Without a response there is nothing to base the estimate on.
+    assert not budget_spent(RunUsage(), limits, [tool_return(text)])
 
 
 def test_the_rule_reads_the_last_request_and_all_three_budgets() -> None:
