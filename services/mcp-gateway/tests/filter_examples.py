@@ -1,8 +1,10 @@
-"""The filter examples in the QRadar tool registry (config/connectors/qradar.yaml, T-039).
+"""The examples in the QRadar tool registry (config/connectors/qradar.yaml, T-039, T-050).
 
 A filter example is a span in backticks in the description of a tool's `filter` argument, such
-as `source_ip = '192.0.2.1'`. No other description uses backticks, so the lab test
-(test_filter_examples_lab.py) runs every example the descriptions show.
+as `source_ip = '192.0.2.1'`; an AQL example sits in the description of a tool's
+`query_expression` argument. No other description uses backticks, so the lab test
+(test_filter_examples_lab.py) runs every filter example and test_aql_examples.py runs every
+AQL example through the Guard.
 
 IP addresses in the descriptions follow one rule: each sits in single quotes and is a
 documentation address (AGENTS.md hard rule 6). QRadar's filter parser refuses an unquoted
@@ -78,6 +80,25 @@ def filter_examples(manifest: Mapping[str, Any]) -> dict[str, list[str]]:
     found: dict[str, list[str]] = {}
     for tool_id, entry in manifest["tools"].items():
         text = filter_description(entry)
+        shown = EXAMPLE.findall(text) if text else []
+        if shown:
+            found[tool_id] = shown
+    return found
+
+
+def query_description(entry: Mapping[str, Any]) -> str | None:
+    """The description of a tool's `query_expression` argument, if it has one."""
+    spec = entry["input_schema"]["properties"].get("query_expression")
+    if isinstance(spec, Mapping) and isinstance(spec.get("description"), str):
+        return str(spec["description"])
+    return None
+
+
+def query_examples(manifest: Mapping[str, Any]) -> dict[str, list[str]]:
+    """The AQL examples of each tool that shows any, in the order of the description."""
+    found: dict[str, list[str]] = {}
+    for tool_id, entry in manifest["tools"].items():
+        text = query_description(entry)
         shown = EXAMPLE.findall(text) if text else []
         if shown:
             found[tool_id] = shown

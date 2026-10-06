@@ -25,6 +25,7 @@ from gateway_support import load_config
 
 QUOTED_IP = r"'[0-9A-Fa-f.:/]+'"
 FILTER_DESCRIPTION = "input_schema.properties.filter.description"
+QUERY_DESCRIPTION = "input_schema.properties.query_expression.description"
 
 
 @pytest.fixture
@@ -147,13 +148,14 @@ def test_a_manifest_with_an_unquoted_ip_fails_the_check(
     ]
 
 
-def test_examples_sit_only_in_filter_descriptions(manifest: dict[str, Any]) -> None:
-    # The lab test runs every example, so an example elsewhere would go untested.
+def test_examples_sit_only_in_filter_or_query_descriptions(manifest: dict[str, Any]) -> None:
+    # The lab test runs every filter example and test_aql_examples runs every AQL example
+    # through the Guard, so an example elsewhere would go untested.
     for where, text in descriptions(manifest):
-        if where.endswith(f".{FILTER_DESCRIPTION}"):
+        if where.endswith((f".{FILTER_DESCRIPTION}", f".{QUERY_DESCRIPTION}")):
             assert text.count("`") % 2 == 0, where
         else:
-            assert "`" not in text, f"{where}: a filter example belongs in a filter description"
+            assert "`" not in text, f"{where}: an example belongs in a filter or query description"
 
 
 def test_the_lab_test_knows_the_endpoint_of_each_tool_with_examples(

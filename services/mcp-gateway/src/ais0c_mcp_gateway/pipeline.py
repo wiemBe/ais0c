@@ -356,8 +356,20 @@ class Gateway:
         if plan.aql is not None and plan.aql.query_hash is not None:
             query_text = str(plan.arguments["query_expression"])
             query_hash = plan.aql.query_hash
-            if plan.aql.window is not None and plan.aql.window.clause == "last":
-                window = TimeWindow(start=retrieved_at - plan.aql.window.duration, end=retrieved_at)
+            guard_window = plan.aql.window
+            if guard_window is not None and guard_window.clause == "last":
+                window = TimeWindow(start=retrieved_at - guard_window.duration, end=retrieved_at)
+            # START/STOP bounds written as epoch milliseconds are UTC (T-55), so the query's own
+            # window is known and recorded. Text bounds stay the task window: QRadar reads them
+            # in its console's time zone, which the gateway does not know.
+            elif (
+                guard_window is not None
+                and guard_window.start is not None
+                and guard_window.stop is not None
+                and guard_window.start.tzinfo is not None
+                and guard_window.stop.tzinfo is not None
+            ):
+                window = TimeWindow(start=guard_window.start, end=guard_window.stop)
         elif plan.owned_search is not None:
             owned = plan.owned_search
             query_text, query_hash = owned.query_text, owned.query_hash

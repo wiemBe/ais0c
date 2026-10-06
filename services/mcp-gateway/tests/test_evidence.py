@@ -2,15 +2,16 @@
 evidence_id the agent gets is the key of that evidence row. An empty read of the offense source
 is the exception (T-014 criterion 4, D-33)."""
 
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
+import httpx2
 import pytest
 from gateway_support import AGENT_RUN, LOG_INJECTION, Harness, tool_result
 from sqlalchemy import func, select
 
 from ais0c_activities import SOURCE_AGENT_ID
-from ais0c_contracts import EvidenceSource, ToolStatus
+from ais0c_contracts import EvidenceSource, ToolResult, ToolStatus
 from ais0c_mcp_gateway.evidence import OFFENSE_SOURCE_AGENT_ID
 from ais0c_storage import PolicyDecision
 from ais0c_storage.models import EvidenceRow
@@ -21,6 +22,47 @@ pytestmark = pytest.mark.anyio
 INVESTIGATE = "qradar-investigate-read"
 TRIAGE = "qradar-triage-read"
 QUERY = "SELECT qid FROM events WHERE username = 'svc_backup_7731' LIMIT 10 LAST 2 HOURS"
+# Epoch milliseconds (T-55), ten minutes apart: the query's own window, unlike the run's task
+# window (harness.now - 1 hour to harness.now).
+NUMERIC_QUERY = (
+    "SELECT qid FROM events WHERE username = 'svc_backup_7731' "
+    "LIMIT 10 START 1791208620000 STOP 1791208680000"
+)
+TEXT_QUERY = (
+    "SELECT qid FROM events WHERE username = 'svc_backup_7731' "
+    "LIMIT 10 START '2026-10-05 10:00:00' STOP '2026-10-05 11:00:00'"
+)
+
+
+def epoch_milliseconds(value: int) -> datetime:
+    return datetime(1970, 1, 1, tzinfo=UTC) + timedelta(milliseconds=value)
+
+
+async def search_and_read(
+    harness: Harness, client: httpx2.AsyncClient, query: str, run_id: str
+) -> tuple[ToolResult, ToolResult]:
+    """Create a search for `query` and read its results in the same run."""
+    created = tool_result(
+        await harness.post(
+            client,
+            harness.intent(INVESTIGATE, "create_ariel_search", {"query_expression": query}),
+            run_id=run_id,
+        )
+    )
+    page = tool_result(
+        await harness.post(
+            client,
+            harness.intent(
+                INVESTIGATE,
+                "get_ariel_search_results",
+                {"search_id": str(created.data[0]["search_id"])},
+            ),
+            run_id=run_id,
+        )
+    )
+    return created, page
+
+
 # The intake's reads: the pseudo agent `offense-source` in the context `offense-intake`, with the
 # Triage profile (ais0c_activities.GatewayOffenseSource).
 SOURCE_RUN = "run-offense-intake-1"
@@ -157,6 +199,46 @@ async def test_search_results_point_back_to_the_query(harness: Harness) -> None:
         create_evidence.time_end,
     )
     assert page_evidence.retrieved_at == create_evidence.retrieved_at + timedelta(minutes=3)
+
+
+async def test_a_numeric_start_stop_search_records_its_own_window(harness: Harness) -> None:
+    """T-050 criterion 1: epoch-millisecond START/STOP (T-55) names the window the query itself
+    covers, so the evidence carries it, not the run's task window; a later results call of the
+    same search carries the create call's window."""
+    run = await harness.start_run(AGENT_RUN, profile=INVESTIGATE)
+    async with harness.client() as client:
+        created, page = await search_and_read(harness, client, NUMERIC_QUERY, run)
+
+    assert created.evidence_id is not None
+    assert page.evidence_id is not None
+    create_evidence = await harness.evidence(created.evidence_id)
+    page_evidence = await harness.evidence(page.evidence_id)
+    assert create_evidence is not None
+    assert page_evidence is not None
+    assert (create_evidence.time_start, create_evidence.time_end) == (
+        epoch_milliseconds(1791208620000),
+        epoch_milliseconds(1791208680000),
+    )
+    assert (page_evidence.time_start, page_evidence.time_end) == (
+        create_evidence.time_start,
+        create_evidence.time_end,
+    )
+
+
+async def test_a_text_start_stop_search_keeps_the_task_window(harness: Harness) -> None:
+    """T-050 criterion 1: QRadar reads text bounds in its console's time zone, which the gateway
+    does not know, so the evidence keeps the run's task window."""
+    run = await harness.start_run(AGENT_RUN, profile=INVESTIGATE)
+    async with harness.client() as client:
+        created, _ = await search_and_read(harness, client, TEXT_QUERY, run)
+
+    assert created.evidence_id is not None
+    evidence = await harness.evidence(created.evidence_id)
+    assert evidence is not None
+    assert (evidence.time_start, evidence.time_end) == (
+        harness.now - timedelta(hours=1),
+        harness.now,
+    )
 
 
 async def test_denied_and_failed_calls_leave_no_evidence(harness: Harness) -> None:
