@@ -11,7 +11,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from storage_payloads import CASE_ID, EVIDENCE_ID, T0, T1
 
-from ais0c_contracts import ModelRelease, RunStatus, ToolStatus
+from ais0c_contracts import ModelRelease, RunStatus, SkillRef, ToolStatus
 from ais0c_storage.enums import PolicyDecision
 from ais0c_storage.errors import DuplicateError, NotFoundError
 from ais0c_storage.models import AgentRunRow
@@ -37,6 +37,7 @@ async def start(
     model_target: str = "lab-model",
     started_at: datetime = T0,
     model_release: ModelRelease | None = None,
+    skill: SkillRef | None = None,
 ) -> AgentRunRow:
     hunt_id = None if case_id else "hunt-1"
     return await start_agent_run(
@@ -49,6 +50,7 @@ async def start(
         toolset_profile="qradar-triage-read",
         started_at=started_at,
         model_release=model_release,
+        skill=skill,
     )
 
 
@@ -69,7 +71,7 @@ async def test_a_started_run_is_in_progress(session: AsyncSession) -> None:
         0,
     )
     assert run.task == payloads.agent_task()
-    # No model release unless one is given; no skill until T-021 records one.
+    # No model release and no skill unless one is given.
     assert (run.model_release, run.skill) == (None, None)
     with pytest.raises(DuplicateError):
         await start(session)
@@ -231,6 +233,29 @@ async def test_a_release_that_skipped_validation_is_refused(session: AsyncSessio
 
     with pytest.raises(ValidationError):
         await start(session, model_release=broken)
+
+
+# --- Skill (T-026 criterion 1)
+
+
+async def test_a_run_keeps_the_skill_it_uses(session: AsyncSession) -> None:
+    await start(session, skill=payloads.skill_ref())
+    await session.commit()
+    session.expunge_all()
+
+    run = await get_agent_run(session, "run-1")
+
+    assert run is not None
+    assert run.skill == payloads.skill_ref()
+
+
+async def test_a_skill_that_skipped_validation_is_refused(session: AsyncSession) -> None:
+    broken = payloads.skill_ref().model_copy(update={"content_hash": "md5:abc"})
+
+    with pytest.raises(ValidationError):
+        await start(session, skill=broken)
+
+    assert await get_agent_run(session, "run-1") is None
 
 
 async def test_a_release_written_behind_the_repository_fails_on_read(

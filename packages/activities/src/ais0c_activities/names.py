@@ -34,11 +34,22 @@ TRIAGE_RETRY_DELAY: Final = "triage_retry_delay"
 RECORD_DECISION: Final = "record_decision"
 MARK_NO_AI_DECISION: Final = "mark_no_ai_decision"
 CLOSE_CASE: Final = "close_case"
+# The agent chain of an evaluation (CaseWorkflow, T-026).
+EVALUATION_WINDOW: Final = "evaluation_window"
+CANDIDATE_SKILLS: Final = "candidate_skills"
+PLAN_BUDGETS: Final = "plan_budgets"
+RECORD_PLAN: Final = "record_plan"
 
 # Triage run activities (TriageWorkflow). The agent's model and tool activities come from
 # Pydantic AI's TemporalDurability.
 BEGIN_TRIAGE_RUN: Final = "begin_triage_run"
 FINISH_TRIAGE_RUN: Final = "finish_triage_run"
+
+# Chain agent run activities (AgentWorkflow): Orchestrator, Investigation, Verification and
+# Reporting. Their model and tool activities come from TemporalDurability too.
+BEGIN_AGENT_RUN: Final = "begin_agent_run"
+LOAD_EVIDENCE: Final = "load_evidence"
+FINISH_AGENT_RUN: Final = "finish_agent_run"
 
 # KnowledgeSync activities (the `soc-batch` task queue).
 SYNC_ANALYSIS_CATALOG: Final = "sync_analysis_catalog"

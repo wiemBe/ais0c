@@ -11,11 +11,15 @@
 | `AIS0C_PLAN_TOKENS` | 250000 | Plan budget: tokens of all the steps of one evaluation's plan together (T-41) |
 | `AIS0C_PLAN_TOOL_CALLS` | 40 | Plan budget: tool calls of all the steps together |
 | `AIS0C_PLAN_SECONDS` | 480 | Plan budget: wall-clock seconds of all the steps together |
+| `AIS0C_QA_SAMPLE_PERCENT` | 10 | Low and medium FP decisions sampled for operator review (S-10) |
+| `AIS0C_QA_UNDEFINED_SAMPLE_PERCENT` | 30 | The same when a rule of the offense is undefined in the Analysis Catalog or not in it (D-35) |
 
 The group limit and the SLA defaults are the values of architecture §9, the re-evaluation
-interval the one of D-31 and the retry wait the one of task T-014. §9 gives no number for the
+interval the one of D-31 and the retry wait the one of task T-014; the retry wait is also the
+re-evaluation interval of a case without an AI decision (T-30 (2)). §9 gives no number for the
 concurrent case limit; 10 is this package's choice. The plan budget's defaults are those of
-task T-044; T-030 measures them.
+task T-044; T-030 measures them. The sample rates are those of decision T-42; 0 turns sampling
+off.
 """
 
 import os
@@ -36,6 +40,8 @@ TRIAGE_RETRY_MINUTES_ENV: Final = "AIS0C_TRIAGE_RETRY_MINUTES"
 PLAN_TOKENS_ENV: Final = "AIS0C_PLAN_TOKENS"
 PLAN_TOOL_CALLS_ENV: Final = "AIS0C_PLAN_TOOL_CALLS"
 PLAN_SECONDS_ENV: Final = "AIS0C_PLAN_SECONDS"
+QA_SAMPLE_PERCENT_ENV: Final = "AIS0C_QA_SAMPLE_PERCENT"
+QA_UNDEFINED_SAMPLE_PERCENT_ENV: Final = "AIS0C_QA_UNDEFINED_SAMPLE_PERCENT"
 
 
 @dataclass(frozen=True)
@@ -49,6 +55,8 @@ class CaseSettings:
     plan_tokens: int = 250000
     plan_tool_calls: int = 40
     plan_seconds: int = 480
+    qa_sample_percent: int = 10
+    qa_undefined_sample_percent: int = 30
 
     def __post_init__(self) -> None:
         if self.max_concurrent_cases < 1:
@@ -63,6 +71,9 @@ class CaseSettings:
             )
         if min(self.plan_tokens, self.plan_tool_calls, self.plan_seconds) < 1:
             raise ValueError("the plan budget must be positive")
+        for rate in (self.qa_sample_percent, self.qa_undefined_sample_percent):
+            if not 0 <= rate <= 100:
+                raise ValueError("QA sample rates are percentages from 0 to 100")
 
     @property
     def plan_budget(self) -> Budget:
@@ -106,6 +117,10 @@ class CaseSettings:
             plan_tokens=_positive_int(env, PLAN_TOKENS_ENV, defaults.plan_tokens),
             plan_tool_calls=_positive_int(env, PLAN_TOOL_CALLS_ENV, defaults.plan_tool_calls),
             plan_seconds=_positive_int(env, PLAN_SECONDS_ENV, defaults.plan_seconds),
+            qa_sample_percent=_percent(env, QA_SAMPLE_PERCENT_ENV, defaults.qa_sample_percent),
+            qa_undefined_sample_percent=_percent(
+                env, QA_UNDEFINED_SAMPLE_PERCENT_ENV, defaults.qa_undefined_sample_percent
+            ),
         )
 
 
@@ -123,4 +138,17 @@ def _positive_int(env: Mapping[str, str], name: str, default: int) -> int:
         raise ValueError(f"{name} must be a positive integer") from None
     if value < 1:
         raise ValueError(f"{name} must be a positive integer")
+    return value
+
+
+def _percent(env: Mapping[str, str], name: str, default: int) -> int:
+    raw = env.get(name, "").strip()
+    if not raw:
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        raise ValueError(f"{name} must be a whole percentage from 0 to 100") from None
+    if not 0 <= value <= 100:
+        raise ValueError(f"{name} must be a whole percentage from 0 to 100")
     return value

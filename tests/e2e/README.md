@@ -1,6 +1,6 @@
-# Uçtan uca lab testi (T-012)
+# Uçtan uca lab testi (T-012, T-026)
 
-`test_lab_triage.py`, platformun bütün katmanlarını ilk kez birlikte çalıştırır: lab QRadar'da oluşan bir offense, gateway üzerinden okunur, `OffenseIntake` ve `CaseWorkflow` üzerinden Triage ajanına ulaşır, ajan gateway üzerinden QRadar'ı okur, kanıt kaydedilir ve karar veritabanına yazılır.
+`test_lab_triage.py`, platformun bütün katmanlarını birlikte çalıştırır: lab QRadar'da oluşan bir offense, gateway üzerinden okunur, `OffenseIntake` ve `CaseWorkflow` üzerinden ajan zincirine ulaşır. Triage gateway üzerinden QRadar'ı okur, kanıt kaydedilir; ardından Orchestrator plan yapar, planın adımları (planlandıysa Investigation, sonra Verification) ve Reporting çalışır. Karar, rapor, acil event'ler ve QA satırları veritabanına yazılır.
 
 Test `@pytest.mark.lab` ile işaretlidir. `QRADAR_LAB_URL` ve `QRADAR_LAB_TOKEN` yoksa atlanır; aşağıdaki diğer ön koşullardan biri eksikse yine atlanır ve nedenini yazar. Bu yüzden normal `uv run pytest` çalıştırmalarını etkilemez.
 
@@ -10,14 +10,14 @@ Test `@pytest.mark.lab` ile işaretlidir. `QRADAR_LAB_URL` ve `QRADAR_LAB_TOKEN`
 2. Lab kuralının QRadar'da var ve etkin olduğunu, aynı hesaba ait açık bir offense'in kalmadığını kontrol eder.
 3. Bu makinede üç süreç başlatır:
    - **qradar-mcp fork'u** (`--profile qradar-read`): QRadar token'ı yalnızca bu süreçtedir.
-   - **MCP Policy Gateway** (`python -m ais0c_mcp_gateway`): yalnızca `qradar-triage-read` profili açıktır.
-   - **Case worker** (`python -m ais0c_worker`): intake Schedule'ını kurar, Triage ajanını `TemporalDurability` ile çalıştırır.
+   - **MCP Policy Gateway** (`python -m ais0c_mcp_gateway`): araçlı ajanların profilleri açıktır: `qradar-triage-read`, `qradar-investigate-read`, `qradar-verify-read`.
+   - **Case worker** (`python -m ais0c_worker`): intake Schedule'ını kurar, ajanları `TemporalDurability` ile çalıştırır. Skill'ler `AIS0C_SKILLS_MODE=dev` ile yüklenir; repodaki skill'ler taslak olduğu için router hiçbirini aday göstermez.
 
    Token'lar her çalıştırmada rastgele üretilir ve pytest'in geçici dizinine yazılır.
 4. Schedule'ı bir kez tetikleyerek devreye alır, ardından T-008'in `s2-dcsync` senaryosunu lab QRadar'a syslog (TCP) ile gönderir.
 5. Lab kuralı bir offense açar. Intake, offense'i gateway üzerinden okur (kriter 1) ve vakayı başlatır.
 6. Triage ajanının ilk model isteği sürerken worker'ı `SIGKILL` ile öldürür ve yenisini başlatır (kriter 4). `AIS0C_E2E_RESTART=0` ile bu adım atlanır; gecikme ölçümü için kesintisiz çalıştırma bu şekilde yapılır.
-7. Vaka karar verdiğinde aşağıdaki kontrolleri yapar ve ölçümleri yazar.
+7. Vaka karar verdiğinde aşağıdaki kontrolleri yapar ve ölçümleri yazar. Zincir SLA'yı aşarsa vaka arada `no_ai_decision` olur; test geç gelen kararı bekler (D-30).
 
 ## Kontroller
 
@@ -29,6 +29,7 @@ Test `@pytest.mark.lab` ile işaretlidir. `QRADAR_LAB_URL` ve `QRADAR_LAB_TOKEN`
 | 5 | Çalışmanın Temporal geçmişindeki model isteği activity'lerinin girdisi, modele giden mesajların tamamıdır. Bu mesajlardaki her araç sonucu, çalışmanın nonce'lu `untrusted_*` sarmalayıcısının içindedir. |
 | 6 | Çalışma `soc-fast` alias'ıyla kaydedilmiştir. Model çağrıları LiteLLM'in dev konfigürasyonundan geçer. |
 | T-038 | Modele giden araç sonuçlarında gateway'in kanıt kimlikleri geçmez; etiketler çağrının takma adını (`ev_<n>`) taşır. Kararın atıf yaptığı her kanıt kimliği bu çalışmanın `evidence` tablosunda kayıtlıdır. |
+| T-026 | Orchestrator, Verification ve Reporting'in (planlandıysa Investigation'ın) `agent_runs` satırı `<case_id>-<ajan>-1` kimliğiyle vardır, bitmiştir ve model release'ini taşır. Kararın verdict'i ve seviyesi, sonuç veren son analiz ajanınınkidir (Investigation, yoksa Triage). `cases.report` doludur ve kararla aynı verdict'i ve bildirim seviyesini taşır. `urgent_events` satırları raporun acil event'leridir. QA satırları geçerli `QAReason` değerleridir. Zincir ajanlarının her araç çağrısı, çağrıyı yapan çalışmanın kimliğiyle kaydedilmiştir (T-29). |
 
 ## Ön koşullar
 
@@ -78,11 +79,11 @@ export LITELLM_API_KEY="${LITELLM_MASTER_KEY}"
 uv run pytest tests/e2e -m lab -s
 ```
 
-Süre birkaç dakikadır: QRadar'ın offense açması ve intake'in onu bulması (en çok bir dakikada bir çalışır) zaman alır. Worker yeniden başlatılırken Temporal, kesilen model isteğini heartbeat zaman aşımından (30 saniye) sonra yeniden dener.
+Süre birkaç dakikadan yarım saate kadar çıkabilir: QRadar'ın offense açması ve intake'in onu bulması (en çok bir dakikada bir çalışır) zaman alır, zincirin ajanları sırayla çalışır (duvar saati bütçeleri toplamı yaklaşık 18 dakika). Test karar için en çok 30 dakika bekler. Worker yeniden başlatılırken Temporal, kesilen model isteğini heartbeat zaman aşımından (30 saniye) sonra yeniden dener.
 
 ## Beklenen sonuç
 
-Test geçer ve şu bilgileri JSON olarak yazar: offense, vaka ve çalışma kimlikleri, karar, token sayısı, araç çağrıları ve policy kararları, `query_hash`'li kanıt sayısı, her model isteğinin süresi, gecikmeler (log gönderimi → offense'in görülmesi → Triage → karar) ve yeniden başlatma bilgisi. Aynı rapor pytest'in geçici dizininde `report.json` olarak da durur. Süreçlerin logları da aynı dizinin `logs/` alt dizinindedir.
+Test geçer ve şu bilgileri JSON olarak yazar: offense, vaka ve çalışma kimlikleri, karar, token sayısı, araç çağrıları ve policy kararları, `query_hash`'li kanıt sayısı, her model isteğinin süresi, gecikmeler (log gönderimi → offense'in görülmesi → Triage → karar) ve yeniden başlatma bilgisi. `chain` alanı zincirin her çalışmasını (durum, model alias'ı, token, araç çağrısı, süre, hedef), araç çağrılarını, acil event sayısını ve QA nedenlerini taşır. Aynı rapor pytest'in geçici dizininde `report.json` olarak da durur. Süreçlerin logları da aynı dizinin `logs/` alt dizinindedir.
 
 Kayıtlar dev veritabanında kalır; vaka `case-<offense_id>`, Triage çalışması `case-<offense_id>-triage-1` adıyla incelenebilir. Temporal UI'da (http://127.0.0.1:8080) çalışmanın geçmişinde ajanın her model isteği ve araç çağrısı ayrı bir activity olarak görünür.
 

@@ -78,6 +78,11 @@ from ais0c_storage.repositories.offenses import (
     update_offense_group,
     update_offense_seen,
 )
+from ais0c_storage.repositories.qa_items import add_qa_items, list_qa_items
+from ais0c_storage.repositories.recommendations import (
+    list_recommendations,
+    replace_recommendations,
+)
 from ais0c_storage.repositories.runs import (
     finish_agent_run,
     get_agent_run,
@@ -87,6 +92,7 @@ from ais0c_storage.repositories.runs import (
     record_tool_call,
     start_agent_run,
 )
+from ais0c_storage.repositories.urgent_events import list_urgent_events, replace_urgent_events
 
 __all__ = [
     "CRITICAL_ASSET_LEVELS",
@@ -100,6 +106,7 @@ __all__ = [
     "add_critical_asset",
     "add_notification_recipient",
     "add_offense_seen",
+    "add_qa_items",
     "append_audit",
     "begin_case_reevaluation",
     "count_offenses",
@@ -138,12 +145,17 @@ __all__ = [
     "list_notification_route_groups",
     "list_notifications",
     "list_pending_offenses",
+    "list_qa_items",
+    "list_recommendations",
     "list_tool_calls",
+    "list_urgent_events",
     "record_case_decision",
     "record_evidence",
     "record_note",
     "record_notification",
     "record_tool_call",
+    "replace_recommendations",
+    "replace_urgent_events",
     "set_case_run_id",
     "set_case_status",
     "set_catalog_log_sources_missing",

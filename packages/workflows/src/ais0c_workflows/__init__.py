@@ -1,5 +1,8 @@
 """Temporal workflows: OffenseIntake, CaseWorkflow, HuntWorkflow, TuningWorkflow, KnowledgeSync.
 
+CaseWorkflow runs each evaluation's agents as child workflows: TriageWorkflow, then AgentWorkflow
+for the Orchestrator, the plan's steps and Reporting.
+
 Deterministic: no I/O. Activities are called by name, never imported. Workers run these
 workflows in Temporal's sandbox with the Pydantic data converter.
 
@@ -11,10 +14,13 @@ in `ais0c_workflows.schedules`, which the worker imports by its own name as well
 
 from typing import Final
 
+from ais0c_workflows.agent import AgentOutcome, AgentRequest, AgentWorkflow, ChainResult
+from ais0c_workflows.agent_run import AgentFailure
 from ais0c_workflows.case import CaseCarry, CaseStatus, CaseView, CaseWorkflow
+from ais0c_workflows.chain import ChainDecision
 from ais0c_workflows.intake import IntakeCheckpoint, OffenseIntake
 from ais0c_workflows.knowledge_sync import KnowledgeSync, KnowledgeSyncResult
-from ais0c_workflows.reevaluation import should_reevaluate
+from ais0c_workflows.reevaluation import reevaluation_due, should_reevaluate
 from ais0c_workflows.triage import (
     MODEL_ACCESS_FAILURES,
     TriageFailure,
@@ -24,7 +30,7 @@ from ais0c_workflows.triage import (
 )
 
 # Workflows of the `soc-case` task queue.
-CASE_QUEUE_WORKFLOWS: Final = (OffenseIntake, CaseWorkflow, TriageWorkflow)
+CASE_QUEUE_WORKFLOWS: Final = (OffenseIntake, CaseWorkflow, TriageWorkflow, AgentWorkflow)
 # Workflows of the `soc-batch` task queue.
 BATCH_QUEUE_WORKFLOWS: Final = (KnowledgeSync,)
 
@@ -32,10 +38,16 @@ __all__ = [
     "BATCH_QUEUE_WORKFLOWS",
     "CASE_QUEUE_WORKFLOWS",
     "MODEL_ACCESS_FAILURES",
+    "AgentFailure",
+    "AgentOutcome",
+    "AgentRequest",
+    "AgentWorkflow",
     "CaseCarry",
     "CaseStatus",
     "CaseView",
     "CaseWorkflow",
+    "ChainDecision",
+    "ChainResult",
     "IntakeCheckpoint",
     "KnowledgeSync",
     "KnowledgeSyncResult",
@@ -44,5 +56,6 @@ __all__ = [
     "TriageOutcome",
     "TriageRequest",
     "TriageWorkflow",
+    "reevaluation_due",
     "should_reevaluate",
 ]

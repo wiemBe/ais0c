@@ -15,6 +15,7 @@ from temporalio.exceptions import ApplicationError
 from temporalio.testing import WorkflowEnvironment
 from temporalio.worker import Replayer, UnsandboxedWorkflowRunner, Worker
 from workflow_fakes import (
+    AgentStub,
     CaseFakes,
     CaseStub,
     IntakeFakes,
@@ -62,7 +63,7 @@ async def case_history(env: WorkflowEnvironment) -> WorkflowHistory:
     async with Worker(
         env.client,
         task_queue=CASE_TASK_QUEUE,
-        workflows=[CaseWorkflow, TriageStub],
+        workflows=[CaseWorkflow, TriageStub, AgentStub],
         activities=fakes.activities(),
     ):
         handle = await env.client.start_workflow(

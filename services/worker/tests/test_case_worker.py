@@ -17,9 +17,11 @@ from temporalio.testing import ActivityEnvironment, WorkflowEnvironment
 from temporalio.worker import Replayer
 from temporalio.worker.workflow_sandbox import SandboxedWorkflowRunner
 from worker_support import (
+    ChainModels,
     Platform,
     RecordingGateway,
     TriageModel,
+    chain_runtime,
     offense,
     running_platform,
     triage_runtime,
@@ -274,6 +276,7 @@ async def test_the_case_worker_runs_workflows_in_the_sandbox(
         sessions=sessions,
         source=FakeOffenseSource(),
         triage=triage_runtime(TriageModel(), RecordingGateway()),
+        chain=chain_runtime(ChainModels(), RecordingGateway()),
         settings=CaseSettings(),
     )
 
@@ -303,5 +306,6 @@ async def test_the_case_worker_needs_pydantic_ais_plugin(
             sessions=sessions,
             source=FakeOffenseSource(),
             triage=triage_runtime(TriageModel(), RecordingGateway()),
+            chain=chain_runtime(ChainModels(), RecordingGateway()),
             settings=CaseSettings(),
         )

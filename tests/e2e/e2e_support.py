@@ -85,13 +85,18 @@ class LabSettings:
         return SINGLE_ACCOUNT_SEEDS[self.seed]
 
 
-def triage_profile() -> str:
-    """The gateway profile of the Triage agent's manifest (config/agents/triage.yaml)."""
-    manifest = yaml.safe_load((REPO_ROOT / "config/agents/triage.yaml").read_text(encoding="utf-8"))
+def agent_profile(agent: str) -> str:
+    """The gateway profile of an agent's manifest (config/agents/<agent>.yaml)."""
+    path = f"config/agents/{agent}.yaml"
+    manifest = yaml.safe_load((REPO_ROOT / path).read_text(encoding="utf-8"))
     profile = manifest.get("toolset_profile") if isinstance(manifest, dict) else None
     if not isinstance(profile, str):
-        raise E2ESetupError("config/agents/triage.yaml names no toolset profile")
+        raise E2ESetupError(f"{path} names no toolset profile")
     return profile
+
+
+# The case worker's agents with tools: it holds a gateway token for each one's profile.
+AGENTS_WITH_TOOLS = ("triage", "investigation", "verification")
 
 
 def free_port() -> int:

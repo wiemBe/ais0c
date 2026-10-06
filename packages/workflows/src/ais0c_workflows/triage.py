@@ -12,21 +12,14 @@ the run's `agent_runs.run_id`. A run:
    completed activity.
 3. `finish_triage_run` records how the run ended.
 
-The manifest's wall clock budget bounds step 2. When it runs out, the run is abandoned and ends
-`budget_exhausted`; a model or tool activity that keeps failing ends it `failed`. Either way the
-workflow completes with the outcome, and CaseWorkflow decides what it means for the case.
-
-RunStatus does not say why a run gave no decision, and CaseWorkflow retries only the runs the
-model's outage ended (D-33), so the outcome also carries a `TriageFailure`.
+The manifest's wall clock budget bounds step 2 (`agent_run.run_within_budget`). When it runs
+out, the run is abandoned and ends `budget_exhausted`; a model or tool activity that keeps
+failing ends it `failed`. Either way the workflow completes with the outcome, and CaseWorkflow
+decides what it means for the case. The outcome carries a `TriageFailure`, because CaseWorkflow
+retries only the runs the model's outage ended (D-33).
 """
 
-import asyncio
-from datetime import timedelta
-from enum import StrEnum
-from typing import Final
-
 from temporalio import workflow
-from temporalio.exceptions import ActivityError, ApplicationError
 
 from ais0c_workflows._activity import call
 from ais0c_workflows.names import BEGIN_TRIAGE_RUN, FINISH_TRIAGE_RUN, TRIAGE_WORKFLOW
@@ -42,35 +35,19 @@ with workflow.unsafe.imports_passed_through():
         TriageResult,
         Usage,
     )
-    from ais0c_workflows.agent_runtime import TriageRunReport, triage_agent
+    from ais0c_workflows.agent_run import MODEL_ACCESS_FAILURES, AgentFailure, run_within_budget
+    from ais0c_workflows.agent_runtime import triage_agent
 
-MAX_ERROR_LENGTH: Final = 1000
-# Pydantic AI's TemporalDurability names an agent's model request activity
-# `agent__<agent>__model_request` (`..._stream` when streamed). Its activity names are persisted
-# compatibility data that do not change.
-MODEL_REQUEST_ACTIVITIES: Final = ("__model_request", "__model_request_stream")
+# Triage's name for AgentFailure: why a Triage run ended without a decision.
+TriageFailure = AgentFailure
 
-
-class TriageFailure(StrEnum):
-    """Why a Triage run ended without a decision."""
-
-    # A model request failed for good: its attempts ran out, it timed out or it was rejected.
-    MODEL_ERROR = "model_error"
-    # The wall clock budget ran out, for example because the model did not answer.
-    TIMEOUT = "timeout"
-    # Another activity of the agent failed for good, such as a tool call the gateway did not
-    # answer.
-    TOOL_ERROR = "tool_error"
-    # The agent ended `failed` itself: the model kept breaking the output schema or the tool rules.
-    INVALID_OUTPUT = "invalid_output"
-    # The agent ended `budget_exhausted` itself: its token, tool call or step budget ran out.
-    BUDGET_EXHAUSTED = "budget_exhausted"
-
-
-# The failures of a model that cannot be reached: CaseWorkflow runs these once more (D-33). A
-# model that does not answer ends the run on its wall clock budget before its own request times
-# out (T-012 open question 5), so a timeout counts too.
-MODEL_ACCESS_FAILURES: Final = frozenset({TriageFailure.MODEL_ERROR, TriageFailure.TIMEOUT})
+__all__ = [
+    "MODEL_ACCESS_FAILURES",
+    "TriageFailure",
+    "TriageOutcome",
+    "TriageRequest",
+    "TriageWorkflow",
+]
 
 
 class TriageRequest(BaseModel):
@@ -116,7 +93,21 @@ class TriageWorkflow:
             request.offense,
             result_type=tuple[AgentTask, str],
         )
-        outcome = await self._run_agent(run_id, task, nonce, request)
+        end = await run_within_budget(
+            lambda: triage_agent()(
+                task, request.offense, request.enrichment, run_id=run_id, nonce=nonce
+            ),
+            run_id=run_id,
+            seconds=task.budget.seconds,
+        )
+        outcome = TriageOutcome(
+            run_id=run_id,
+            status=end.status,
+            result=end.result,
+            usage=end.usage,
+            error=end.error,
+            failure=end.failure,
+        )
         await call(
             FINISH_TRIAGE_RUN,
             run_id,
@@ -127,105 +118,3 @@ class TriageWorkflow:
             result_type=type(None),
         )
         return outcome
-
-    async def _run_agent(
-        self, run_id: str, task: AgentTask, nonce: str, request: TriageRequest
-    ) -> TriageOutcome:
-        started = workflow.time()
-        agent_run = asyncio.create_task(_report(task, request, nonce))
-        budget = task.budget.seconds
-        out_of_time = False
-        try:
-            await workflow.wait_condition(
-                agent_run.done,
-                timeout=timedelta(seconds=budget),
-                timeout_summary="wall clock budget",
-            )
-        except TimeoutError:
-            # The agent's activities are abandoned on cancellation, so nothing is asked of the
-            # server; a request still running finishes on its worker and is ignored. The agent
-            # sees the abandoned activity fail and stops.
-            out_of_time = True
-            agent_run.cancel()
-            await workflow.wait_condition(agent_run.done)
-        report: TriageRunReport | None = None
-        failure: ActivityError | None = None
-        if not agent_run.cancelled():
-            try:
-                report = agent_run.result()
-            except ActivityError as error:
-                failure = error
-        if report is not None:
-            return TriageOutcome(
-                run_id=run_id,
-                status=report.status,
-                result=report.result,
-                usage=report.usage,
-                error=report.error,
-                failure=_reported_failure(report.status),
-            )
-        seconds = workflow.time() - started
-        if out_of_time:
-            workflow.logger.warning("triage run %s ran out of its wall clock budget", run_id)
-            return _without_result(
-                run_id,
-                RunStatus.BUDGET_EXHAUSTED,
-                TriageFailure.TIMEOUT,
-                f"the wall clock budget of {budget} seconds ran out",
-                seconds=seconds,
-            )
-        if failure is None:
-            # Cancelled from outside this method: the workflow itself is being cancelled.
-            raise asyncio.CancelledError
-        workflow.logger.warning("triage run %s failed: %s", run_id, _describe(failure))
-        return _without_result(
-            run_id, RunStatus.FAILED, _failed_activity(failure), _describe(failure), seconds=seconds
-        )
-
-
-async def _report(task: AgentTask, request: TriageRequest, nonce: str) -> TriageRunReport:
-    return await triage_agent()(task, request.offense, request.enrichment, nonce=nonce)
-
-
-def _without_result(
-    run_id: str, status: RunStatus, failure: TriageFailure, error: str, *, seconds: float
-) -> TriageOutcome:
-    """An outcome of a run whose agent did not finish: its token and tool call counts are lost
-    with it (the gateway's `tool_calls` rows still show the calls)."""
-    return TriageOutcome(
-        run_id=run_id,
-        status=status,
-        result=None,
-        usage=Usage(tokens=0, tool_calls=0, seconds=max(0.0, seconds)),
-        error=error[:MAX_ERROR_LENGTH],
-        failure=failure,
-    )
-
-
-def _reported_failure(status: RunStatus) -> TriageFailure | None:
-    """What a run status the agent reported itself means. Its model requests and tool calls are
-    activities, so a failure the agent catches is the model's output or tool calls."""
-    match status:
-        case RunStatus.COMPLETED:
-            return None
-        case RunStatus.BUDGET_EXHAUSTED:
-            return TriageFailure.BUDGET_EXHAUSTED
-        case RunStatus.FAILED:
-            return TriageFailure.INVALID_OUTPUT
-
-
-def _failed_activity(error: ActivityError) -> TriageFailure:
-    """The model request or the other activity of the agent that failed for good."""
-    if (error.activity_type or "").endswith(MODEL_REQUEST_ACTIVITIES):
-        return TriageFailure.MODEL_ERROR
-    return TriageFailure.TOOL_ERROR
-
-
-def _describe(error: ActivityError) -> str:
-    """The failure of the activity that ended the run, e.g. a model request out of retries.
-
-    An application error already names its type, e.g. `GatewayError: ...`.
-    """
-    cause = error.cause or error
-    text = str(cause) if isinstance(cause, ApplicationError) else f"{type(cause).__name__}: {cause}"
-    return text[:MAX_ERROR_LENGTH]

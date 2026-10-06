@@ -16,24 +16,48 @@ from temporalio.exceptions import ActivityError, ApplicationError
 from ais0c_contracts import (
     AgentTask,
     Budget,
+    CasePlan,
+    CaseReport,
     CaseVerdict,
     CatalogContext,
     Confidence,
     EnrichmentContext,
+    InvestigationResult,
     Level,
     OffenseSnapshot,
+    PlanStep,
+    QAReason,
     RunStatus,
+    SkillRef,
     TimeWindow,
     TriageResult,
     Usage,
+    VerificationResult,
 )
-from ais0c_workflows import TriageFailure, TriageOutcome, TriageRequest
+from ais0c_workflows import (
+    AgentFailure,
+    AgentOutcome,
+    AgentRequest,
+    ChainResult,
+    TriageFailure,
+    TriageOutcome,
+    TriageRequest,
+)
+from ais0c_workflows.agent_runtime import (
+    AgentKind,
+    InvestigationInput,
+    ReportingInput,
+    VerificationInput,
+)
 from ais0c_workflows.names import (
     ADMIT_OFFENSES,
+    AGENT_WORKFLOW,
     BEGIN_TRIAGE_RUN,
+    CANDIDATE_SKILLS,
     CASE_STATE,
     CLOSE_CASE,
     ENRICH_OFFENSE,
+    EVALUATION_WINDOW,
     FETCH_OFFENSE,
     FETCH_OFFENSE_CHANGES,
     FIND_CLOSED_OFFENSES,
@@ -42,8 +66,10 @@ from ais0c_workflows.names import (
     NEXT_PENDING_OFFENSES,
     OFFENSE_CLOSED,
     OFFENSE_UPDATED,
+    PLAN_BUDGETS,
     RECORD_DECISION,
     RECORD_OFFENSE_UPDATE,
+    RECORD_PLAN,
     REEVALUATION_INTERVAL,
     START_CASE,
     START_EVALUATION,
@@ -54,6 +80,13 @@ from ais0c_workflows.names import (
 WAIT_SECONDS = 10
 # The activity of TriageStub that plays the test's script.
 SCRIPTED_TRIAGE = "scripted_triage"
+# The activity of AgentStub that plays the test's script for the chain agents.
+SCRIPTED_AGENT = "scripted_agent"
+PLAN_BUDGET = Budget(tokens=250000, tool_calls=40, seconds=480)
+MANIFEST_BUDGETS = {
+    "investigation": Budget(tokens=150000, tool_calls=24, seconds=300),
+    "verification": Budget(tokens=80000, tool_calls=12, seconds=180),
+}
 # The stub retries a failing script like the agent's activities retry a failing model request.
 STUB_RETRY = RetryPolicy(
     initial_interval=timedelta(seconds=10),
@@ -289,11 +322,11 @@ class TriageStub:
         )
 
 
-def _scripted_failure(error: ActivityError) -> TriageFailure:
+def _scripted_failure(error: ActivityError) -> AgentFailure:
     cause = error.cause
-    if isinstance(cause, ApplicationError) and cause.type in {f.value for f in TriageFailure}:
-        return TriageFailure(cause.type)
-    return TriageFailure.MODEL_ERROR
+    if isinstance(cause, ApplicationError) and cause.type in {f.value for f in AgentFailure}:
+        return AgentFailure(cause.type)
+    return AgentFailure.MODEL_ERROR
 
 
 async def decide_at_once(call: TriageCall) -> TriageResult:
@@ -325,6 +358,195 @@ class CrashingTriage:
         raise ApplicationError("agent misconfigured", non_retryable=True)
 
 
+@dataclass(frozen=True)
+class AgentCall:
+    """One attempt of AgentStub's scripted activity."""
+
+    request: AgentRequest
+    run_id: str
+    attempt: int
+
+    @property
+    def agent(self) -> AgentKind:
+        return self.request.agent
+
+    @property
+    def retry(self) -> bool:
+        return self.run_id.endswith("-retry")
+
+
+type AgentBehavior = Callable[[AgentCall], Awaitable[ChainResult]]
+
+
+def _agent_result(task_id: str) -> dict[str, object]:
+    return {
+        "task_id": task_id,
+        "status": RunStatus.COMPLETED,
+        "claims": [],
+        "data_gaps": [],
+        "injection_suspected": False,
+        "usage": NO_USAGE,
+    }
+
+
+def plan_of(call: AgentCall, *agents: str) -> CasePlan:
+    """A plan whose steps run `agents` over the request's window, without skills."""
+    return CasePlan.model_validate(
+        _agent_result(call.run_id)
+        | {
+            "steps": [
+                PlanStep(
+                    agent_id=agent,
+                    objective=f"Planned {agent} step.",
+                    time_window=call.request.time_window,
+                    budget=Budget(tokens=20000, tool_calls=6, seconds=120),
+                )
+                for agent in agents
+            ]
+        }
+    )
+
+
+def investigation_of(call: AgentCall, **fields: object) -> InvestigationResult:
+    """Investigation's result: Triage's decision unless `fields` says otherwise."""
+    inputs = call.request.inputs
+    assert isinstance(inputs, InvestigationInput)
+    return InvestigationResult.model_validate(
+        _agent_result(call.run_id)
+        | {
+            "verdict": inputs.verdict,
+            "confidence": inputs.confidence,
+            "ai_level": inputs.ai_level,
+            "timeline": [],
+            "hypotheses": [],
+            "urgent_event_candidates": [],
+        }
+        | fields
+    )
+
+
+def verification_of(call: AgentCall, **fields: object) -> VerificationResult:
+    """Verification's result: it agrees with the reviewed decision unless `fields` says
+    otherwise."""
+    inputs = call.request.inputs
+    assert isinstance(inputs, VerificationInput)
+    return VerificationResult.model_validate(
+        _agent_result(call.run_id)
+        | {
+            "agrees": True,
+            "verdict": inputs.verdict,
+            "confidence": inputs.confidence,
+            "disagreements": [],
+            "checked_evidence_ids": [],
+        }
+        | fields
+    )
+
+
+def report_of(call: AgentCall, **fields: object) -> CaseReport:
+    """Reporting's report of the workflow's decision, with its claims and candidates."""
+    inputs = call.request.inputs
+    assert isinstance(inputs, ReportingInput)
+    return CaseReport.model_validate(
+        _agent_result(call.run_id)
+        | {
+            "claims": list(inputs.claims),
+            "data_gaps": list(inputs.data_gaps),
+            "summary_tr": "Sentetik rapor.",
+            "verdict": inputs.verdict,
+            "confidence": inputs.confidence,
+            "notify_level": inputs.notify_level,
+            "urgent_events": list(inputs.urgent_event_candidates),
+            "recommendations": [],
+        }
+        | fields
+    )
+
+
+async def answer_agents(call: AgentCall) -> ChainResult:
+    """Every agent answers at once: a plan of Verification alone, an agreeing Verification,
+    Investigation keeping Triage's decision and a report."""
+    match call.agent:
+        case AgentKind.ORCHESTRATOR:
+            return plan_of(call, "verification")
+        case AgentKind.INVESTIGATION:
+            return investigation_of(call)
+        case AgentKind.VERIFICATION:
+            return verification_of(call)
+        case AgentKind.REPORTING:
+            return report_of(call)
+
+
+def agent_failure(failure: AgentFailure) -> ApplicationError:
+    """What a script raises to end its agent run with `failure`."""
+    return ApplicationError(f"scripted {failure.value}", type=failure.value, non_retryable=True)
+
+
+@workflow.defn(name=AGENT_WORKFLOW)
+class AgentStub:
+    """Stands in for AgentWorkflow: the scripted activity gives the run's result, as TriageStub
+    does for Triage."""
+
+    @workflow.run
+    async def run(self, request: AgentRequest) -> AgentOutcome[ChainResult]:
+        run_id = workflow.info().workflow_id
+        try:
+            result: ChainResult = await workflow.execute_activity(
+                SCRIPTED_AGENT,
+                request,
+                result_type=ChainResult,  # pyright: ignore[reportArgumentType] - a union
+                start_to_close_timeout=timedelta(minutes=5),
+                retry_policy=STUB_RETRY,
+            )
+        except ActivityError as error:
+            failure = _scripted_failure(error)
+            exhausted = failure in (AgentFailure.BUDGET_EXHAUSTED, AgentFailure.TIMEOUT)
+            return AgentOutcome[ChainResult](
+                run_id=run_id,
+                status=RunStatus.BUDGET_EXHAUSTED if exhausted else RunStatus.FAILED,
+                result=None,
+                usage=NO_USAGE,
+                error=str(error),
+                failure=failure,
+            )
+        return AgentOutcome[ChainResult](
+            run_id=run_id,
+            status=RunStatus.COMPLETED,
+            result=result,
+            usage=result.usage,
+            error=None,
+            failure=None,
+        )
+
+
+@dataclass(frozen=True)
+class RecordedDecision:
+    """What `record_decision` got."""
+
+    evaluation_no: int
+    verdict: CaseVerdict
+    confidence: Confidence
+    ai_level: Level
+    notify_level: Level
+    floor_level: Level | None
+    report: CaseReport | None
+    qa_reasons: list[QAReason]
+    rule_ids: list[int]
+
+
+@dataclass(frozen=True)
+class RecordedPlan:
+    """What `record_plan` got."""
+
+    case_id: str
+    run_id: str
+    reason: str | None
+    step: int | None
+    detail: str | None
+    dropped: list[str]
+    steps: list[str]
+
+
 class CaseFakes:
     """Case activities for one offense, and the activity TriageStub runs.
 
@@ -333,7 +555,8 @@ class CaseFakes:
     real rule: offense creation for the first evaluation, the update for later ones, plus `sla`.
     `reevaluation_interval` and `retry_delay` are the settings the workflow reads.
     `triage_behavior` gets each TriageCall; `triage_runs` collects the IDs of the triage runs
-    that called it.
+    that called it. `agent_behavior` answers the chain agents' runs (AgentStub) and
+    `agent_calls` collects each attempt; `candidates` is what the router lists.
     """
 
     def __init__(
@@ -345,6 +568,8 @@ class CaseFakes:
         reevaluation_interval: timedelta = timedelta(minutes=30),
         retry_delay: timedelta = timedelta(minutes=5),
         triage_behavior: TriageBehavior = decide_at_once,
+        agent_behavior: AgentBehavior = answer_agents,
+        candidates: Sequence[tuple[str, SkillRef, Budget]] = (),
     ) -> None:
         self.offense = offense
         self.floor_level = floor_level
@@ -352,7 +577,13 @@ class CaseFakes:
         self.interval = reevaluation_interval
         self.retry_delay = retry_delay
         self.triage_behavior = triage_behavior
+        self.agent_behavior = agent_behavior
+        self.candidates = list(candidates)
         self.events = Events()
+        self.agent_events = Events()
+        self.agent_calls: list[AgentCall] = []
+        self.chain_decisions: list[RecordedDecision] = []
+        self.plans: list[RecordedPlan] = []
         self.recorded: list[datetime] = []
         self.evaluations: list[tuple[int, datetime]] = []
         self.decisions: list[tuple[int, Level | None, datetime]] = []
@@ -371,7 +602,20 @@ class CaseFakes:
             self.record_decision,
             self.mark_no_ai_decision,
             self.close_case,
+            self.evaluation_window,
+            self.candidate_skills,
+            self.plan_budgets,
+            self.record_plan,
+            self.scripted_agent,
         ]
+
+    def requests(self, agent: AgentKind) -> list[AgentRequest]:
+        """The requests of `agent`'s runs, first attempts only."""
+        return [c.request for c in self.agent_calls if c.agent is agent and c.attempt == 1]
+
+    def run_ids(self) -> list[str]:
+        """The chain agents' run IDs in the order they started."""
+        return list(dict.fromkeys(call.run_id for call in self.agent_calls))
 
     @activity.defn(name=FETCH_OFFENSE)
     async def fetch_offense(self, offense_id: int) -> OffenseSnapshot:
@@ -433,13 +677,32 @@ class CaseFakes:
         self,
         case_id: str,
         evaluation_no: int,
-        result: TriageResult,
+        verdict: CaseVerdict,
+        confidence: Confidence,
+        ai_level: Level,
+        notify_level: Level,
         floor_level: Level | None,
+        report: CaseReport | None,
+        qa_reasons: list[QAReason],
+        rule_ids: list[int],
         decided_at: datetime,
     ) -> Level:
         self.decisions.append((evaluation_no, floor_level, decided_at))
+        self.chain_decisions.append(
+            RecordedDecision(
+                evaluation_no=evaluation_no,
+                verdict=verdict,
+                confidence=confidence,
+                ai_level=ai_level,
+                notify_level=notify_level,
+                floor_level=floor_level,
+                report=report,
+                qa_reasons=qa_reasons,
+                rule_ids=rule_ids,
+            )
+        )
         await self.events.add("decided", evaluation_no)
-        return result.ai_level
+        return notify_level
 
     @activity.defn(name=MARK_NO_AI_DECISION)
     async def mark_no_ai_decision(self, case_id: str, evaluation_no: int) -> None:
@@ -449,6 +712,44 @@ class CaseFakes:
     async def close_case(self, case_id: str, offense_id: int) -> None:
         self.closed_records.append((case_id, offense_id))
         await self.events.add("closed")
+
+    @activity.defn(name=EVALUATION_WINDOW)
+    async def evaluation_window(self, offense: OffenseSnapshot) -> TimeWindow:
+        return TimeWindow(
+            start=offense.start_time - timedelta(hours=1),
+            end=offense.last_updated_time + timedelta(minutes=5),
+        )
+
+    @activity.defn(name=CANDIDATE_SKILLS)
+    async def candidate_skills(
+        self, offense: OffenseSnapshot, enrichment: EnrichmentContext
+    ) -> list[tuple[str, SkillRef, Budget]]:
+        return self.candidates
+
+    @activity.defn(name=PLAN_BUDGETS)
+    async def plan_budgets(self) -> tuple[Budget, dict[str, Budget]]:
+        return PLAN_BUDGET, dict(MANIFEST_BUDGETS)
+
+    @activity.defn(name=RECORD_PLAN)
+    async def record_plan(
+        self,
+        case_id: str,
+        run_id: str,
+        reason: str | None,
+        step: int | None,
+        detail: str | None,
+        dropped: list[str],
+        steps: list[str],
+    ) -> None:
+        self.plans.append(RecordedPlan(case_id, run_id, reason, step, detail, dropped, steps))
+
+    @activity.defn(name=SCRIPTED_AGENT)
+    async def scripted_agent(self, request: AgentRequest) -> ChainResult:
+        info = activity.info()
+        call = AgentCall(request=request, run_id=info.workflow_id or "", attempt=info.attempt)
+        self.agent_calls.append(call)
+        await self.agent_events.add(str(call.agent), request.evaluation_no)
+        return await self.agent_behavior(call)
 
 
 # --- TriageWorkflow ---------------------------------------------------------------------------
@@ -484,11 +785,12 @@ class AgentReport:
 
 class ScriptedAgent:
     """Stands in for the Triage agent in workflow code: one activity plays the script, as the
-    agent's model requests would, after a tool call when `tool_call` is set. Records the nonce
-    and task of every run."""
+    agent's model requests would, after a tool call when `tool_call` is set. Records the run ID,
+    nonce and task of every run."""
 
     def __init__(self, *, tool_call: bool = False) -> None:
         self.tool_call = tool_call
+        self.run_ids: list[str] = []
         self.nonces: list[str] = []
         self.tasks: list[AgentTask] = []
 
@@ -498,9 +800,11 @@ class ScriptedAgent:
         offense: OffenseSnapshot,
         enrichment: EnrichmentContext,
         *,
+        run_id: str,
         nonce: str,
     ) -> AgentReport:
         if not workflow.unsafe.is_replaying():
+            self.run_ids.append(run_id)
             self.nonces.append(nonce)
             self.tasks.append(task)
         if self.tool_call:

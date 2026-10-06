@@ -1,4 +1,5 @@
-"""`should_reevaluate`: which offense updates are evaluated again (T-014 criterion 1, D-31)."""
+"""`should_reevaluate` and `reevaluation_due`: which offense updates are evaluated again, and
+when (T-014 criterion 1, D-31; T-026 criterion 9, T-30 (1))."""
 
 from datetime import UTC, datetime, timedelta
 
@@ -6,7 +7,7 @@ import pytest
 from workflow_fakes import offense
 
 from ais0c_contracts import OffenseSnapshot
-from ais0c_workflows import should_reevaluate
+from ais0c_workflows import reevaluation_due, should_reevaluate
 
 START = datetime(2026, 10, 3, 9, 0, tzinfo=UTC)
 EVALUATED_AT = START + timedelta(minutes=2)
@@ -107,3 +108,27 @@ def test_an_update_without_anything_new_is_not_evaluated_even_after_the_interval
         now=EVALUATED_AT + timedelta(hours=2),
         min_interval=INTERVAL,
     )
+
+
+# --- reevaluation_due (T-026 criterion 9, T-30 (1)) -------------------------------------------
+
+
+def due(current: OffenseSnapshot) -> datetime | None:
+    return reevaluation_due(
+        EVALUATED, current, last_evaluated_at=EVALUATED_AT, min_interval=INTERVAL
+    )
+
+
+def test_an_update_with_something_new_is_due_at_once() -> None:
+    assert due(updated(1, rule_ids=[100201, 100305])) == EVALUATED_AT
+    assert due(updated(1, usernames=["SVC_BACKUP_7731"], event_count=40)) == EVALUATED_AT
+
+
+def test_more_events_are_due_when_the_interval_ends() -> None:
+    assert due(updated(1, event_count=40)) == EVALUATED_AT + INTERVAL
+    assert due(updated(45, event_count=13)) == EVALUATED_AT + INTERVAL
+
+
+def test_an_update_with_nothing_to_evaluate_is_never_due() -> None:
+    assert due(updated(1)) is None
+    assert due(updated(40, magnitude=9, source_ips=[])) is None

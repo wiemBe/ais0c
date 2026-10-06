@@ -113,9 +113,11 @@ async def test_a_run_is_recorded_before_and_after_the_agent(
     assert fakes.begun == [(RUN_ID, "case-101", 1, "case-run-1", 101)]
     assert fakes.events.names() == ["step", "finished"]
     assert fakes.finished == [(RUN_ID, RunStatus.COMPLETED, triage_result(), None)]
-    # The agent got the task and the nonce `begin_triage_run` returned.
+    # The agent got the task and the nonce `begin_triage_run` returned, and its run ID from the
+    # workflow (T-29).
     assert [task.task_id for task in agent.tasks] == [RUN_ID]
     assert agent.nonces == ["0123456789abcdef"]
+    assert agent.run_ids == [RUN_ID]
 
 
 async def test_the_wall_clock_budget_ends_the_run_as_budget_exhausted(
@@ -201,7 +203,12 @@ async def test_a_run_ending_without_a_result_is_recorded_as_such(
     """An agent run that reports `budget_exhausted` itself (its token or call budget)."""
 
     async def exhausted(
-        task: AgentTask, offense: OffenseSnapshot, enrichment: EnrichmentContext, *, nonce: str
+        task: AgentTask,
+        offense: OffenseSnapshot,
+        enrichment: EnrichmentContext,
+        *,
+        run_id: str,
+        nonce: str,
     ) -> AgentReport:
         return AgentReport(
             status=RunStatus.BUDGET_EXHAUSTED,
@@ -230,7 +237,12 @@ async def test_a_run_the_agent_ends_failed_is_invalid_output(env: WorkflowEnviro
     """The agent catches what its model got wrong: output that kept failing validation."""
 
     async def invalid_output(
-        task: AgentTask, offense: OffenseSnapshot, enrichment: EnrichmentContext, *, nonce: str
+        task: AgentTask,
+        offense: OffenseSnapshot,
+        enrichment: EnrichmentContext,
+        *,
+        run_id: str,
+        nonce: str,
     ) -> AgentReport:
         return AgentReport(
             status=RunStatus.FAILED,

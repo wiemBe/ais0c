@@ -1,5 +1,6 @@
 """Case activities on a real database: opening the case, SLA deadlines, decisions, closure."""
 
+from collections.abc import Sequence
 from datetime import timedelta
 
 import pytest
@@ -21,16 +22,34 @@ from ais0c_activities import (
     FakeOffenseSource,
     IntakeActivities,
     SessionFactory,
+    sample_applies,
+    sample_value,
+    sampled,
 )
+from ais0c_activities.levels import at_least
 from ais0c_contracts import (
+    ActionType,
+    CaseReport,
     CaseVerdict,
     Confidence,
     CriticalAssetHit,
     Level,
     OffenseSnapshot,
+    QAReason,
+    Recommendation,
+    RunStatus,
     TriageResult,
+    UrgentEvent,
+    Usage,
 )
-from ais0c_storage.enums import CaseStatus, CriticalAssetKind, OffenseStatus
+from ais0c_storage.enums import CaseStatus, CriticalAssetKind, OffenseStatus, QAStatus
+from ais0c_storage.repositories import (
+    SyncedRule,
+    list_qa_items,
+    list_recommendations,
+    list_urgent_events,
+    sync_catalog_rules,
+)
 
 pytestmark = pytest.mark.anyio
 
@@ -60,10 +79,29 @@ async def start(
 
 
 async def decide(
-    activities: CaseActivities, evaluation_no: int, result: TriageResult, floor: Level | None
+    activities: CaseActivities,
+    evaluation_no: int,
+    result: TriageResult,
+    floor: Level | None,
+    *,
+    report: CaseReport | None = None,
+    qa_reasons: Sequence[QAReason] = (),
+    rule_ids: Sequence[int] = (100201,),
 ) -> Level:
+    """Record `result`'s decision as the workflow does: its level is max(AI level, floor)."""
     return await ActivityEnvironment().run(
-        activities.record_decision, CASE_ID, evaluation_no, result, floor, T0 + timedelta(hours=1)
+        activities.record_decision,
+        CASE_ID,
+        evaluation_no,
+        result.verdict,
+        result.confidence,
+        result.ai_level,
+        at_least(result.ai_level, floor),
+        floor,
+        report,
+        list(qa_reasons),
+        list(rule_ids),
+        T0 + timedelta(hours=1),
     )
 
 
@@ -133,6 +171,225 @@ async def test_the_ai_cannot_take_a_case_below_its_floor(
     )
     assert (row.ai_level, row.floor_level, row.notify_level) == (Level.LOW, Level.HIGH, Level.HIGH)
     assert row.decided_at == T0 + timedelta(hours=1)
+
+
+def report(
+    result: TriageResult, notify_level: Level, *, events: int = 2, recommendations: int = 1
+) -> CaseReport:
+    event = UrgentEvent(
+        rank=1,
+        time=T0,
+        log_source="DC-01",
+        event_name="Directory Service Access",
+        reason="Replication by a non-machine account.",
+        checklist=[],
+        evidence_id="ev_1",
+    )
+    advice = Recommendation(
+        action_type=ActionType.INVESTIGATE_FURTHER,
+        target="svc_backup",
+        rationale="Confirm the account's purpose.",
+        evidence_ids=["ev_1"],
+    )
+    return CaseReport(
+        task_id="case-7-reporting-1",
+        status=RunStatus.COMPLETED,
+        claims=[],
+        data_gaps=[],
+        injection_suspected=False,
+        usage=Usage(tokens=0, tool_calls=0, seconds=0.0),
+        summary_tr="Sentetik rapor.",
+        verdict=result.verdict,
+        confidence=result.confidence,
+        notify_level=notify_level,
+        urgent_events=[event.model_copy(update={"rank": n}) for n in range(1, events + 1)],
+        recommendations=[advice] * recommendations,
+    )
+
+
+async def test_a_decision_is_recorded_with_its_report_events_and_review(
+    sessions: SessionFactory, activities: CaseActivities
+) -> None:
+    """T-026 criteria 6 and 7: the report, its urgent events and recommendations under the
+    evaluation's number, and one open QA item per reason."""
+    await start(activities, 1, offense(7))
+    result = triage_result(Level.HIGH)
+    written = report(result, Level.HIGH)
+
+    level = await decide(
+        activities,
+        1,
+        result,
+        None,
+        report=written,
+        qa_reasons=[QAReason.VERIFIER_CONFLICT, QAReason.LOW_CONFIDENCE],
+    )
+
+    assert level is Level.HIGH
+    row = await case(sessions, CASE_ID)
+    assert row is not None
+    assert (row.status, row.report) == (CaseStatus.DECIDED, written)
+    async with sessions() as session:
+        events = await list_urgent_events(session, CASE_ID)
+        advice = await list_recommendations(session, CASE_ID)
+        items = await list_qa_items(session, CASE_ID)
+    assert [(e.evaluation_no, e.rank, e.event) for e in events] == [
+        (1, 1, written.urgent_events[0]),
+        (1, 2, written.urgent_events[1]),
+    ]
+    assert [(a.evaluation_no, a.recommendation) for a in advice] == [
+        (1, written.recommendations[0])
+    ]
+    assert sorted((item.reason, item.status) for item in items) == [
+        (QAReason.LOW_CONFIDENCE, QAStatus.OPEN),
+        (QAReason.VERIFIER_CONFLICT, QAStatus.OPEN),
+    ]
+
+
+async def test_a_retried_decision_writes_nothing_twice(
+    sessions: SessionFactory, activities: CaseActivities
+) -> None:
+    """T-026 criteria 6 and 7: the same evaluation recorded again adds no rows."""
+    await start(activities, 1, offense(7))
+    result = triage_result(Level.HIGH)
+    written = report(result, Level.HIGH)
+
+    for _ in range(2):
+        await decide(
+            activities, 1, result, None, report=written, qa_reasons=[QAReason.LOW_CONFIDENCE]
+        )
+
+    async with sessions() as session:
+        assert len(await list_urgent_events(session, CASE_ID)) == 2
+        assert len(await list_recommendations(session, CASE_ID)) == 1
+        assert len(await list_qa_items(session, CASE_ID)) == 1
+
+
+async def test_each_evaluation_keeps_its_own_rows(
+    sessions: SessionFactory, activities: CaseActivities
+) -> None:
+    await start(activities, 1, offense(7))
+    first = triage_result(Level.HIGH)
+    await decide(activities, 1, first, None, report=report(first, Level.HIGH))
+    await start(activities, 2, offense(7, updated=T0 + timedelta(hours=2)), run_id="run-2")
+    second = triage_result(Level.MEDIUM)
+    await decide(
+        activities,
+        2,
+        second,
+        None,
+        report=report(second, Level.MEDIUM, events=1, recommendations=0),
+        qa_reasons=[QAReason.INJECTION_SUSPECTED],
+    )
+
+    async with sessions() as session:
+        events = await list_urgent_events(session, CASE_ID)
+        items = await list_qa_items(session, CASE_ID)
+    assert [(e.evaluation_no, e.rank) for e in events] == [(1, 1), (1, 2), (2, 1)]
+    assert [item.reason for item in items] == [QAReason.INJECTION_SUSPECTED]
+
+
+async def test_a_decision_without_a_report_is_recorded(
+    sessions: SessionFactory, activities: CaseActivities
+) -> None:
+    """T-026 criterion 3: Reporting gave no result."""
+    await start(activities, 1, offense(7))
+
+    await decide(activities, 1, triage_result(), None)
+
+    row = await case(sessions, CASE_ID)
+    assert row is not None
+    assert (row.status, row.verdict, row.report) == (
+        CaseStatus.DECIDED,
+        CaseVerdict.SUSPICIOUS,
+        None,
+    )
+    async with sessions() as session:
+        assert await list_urgent_events(session, CASE_ID) == []
+
+
+# The sample value of case-7's first evaluation (T-42 (5)): sha256("case-7:1"), first 8 bytes,
+# modulo 10000. Inside a 30% sample (below 3000), outside a 10% one (not below 1000).
+CASE_7_SAMPLE = 1523
+
+
+async def test_fp_decisions_on_undefined_rules_are_sampled_more(
+    sessions: SessionFactory, activities: CaseActivities
+) -> None:
+    """T-026 criterion 7: a low FP decision on a rule missing from the catalog falls in the 30%
+    sample; on a defined rule it would need the 10% one."""
+    assert sample_value(CASE_ID, 1) == CASE_7_SAMPLE
+    await start(activities, 1, offense(7))
+
+    await decide(activities, 1, triage_result(Level.LOW, CaseVerdict.FP), None)
+
+    async with sessions() as session:
+        items = await list_qa_items(session, CASE_ID)
+    assert [item.reason for item in items] == [QAReason.RANDOM_SAMPLE]
+
+
+async def test_fp_decisions_on_defined_rules_use_the_lower_rate(
+    sessions: SessionFactory, activities: CaseActivities
+) -> None:
+    await catalog_rule(sessions, 100201)
+    await start(activities, 1, offense(7))
+
+    await decide(activities, 1, triage_result(Level.LOW, CaseVerdict.FP), None)
+
+    async with sessions() as session:
+        assert await list_qa_items(session, CASE_ID) == []
+
+
+async def test_a_rule_only_synced_from_qradar_is_undefined(
+    sessions: SessionFactory, activities: CaseActivities
+) -> None:
+    await catalog_rule(sessions, 100201)
+    async with sessions.begin() as session:
+        synced = SyncedRule(rule_id=100305, rule_name="Rule 100305")
+        await sync_catalog_rules(session, [synced], synced_by="sync", synced_at=T0)
+    await start(activities, 1, offense(7, rule_ids=(100201, 100305)))
+
+    await decide(
+        activities, 1, triage_result(Level.LOW, CaseVerdict.FP), None, rule_ids=(100201, 100305)
+    )
+
+    async with sessions() as session:
+        items = await list_qa_items(session, CASE_ID)
+    assert [item.reason for item in items] == [QAReason.RANDOM_SAMPLE]
+
+
+@pytest.mark.parametrize(
+    ("verdict", "ai_level", "floor"),
+    [
+        pytest.param(CaseVerdict.SUSPICIOUS, Level.LOW, None, id="not-fp"),
+        pytest.param(CaseVerdict.FP, Level.HIGH, None, id="high"),
+        pytest.param(CaseVerdict.FP, Level.LOW, Level.CRITICAL, id="critical-floor"),
+    ],
+)
+async def test_only_low_and_medium_fp_decisions_are_sampled(
+    sessions: SessionFactory,
+    activities: CaseActivities,
+    verdict: CaseVerdict,
+    ai_level: Level,
+    floor: Level | None,
+) -> None:
+    await start(activities, 1, offense(7))
+
+    await decide(activities, 1, triage_result(ai_level, verdict), floor)
+
+    async with sessions() as session:
+        assert await list_qa_items(session, CASE_ID) == []
+
+
+def test_the_sample_follows_the_rate() -> None:
+    assert sampled(CASE_ID, 1, 30)
+    assert not sampled(CASE_ID, 1, 10)
+    assert sampled("case-4", 1, 10)  # sample value 38
+    assert not sampled("case-4", 1, 0)
+    assert all(sampled(f"case-{n}", 1, 100) for n in range(50))
+    assert sample_applies(CaseVerdict.FP, Level.MEDIUM)
+    assert not sample_applies(CaseVerdict.FP, Level.HIGH)
+    assert not sample_applies(CaseVerdict.TP, Level.LOW)
 
 
 async def test_no_ai_decision_applies_only_to_a_running_evaluation(

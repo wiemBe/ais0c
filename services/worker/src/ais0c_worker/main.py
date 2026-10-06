@@ -8,7 +8,7 @@
 | `AIS0C_KNOWLEDGE_SYNC_SCHEDULE` | `off` leaves the KnowledgeSync Schedule alone | `on` |
 
 Without a command the process is the case worker, as it has been: `run_case_worker` reads the
-offenses and runs the Triage agent (`ais0c_worker.case_worker`). With the command `batch` it is
+offenses and runs the agent chain of each case (`ais0c_worker.case_worker`). With the command `batch` it is
 the batch worker of the `soc-batch` queue, `run_batch_worker`, which runs KnowledgeSync's
 catalog sync.
 
@@ -75,6 +75,7 @@ async def run_case_worker(stop: asyncio.Event, environ: Mapping[str, str] | None
             sessions=runtime.sessions,
             source=runtime.source,
             triage=runtime.triage,
+            chain=runtime.chain,
             settings=runtime.settings,
             ioc_matcher=runtime.ioc_matcher,
         )
@@ -157,7 +158,7 @@ def _command(argv: Sequence[str] | None) -> str:
     commands = parser.add_subparsers(dest="command")
     commands.add_parser(
         CASE_COMMAND,
-        help="the soc-case worker: offenses, cases and the Triage agent (the default)",
+        help="the soc-case worker: offenses, cases and their agents (the default)",
     )
     commands.add_parser(BATCH_COMMAND, help="the soc-batch worker: KnowledgeSync's catalog sync")
     args = parser.parse_args(argv)

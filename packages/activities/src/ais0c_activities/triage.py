@@ -3,8 +3,8 @@
 `TriageRuntime` holds the T-009 Triage agent with Pydantic AI's TemporalDurability. Its `run` is
 called from TriageWorkflow's workflow code, where each model request and each tool call becomes
 an activity of that workflow; the worker registers those activities with the rest. The run's
-ID is the workflow's ID (`<case_id>-triage-<n>`); every tool call carries it in its ToolIntent,
-so the gateway records the call under the run (T-19).
+ID is the workflow's ID (`<case_id>-triage-<n>`), which the workflow passes in (T-29); every tool
+call carries it in its ToolIntent, so the gateway records the call under the run (T-19).
 
 `TriageRunActivities` record the run in `agent_runs`: `begin_triage_run` before the agent
 starts, because the gateway takes calls only for a recorded run in progress, and
@@ -87,10 +87,17 @@ TOOL_ACTIVITY: Final = ActivityConfig(
     ),
     cancellation_type=ActivityCancellationType.ABANDON,
 )
-# The time window of a Triage run's tool calls: the offense's life, at most this long (the
-# Triage profile allows 31 days).
+# The time window of an evaluation, and of its Triage run's tool calls: the offense's life, at
+# most this long (the Triage, investigate and verify profiles allow 31 days).
 TRIAGE_WINDOW: Final = timedelta(days=30)
 MIN_WINDOW: Final = timedelta(minutes=1)
+
+
+def evaluation_window(offense: OffenseSnapshot, now: datetime) -> TimeWindow:
+    """The window of an evaluation at `now`: from the offense's start, at most TRIAGE_WINDOW
+    and at least MIN_WINDOW back, until `now`."""
+    start = min(max(offense.start_time, now - TRIAGE_WINDOW), now - MIN_WINDOW)
+    return TimeWindow(start=start, end=now)
 
 
 @dataclass(frozen=True)
@@ -148,17 +155,18 @@ class TriageRuntime:
         offense: OffenseSnapshot,
         enrichment: EnrichmentContext,
         *,
+        run_id: str,
         nonce: str,
     ) -> AgentRun[TriageResult]:
         """One Triage run, in TriageWorkflow's workflow code (`TriageAgentRun`).
 
-        The run's ID is the workflow's ID, under which `begin_triage_run` recorded the run; the
-        agent writes it into every ToolIntent. Durations come from the workflow clock, so a
-        replay measures what the run measured.
+        `run_id` is the run's ID, under which `begin_triage_run` recorded the run; the workflow
+        gives it (T-29) and the agent writes it into every ToolIntent. Durations come from the
+        workflow clock, so a replay measures what the run measured.
         """
         return await self.agent.run(
             TriageTask(task=task, offense=offense, enrichment=enrichment),
-            run_id=workflow.info().workflow_id,
+            run_id=run_id,
             nonce=nonce,
             clock=workflow.time,
         )
@@ -175,7 +183,6 @@ class TriageRuntime:
     ) -> AgentTask:
         """The AgentTask of a case evaluation's Triage run; its budget is the manifest's."""
         manifest = self.agent.manifest
-        start = min(max(offense.start_time, now - TRIAGE_WINDOW), now - MIN_WINDOW)
         return AgentTask(
             task_id=run_id,
             parent_run_id=parent_run_id,
@@ -184,7 +191,7 @@ class TriageRuntime:
             agent_version=manifest.version,
             objective=f"Triage QRadar offense {offense.offense_id} (evaluation {evaluation_no}).",
             context_refs=[],
-            time_window=TimeWindow(start=start, end=now),
+            time_window=evaluation_window(offense, now),
             budget=Budget(
                 tokens=manifest.budgets.tokens,
                 tool_calls=manifest.budgets.tool_calls,

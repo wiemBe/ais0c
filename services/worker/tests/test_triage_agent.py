@@ -18,9 +18,11 @@ from worker_support import (
     INJECTION,
     MODEL_REGISTRY,
     OFFENSE_EVIDENCE,
+    ChainModels,
     Platform,
     RecordingGateway,
     TriageModel,
+    chain_runtime,
     cited_alias,
     eventually,
     model_requests,
@@ -74,7 +76,7 @@ async def test_the_triage_agent_runs_as_temporal_activities(
     async with running_platform(env, sessions) as platform:
         case = await decided_case(platform, 70)
         history = await env.client.get_workflow_handle("case-70-triage-1").fetch_history()
-        runs = await platform.agent_runs("case-70")
+        runs = await platform.agent_runs("case-70", "triage")
 
     assert scheduled_activities(history) == [
         BEGIN_TRIAGE_RUN,
@@ -120,9 +122,11 @@ async def test_the_triage_agent_runs_as_temporal_activities(
     )
     assert [claim.evidence_ids for claim in result.claims] == [[OFFENSE_EVIDENCE]]
 
-    # The gateway saw the agent's one call under the run, for the case.
-    assert platform.gateway.runs == ["case-70-triage-1"]
-    assert [(intent.case_id, intent.agent_id) for intent in platform.gateway.intents] == [
+    # The gateway saw the agent's one call under the run, for the case; the later calls are the
+    # chain's (test_agent_chain).
+    assert platform.gateway.runs[:1] == ["case-70-triage-1"]
+    assert "case-70-triage-1" not in platform.gateway.runs[1:]
+    assert [(intent.case_id, intent.agent_id) for intent in platform.gateway.intents[:1]] == [
         ("case-70", "triage")
     ]
 
@@ -159,7 +163,7 @@ async def test_the_model_cites_an_alias_and_never_sees_the_evidence_id(
     async with running_platform(env, sessions) as platform:
         await decided_case(platform, 73)
         history = await env.client.get_workflow_handle("case-73-triage-1").fetch_history()
-        [run] = await platform.agent_runs("case-73")
+        [run] = await platform.agent_runs("case-73", "triage")
 
     requests = model_requests(history)
     [returned] = tool_returns(requests[-1])
@@ -210,13 +214,13 @@ async def test_a_run_the_model_ended_is_retried_once(
         await platform.run_intake(first)
 
         async def first_run_failed() -> list[AgentRunRow] | None:
-            runs = await platform.agent_runs("case-73")
+            runs = await platform.agent_runs("case-73", "triage")
             return runs if any(run.status is RunStatus.FAILED for run in runs) else None
 
         await eventually(first_run_failed)
         await env.sleep(timedelta(minutes=5))
         case = await platform.case_when("case-73", lambda row: row.status is CaseStatus.DECIDED)
-        runs = await platform.agent_runs("case-73")
+        runs = await platform.agent_runs("case-73", "triage")
 
     assert [(run.run_id, run.status) for run in runs] == [
         ("case-73-triage-1", RunStatus.FAILED),
@@ -243,12 +247,13 @@ async def test_a_worker_restart_resumes_the_triage_run(
             await asyncio.Event().wait()
 
     source = FakeOffenseSource()
-    first_model, first_gateway = TriageModel(hook=stall_second_request), RecordingGateway()
+    first_model, first_gateway = TriageModel(hook=stall_second_request), RecordingGateway(sessions)
     first_worker = build_case_worker(
         env.client,
         sessions=sessions,
         source=source,
         triage=triage_runtime(first_model, first_gateway),
+        chain=chain_runtime(ChainModels(), first_gateway),
         settings=CaseSettings(),
     )
     async with first_worker:
@@ -264,12 +269,13 @@ async def test_a_worker_restart_resumes_the_triage_run(
             await open_request.wait()
     # The first worker is gone; its open request is cancelled with it.
 
-    second_model, second_gateway = TriageModel(), RecordingGateway()
+    second_model, second_gateway = TriageModel(), RecordingGateway(sessions)
     second_worker = build_case_worker(
         env.client,
         sessions=sessions,
         source=source,
         triage=triage_runtime(second_model, second_gateway),
+        chain=chain_runtime(ChainModels(), second_gateway),
         settings=CaseSettings(),
     )
     async with second_worker:
@@ -292,7 +298,7 @@ async def test_a_worker_restart_resumes_the_triage_run(
     # finished before the stop, so it is replayed from the history, not made again.
     assert [(run, step) for run, step, _ in second_model.requests] == [(run_id, 2)]
     assert second_model.requests[0][2] >= 2
-    assert second_gateway.intents == []
+    assert [intent for intent in second_gateway.intents if intent.run_id == run_id] == []
     # One run of the workflow, one agent run, one decision.
     assert description.status is not None
     assert description.status.name == "COMPLETED"
@@ -304,6 +310,7 @@ async def test_a_worker_restart_resumes_the_triage_run(
     assert len(started) == 1
     async with sessions() as session:
         runs = await list_agent_runs(session, case_id="case-72")
+    runs = [run for run in runs if run.agent_id == "triage"]
     assert [(run.run_id, run.status, run.tool_calls) for run in runs] == [
         (run_id, RunStatus.COMPLETED, 1)
     ]

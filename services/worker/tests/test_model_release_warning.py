@@ -16,7 +16,13 @@ from pathlib import Path
 import pytest
 from sqlalchemy import URL
 from temporalio.testing import WorkflowEnvironment
-from worker_support import MODEL_REGISTRY, REPO_ROOT, TRIAGE_PROFILE
+from worker_support import (
+    INVESTIGATE_PROFILE,
+    MODEL_REGISTRY,
+    REPO_ROOT,
+    TRIAGE_PROFILE,
+    VERIFY_PROFILE,
+)
 
 from ais0c_activities import SessionFactory, load_model_releases
 from ais0c_contracts import AgentTask, Budget, ModelRelease, TimeWindow
@@ -101,18 +107,26 @@ async def test_an_unchanged_or_unused_release_is_not_logged(
     assert worker_records(caplog) == []
 
 
+# The agents' profiles, each served to its own token.
+PROFILES = {
+    f"{TOKEN}-triage": TRIAGE_PROFILE,
+    f"{TOKEN}-investigate": INVESTIGATE_PROFILE,
+    f"{TOKEN}-verify": VERIFY_PROFILE,
+}
+
+
 class StubGateway:
-    """Serves the Triage profile's tools to the right token, as `GET /v1/tools` does."""
+    """Serves each agent profile's tools to its token, as `GET /v1/tools` does."""
 
     def __init__(self) -> None:
         class Handler(BaseHTTPRequestHandler):
             def do_GET(self) -> None:
-                if self.path != "/v1/tools" or self.headers.get("Authorization") != (
-                    f"Bearer {TOKEN}"
-                ):
+                token = (self.headers.get("Authorization") or "").removeprefix("Bearer ")
+                profile = PROFILES.get(token)
+                if self.path != "/v1/tools" or profile is None:
                     self.send_error(401)
                     return
-                body = TRIAGE_PROFILE.model_dump_json().encode()
+                body = profile.model_dump_json().encode()
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
                 self.send_header("Content-Length", str(len(body)))
@@ -148,7 +162,8 @@ async def test_the_worker_warns_when_it_starts(
 ) -> None:
     """`run_case_worker` checks the releases after loading its runtime, before it runs."""
     await record_run(sessions, "case-7-triage-1", older(RELEASES["soc-fast"]))
-    (tmp_path / "gateway-token-qradar-triage-read").write_text(TOKEN, encoding="utf-8")
+    for token, profile in PROFILES.items():
+        (tmp_path / f"gateway-token-{profile.name}").write_text(token, encoding="utf-8")
     environ = {
         "AIS0C_DATABASE_URL": database_url.render_as_string(hide_password=False),
         "AIS0C_GATEWAY_URL": gateway.url,

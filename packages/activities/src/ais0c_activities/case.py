@@ -1,10 +1,10 @@
 """Activities of `CaseWorkflow` (architecture §6, §9).
 
 One evaluation is: `fetch_offense`, `enrich_offense`, `start_evaluation` (opens the case or
-starts the next evaluation and sets the SLA deadline), the Triage run (the child workflow
-TriageWorkflow; its activities are in `ais0c_activities.triage`), then `record_decision`, or
-`mark_no_ai_decision` when the SLA runs out or triage gives no decision. `close_case` ends the
-case when the offense is closed in QRadar.
+starts the next evaluation and sets the SLA deadline), the agent chain (the child workflows
+TriageWorkflow and AgentWorkflow; their activities are in `ais0c_activities.triage` and
+`ais0c_activities.chain`), then `record_decision`, or `mark_no_ai_decision` when the SLA runs
+out or triage gives no decision. `close_case` ends the case when the offense is closed in QRadar.
 
 An update of the offense is fetched and recorded (`record_offense_update`) whether or not it is
 evaluated again (D-31). `reevaluation_interval` and `triage_retry_delay` hand the workflow its
@@ -14,6 +14,7 @@ settings, which it may not read itself.
 from collections.abc import Callable
 from datetime import datetime, timedelta
 
+from sqlalchemy.ext.asyncio import AsyncSession
 from temporalio import activity
 from temporalio.exceptions import ApplicationError
 
@@ -32,15 +33,29 @@ from ais0c_activities.names import (
     TRIAGE_RETRY_DELAY,
 )
 from ais0c_activities.offense_source import OffenseSource
+from ais0c_activities.qa import sample_applies, sampled
 from ais0c_activities.settings import CaseSettings
-from ais0c_contracts import CaseSource, EnrichmentContext, Level, OffenseSnapshot, TriageResult
+from ais0c_contracts import (
+    CaseReport,
+    CaseSource,
+    CaseVerdict,
+    Confidence,
+    EnrichmentContext,
+    Level,
+    OffenseSnapshot,
+    QAReason,
+)
 from ais0c_storage.enums import CaseStatus, OffenseStatus
 from ais0c_storage.repositories import (
+    add_qa_items,
     begin_case_reevaluation,
     create_case,
     get_case,
+    get_catalog_rules,
     get_offense_seen,
     record_case_decision,
+    replace_recommendations,
+    replace_urgent_events,
     set_case_run_id,
     set_case_status,
     update_offense_seen,
@@ -198,31 +213,65 @@ class CaseActivities:
         self,
         case_id: str,
         evaluation_no: int,
-        result: TriageResult,
+        verdict: CaseVerdict,
+        confidence: Confidence,
+        ai_level: Level,
+        notify_level: Level,
         floor_level: Level | None,
+        report: CaseReport | None,
+        qa_reasons: list[QAReason],
+        rule_ids: list[int],
         decided_at: datetime,
     ) -> Level:
-        """Store the evaluation's decision; returns its notification level.
+        """Store the evaluation's decision and what comes with it; returns its notification
+        level.
 
-        The notification level is max(AI level, floor) (architecture §9): the AI cannot take a
-        case below its floor.
+        In one transaction: the decision and the report (T-42 (4): None when Reporting gave
+        none), the report's urgent events and recommendations under the evaluation's number,
+        and an open QA item per reason: the chain's `qa_reasons` and the random sample of low
+        and medium FP decisions (`ais0c_activities.qa`). The level is the workflow's
+        max(AI level, floor); it cannot fall below the floor. A retry finds the evaluation
+        decided and writes nothing again.
         """
-        notify_level = at_least(result.ai_level, floor_level)
+        level = at_least(notify_level, floor_level)
         async with self._sessions.begin() as session:
             case = await get_case(session, case_id)
             if case is None or case.evaluation_no != evaluation_no:
                 raise _out_of_step(case_id, evaluation_no)
+            if case.status is CaseStatus.DECIDED and case.notify_level is not None:
+                return case.notify_level
+            reasons = list(qa_reasons)
+            if sample_applies(verdict, level) and sampled(
+                case_id, evaluation_no, await self._sample_percent(session, rule_ids)
+            ):
+                reasons.append(QAReason.RANDOM_SAMPLE)
             await record_case_decision(
                 session,
                 case_id,
-                verdict=result.verdict,
-                confidence=result.confidence,
-                ai_level=result.ai_level,
-                notify_level=notify_level,
+                verdict=verdict,
+                confidence=confidence,
+                ai_level=ai_level,
+                notify_level=level,
                 floor_level=floor_level,
                 decided_at=decided_at,
+                report=report,
             )
-        return notify_level
+            if report is not None:
+                await replace_urgent_events(session, case_id, evaluation_no, report.urgent_events)
+                await replace_recommendations(
+                    session, case_id, evaluation_no, report.recommendations
+                )
+            await add_qa_items(session, case_id, reasons)
+        return level
+
+    async def _sample_percent(self, session: AsyncSession, rule_ids: list[int]) -> int:
+        """The sample rate of an offense with these rules: higher when one of them is undefined
+        in the Analysis Catalog or not in it (D-35)."""
+        rules = await get_catalog_rules(session, rule_ids)
+        defined = {rule.rule_id for rule in rules if rule.defined}
+        if set(rule_ids) - defined:
+            return self._settings.qa_undefined_sample_percent
+        return self._settings.qa_sample_percent
 
     @activity.defn(name=MARK_NO_AI_DECISION)
     async def mark_no_ai_decision(self, case_id: str, evaluation_no: int) -> None:

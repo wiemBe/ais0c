@@ -15,6 +15,10 @@ a new magnitude, is not evaluated again.
 The update is compared with the snapshot the last evaluation used, not with the previous update:
 what counts is what the AI has not seen yet. User names compare without case, as the critical
 asset match does (Windows and AD names are case-insensitive).
+
+An update that only brings more events before the interval has passed is not dropped: the case
+evaluates it once the interval ends (decision T-30 (1)), unless another evaluation comes first.
+`reevaluation_due` says when an update is due; `should_reevaluate` whether it is due now.
 """
 
 from collections.abc import Iterable
@@ -37,6 +41,25 @@ def should_reevaluate(
     """Whether `current` is evaluated again after an evaluation of `previous` at
     `last_evaluated_at`; `min_interval` is the configured wait for an update that only brings
     more events."""
+    due = reevaluation_due(
+        previous, current, last_evaluated_at=last_evaluated_at, min_interval=min_interval
+    )
+    return due is not None and due <= now
+
+
+def reevaluation_due(
+    previous: OffenseSnapshot,
+    current: OffenseSnapshot,
+    *,
+    last_evaluated_at: datetime,
+    min_interval: timedelta,
+) -> datetime | None:
+    """When `current` is due for evaluation after an evaluation of `previous` at
+    `last_evaluated_at`; None when it brings nothing to evaluate.
+
+    An update with a new rule, address, user or log source is due at once (at
+    `last_evaluated_at`); one that only brings more events once `min_interval` has passed.
+    """
     if (
         _added(previous.rule_ids, current.rule_ids)
         or _added(previous.source_ips, current.source_ips)
@@ -44,8 +67,10 @@ def should_reevaluate(
         or _added(_names(previous.usernames), _names(current.usernames))
         or _added(previous.log_source_ids, current.log_source_ids)
     ):
-        return True
-    return current.event_count > previous.event_count and now - last_evaluated_at >= min_interval
+        return last_evaluated_at
+    if current.event_count > previous.event_count:
+        return last_evaluated_at + min_interval
+    return None
 
 
 def _added[T](before: Iterable[T], after: Iterable[T]) -> bool:

@@ -18,6 +18,7 @@ from temporalio.testing import WorkflowEnvironment
 from temporalio.worker import Worker
 from workflow_fakes import (
     WAIT_SECONDS,
+    AgentStub,
     BudgetExhaustedTriage,
     CaseFakes,
     CrashingTriage,
@@ -58,7 +59,7 @@ async def running_case(
     async with Worker(
         env.client,
         task_queue=CASE_TASK_QUEUE,
-        workflows=[CaseWorkflow, triage_workflow],
+        workflows=[CaseWorkflow, triage_workflow, AgentStub],
         activities=fakes.activities(),
     ):
         handle = await env.client.start_workflow(
@@ -169,9 +170,10 @@ async def test_updates_during_an_evaluation_are_checked_once_after_it(
 async def test_an_update_with_only_more_events_waits_for_the_interval(
     env: WorkflowEnvironment,
 ) -> None:
-    """Criterion 2: an update `should_reevaluate` turns down is recorded, without triage. More
-    events count once the interval has passed since the evaluation, compared with what the
-    evaluation saw."""
+    """T-014 criterion 2 and T-026 criterion 9: an update `should_reevaluate` turns down is
+    recorded, without triage. More events count once the interval has passed since the
+    evaluation, compared with what the evaluation saw: the case evaluates them then, once, with
+    the offense as it is at that time (T-30 (1))."""
     now = await env.get_current_time()
     fakes = CaseFakes(offense(OFFENSE_ID, start=now, event_count=12))
 
@@ -191,20 +193,82 @@ async def test_an_update_with_only_more_events_waits_for_the_interval(
             Level.HIGH,
         )
 
-        # 35 minutes after the evaluation; this update brings no event of its own, but the
-        # evaluation saw 12 events and there are 40 now.
-        await env.sleep(timedelta(minutes=25))
-        v3 = now + timedelta(minutes=35)
-        fakes.offense = offense(OFFENSE_ID, start=now, updated=v3, event_count=40)
+        # A second update inside the interval plans nothing more.
+        await env.sleep(timedelta(minutes=5))
+        v3 = now + timedelta(minutes=15)
+        fakes.offense = offense(OFFENSE_ID, start=now, updated=v3, event_count=50)
         await handle.signal(OFFENSE_UPDATED, v3)
+        await fakes.events.wait_for("recorded", 2)
+        await env.sleep(timedelta(minutes=10))
+        assert fakes.evaluations == [(1, now)]
+
+        # 30 minutes after the evaluation the planned evaluation runs, once.
+        await env.sleep(timedelta(minutes=10))
         await fakes.events.wait_for("decided", 2)
+        await env.sleep(timedelta(minutes=40))
         result = await close(handle)
 
-    assert fakes.recorded == [v2, v3]
-    # v2 was never evaluated: evaluation 2 is v3.
+    # The planned evaluation fetched and recorded the offense once more.
+    assert fakes.recorded == [v2, v3, v3]
     assert fakes.evaluations == [(1, now), (2, v3)]
     assert triage_numbers(fakes) == [1, 2]
     assert result.evaluation_no == 2
+
+
+async def test_an_evaluation_drops_the_planned_one(env: WorkflowEnvironment) -> None:
+    """T-026 criterion 9: an update evaluated at once before the interval ends takes the place
+    of the evaluation planned for its end."""
+    now = await env.get_current_time()
+    fakes = CaseFakes(offense(OFFENSE_ID, start=now, event_count=12))
+
+    async with running_case(env, fakes) as handle:
+        await fakes.events.wait_for("decided", 1)
+        await env.sleep(timedelta(minutes=10))
+        v2 = now + timedelta(minutes=10)
+        fakes.offense = offense(OFFENSE_ID, start=now, updated=v2, event_count=40)
+        await handle.signal(OFFENSE_UPDATED, v2)
+        await fakes.events.wait_for("recorded", 1)
+
+        # A new rule is evaluated at once.
+        await env.sleep(timedelta(minutes=5))
+        v3 = now + timedelta(minutes=15)
+        fakes.offense = offense(OFFENSE_ID, start=now, updated=v3, rule_ids=NEW_RULE)
+        await handle.signal(OFFENSE_UPDATED, v3)
+        await fakes.events.wait_for("decided", 2)
+
+        # Past the end of the first interval: nothing more is evaluated.
+        await env.sleep(timedelta(minutes=30))
+        result = await close(handle)
+
+    assert fakes.evaluations == [(1, now), (2, v3)]
+    assert result.evaluation_no == 2
+
+
+async def test_a_planned_evaluation_with_nothing_left_to_evaluate_ends(
+    env: WorkflowEnvironment,
+) -> None:
+    """When the planned evaluation's check finds nothing new, nothing is evaluated and nothing
+    more is planned: the case waits for the next signal."""
+    now = await env.get_current_time()
+    fakes = CaseFakes(offense(OFFENSE_ID, start=now, event_count=12))
+
+    async with running_case(env, fakes) as handle:
+        await fakes.events.wait_for("decided", 1)
+        await env.sleep(timedelta(minutes=10))
+        v2 = now + timedelta(minutes=10)
+        fakes.offense = offense(OFFENSE_ID, start=now, updated=v2, event_count=40)
+        await handle.signal(OFFENSE_UPDATED, v2)
+        await fakes.events.wait_for("recorded", 1)
+        # The source answers the planned check with what the evaluation saw.
+        fakes.offense = offense(OFFENSE_ID, start=now, updated=v2, event_count=12)
+        await env.sleep(timedelta(minutes=25))
+        await fakes.events.wait_for("recorded", 2)
+        await env.sleep(timedelta(hours=2))
+        result = await close(handle)
+
+    assert fakes.recorded == [v2, v2]
+    assert fakes.evaluations == [(1, now)]
+    assert result.evaluation_no == 1
 
 
 async def test_the_interval_comes_from_the_settings(env: WorkflowEnvironment) -> None:
@@ -221,14 +285,47 @@ async def test_the_interval_comes_from_the_settings(env: WorkflowEnvironment) ->
         await handle.signal(OFFENSE_UPDATED, v2)
         await fakes.events.wait_for("recorded", 1)
 
-        await env.sleep(timedelta(minutes=90))
-        v3 = now + timedelta(minutes=130)
-        fakes.offense = offense(OFFENSE_ID, start=now, updated=v3, event_count=41)
-        await handle.signal(OFFENSE_UPDATED, v3)
+        # Past 30 minutes, inside the two hours.
+        await env.sleep(timedelta(minutes=60))
+        assert fakes.evaluations == [(1, now)]
+        await env.sleep(timedelta(minutes=25))
         await fakes.events.wait_for("decided", 2)
         await close(handle)
 
-    assert fakes.evaluations == [(1, now), (2, v3)]
+    assert fakes.evaluations == [(1, now), (2, v2)]
+
+
+async def test_a_case_without_an_ai_decision_waits_only_the_retry_delay(
+    env: WorkflowEnvironment,
+) -> None:
+    """T-026 criterion 10 (T-30 (2)): while the case is `no_ai_decision`, an update with only
+    more events is evaluated once the retry delay (5 minutes) has passed, not 30 minutes."""
+
+    async def no_decision_at_first(call: TriageCall) -> TriageResult:
+        if call.evaluation_no == 1:
+            raise triage_failure(TriageFailure.INVALID_OUTPUT)
+        return triage_result()
+
+    now = await env.get_current_time()
+    fakes = CaseFakes(
+        offense(OFFENSE_ID, start=now, event_count=12), triage_behavior=no_decision_at_first
+    )
+
+    async with running_case(env, fakes) as handle:
+        await fakes.events.wait_for("no_ai_decision", 1)
+        await env.sleep(timedelta(minutes=2))
+        v2 = now + timedelta(minutes=2)
+        fakes.offense = offense(OFFENSE_ID, start=now, updated=v2, event_count=40)
+        await handle.signal(OFFENSE_UPDATED, v2)
+        await fakes.events.wait_for("recorded", 1)
+        assert fakes.evaluations == [(1, now)]
+
+        await env.sleep(timedelta(minutes=4))
+        await fakes.events.wait_for("decided", 2)
+        result = await close(handle)
+
+    assert fakes.evaluations == [(1, now), (2, v2)]
+    assert result.status is CaseStatus.CLOSED
 
 
 async def test_offense_closed_ends_the_workflow(env: WorkflowEnvironment) -> None:
@@ -279,7 +376,7 @@ async def test_offense_closed_before_the_first_evaluation(env: WorkflowEnvironme
     async with Worker(
         env.client,
         task_queue=CASE_TASK_QUEUE,
-        workflows=[CaseWorkflow, TriageStub],
+        workflows=[CaseWorkflow, TriageStub, AgentStub],
         activities=fakes.activities(),
     ):
         handle = await env.client.start_workflow(
