@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ais0c_storage.enums import ActorKind, PlatformFlag
 from ais0c_storage.models import PlatformFlagRow
-from ais0c_storage.repositories._common import get_row
+from ais0c_storage.repositories._common import fetch_all, get_row
 from ais0c_storage.repositories.audit import append_audit
 
 # `audit_log.action` and `audit_log.object_type` of a flag change; `object_id` is the flag name.
@@ -25,6 +25,15 @@ PLATFORM_FLAG_OBJECT_TYPE = "platform_flag"
 async def get_platform_flag(session: AsyncSession, name: PlatformFlag) -> PlatformFlagRow | None:
     """The flag as it is in the database now; None if it was never set, which means off."""
     return await get_row(session, PlatformFlagRow, PlatformFlag(name))
+
+
+async def list_platform_flags(session: AsyncSession) -> list[PlatformFlagRow]:
+    """The flags that have a row, by name.
+
+    The analyst API pairs this with `PlatformFlag` itself: a known flag with no row here is off
+    (`ais0c_api.models.flag_state`).
+    """
+    return await fetch_all(session, select(PlatformFlagRow).order_by(PlatformFlagRow.name))
 
 
 async def set_platform_flag(

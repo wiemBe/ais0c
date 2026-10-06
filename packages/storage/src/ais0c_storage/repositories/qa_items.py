@@ -1,15 +1,21 @@
 """`qa_items`: cases waiting for an operator's check (architecture §9, "Zorunlu operatör
-kontrolü"; decision T-42)."""
+kontrolü"; decision T-42).
 
-from collections.abc import Iterable
+`list_qa_queue` is the queue the analyst API pages through (T-028); `list_qa_items` is what the
+case workflow reads for one case.
+"""
 
-from sqlalchemy import select
+import uuid
+from collections.abc import Collection, Iterable
+from datetime import datetime
+
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ais0c_contracts import QAReason
 from ais0c_storage.enums import QAStatus
 from ais0c_storage.models import QAItemRow
-from ais0c_storage.repositories._common import fetch_all, insert_row
+from ais0c_storage.repositories._common import fetch_all, get_row, insert_row, update_one
 
 
 async def add_qa_items(
@@ -45,3 +51,50 @@ async def list_qa_items(
     if statuses is not None:
         statement = statement.where(QAItemRow.status.in_(list(statuses)))
     return await fetch_all(session, statement.order_by(QAItemRow.id))
+
+
+async def get_qa_item(session: AsyncSession, item_id: uuid.UUID) -> QAItemRow | None:
+    return await get_row(session, QAItemRow, item_id)
+
+
+async def resolve_qa_item(
+    session: AsyncSession, item_id: uuid.UUID, *, resolved_by: str, resolved_at: datetime
+) -> QAItemRow:
+    """Mark the item `resolved` (`POST /qa/{id}/resolve` of the analyst API, T-028).
+
+    `resolved_by` is the operator's OIDC subject. Raises `NotFoundError` when there is no such
+    item; the caller decides what an item that is already resolved means.
+    """
+    statement = (
+        update(QAItemRow)
+        .where(QAItemRow.id == item_id)
+        .values(
+            status=QAStatus.RESOLVED,
+            resolved_by=resolved_by,
+            resolved_at=resolved_at,
+        )
+    )
+    return await update_one(session, statement, QAItemRow, f"QA item {item_id}")
+
+
+async def list_qa_queue(
+    session: AsyncSession,
+    *,
+    statuses: Collection[QAStatus] | None = None,
+    reasons: Collection[QAReason] | None = None,
+    after: uuid.UUID | None = None,
+    limit: int = 50,
+) -> list[QAItemRow]:
+    """The QA queue across all cases, oldest first (UUIDv7 IDs sort by creation time).
+
+    `after` is the last ID of the previous page, so a page starts after it and a new item never
+    repeats or skips one.
+    """
+    statement = select(QAItemRow)
+    if statuses is not None:
+        statement = statement.where(QAItemRow.status.in_(list(statuses)))
+    if reasons is not None:
+        statement = statement.where(QAItemRow.reason.in_(list(reasons)))
+    if after is not None:
+        statement = statement.where(QAItemRow.id > after)
+    return await fetch_all(session, statement.order_by(QAItemRow.id).limit(limit))

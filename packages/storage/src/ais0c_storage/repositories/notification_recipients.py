@@ -5,12 +5,13 @@ checks every recipient against the current domain allowlist immediately before s
 """
 
 import re
+from collections.abc import Iterable
 
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ais0c_storage.models import AllowedEmailDomainRow, NotificationRecipientRow
-from ais0c_storage.repositories._common import fetch_all, insert_new
+from ais0c_storage.repositories._common import fetch_all, insert_new, insert_row
 
 _GROUP_NAME = re.compile(r"[a-z][a-z0-9-]{0,62}")
 _ATOM = r"[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+"
@@ -105,3 +106,53 @@ async def list_allowed_email_domains(session: AsyncSession) -> list[AllowedEmail
     return await fetch_all(
         session, select(AllowedEmailDomainRow).order_by(AllowedEmailDomainRow.domain)
     )
+
+
+async def check_recipient_domains(session: AsyncSession, domains: Iterable[str]) -> list[str]:
+    """The given domains the allowlist does not contain, in the order they were given.
+
+    Comparison is on the normalized form, so `Example.COM` is checked as `example.com`.
+    `domains` holds plain DNS names; a name that is not one is returned as not allowed rather
+    than raising, so a caller that validates separately and a caller that does not agree.
+    """
+    wanted: list[str] = []
+    for domain in domains:
+        try:
+            normalized = _normalized_domain(domain)
+        except ValueError:
+            wanted.append(domain)
+        else:
+            wanted.append(normalized)
+    if not wanted:
+        return []
+    statement = select(AllowedEmailDomainRow.domain).where(AllowedEmailDomainRow.domain.in_(wanted))
+    allowed = set(await session.scalars(statement))
+    return list(dict.fromkeys(domain for domain in wanted if domain not in allowed))
+
+
+async def replace_notification_recipients(
+    session: AsyncSession, list_name: str, emails: Iterable[str]
+) -> list[NotificationRecipientRow]:
+    """Make the group `list_name` hold exactly `emails` (`PUT /notification-recipients/{name}`).
+
+    A new `list_name` creates the group. Addresses are stored as `add_notification_recipient`
+    stores them, so the local part is kept and the domain is lowercased; a repeated address is
+    written once. Every address must already have passed the domain allowlist; this function
+    checks syntax only, and the domain check is the caller's (`check_recipient_domains`).
+
+    Raises ValueError for a name or an address outside the accepted forms. The replacement is
+    one transaction, so a group is never left half replaced.
+    """
+    _check_group_name(list_name)
+    addresses = [_normalized_address(email) for email in emails]
+    await session.execute(
+        delete(NotificationRecipientRow).where(NotificationRecipientRow.list_name == list_name)
+    )
+    return [
+        await insert_row(
+            session,
+            NotificationRecipientRow,
+            dict(list_name=list_name, email=address),
+        )
+        for address in dict.fromkeys(addresses)
+    ]

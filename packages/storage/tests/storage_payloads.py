@@ -91,14 +91,16 @@ def _agent_result() -> dict[str, object]:
     }
 
 
-def agent_task(case_id: str | None = CASE_ID, hunt_id: str | None = None) -> AgentTask:
+def agent_task(
+    case_id: str | None = CASE_ID, hunt_id: str | None = None, agent_id: str = "triage"
+) -> AgentTask:
     return AgentTask.model_validate(
         {
             "task_id": "task-1",
             "parent_run_id": "run-0",
             "case_id": case_id,
             "hunt_id": hunt_id,
-            "agent_id": "triage",
+            "agent_id": agent_id,
             "agent_version": "1",
             "objective": "Decide whether offense 12345 is a true positive.",
             "context_refs": [EVIDENCE_ID],

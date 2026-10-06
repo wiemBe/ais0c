@@ -146,6 +146,54 @@ AIS0C_WORKER_SECRETS_DIR=deploy/compose/secrets/agents \
 
 Açılışta `knowledge-sync` Schedule'ını kurar: her gün 03:00 Europe/Istanbul'da `soc-batch` kuyruğunda bir `KnowledgeSync` başlatır. Aynı Schedule'ı elle tetiklemek `POST /catalog/sync`'in (T-028) yapacağı gibidir; süren bir koşunun üstüne ikinci bir koşu başlatmaz. `Ctrl-C` veya `SIGTERM` ile düzgünce durur; yarım kalan işi bir sonraki worker tarihinden devam ettirir.
 
+### API (arayüz servisi)
+
+Analist arayüzünün konuştuğu FastAPI servisi ([T-028](../../docs/impl/tasks/T-028-api.md), [api.md](../../docs/impl/api.md)): `uv run python -m ais0c_api`. Prod'da compose servisi T-031'in konusudur; dev'de host'ta çalışır. Yalnızca uygulama veritabanını okur ve operatörün değiştirdiği satırları yazar; QRadar'a, gateway'e veya modele hiçbir istek göndermez.
+
+| Değişken | Anlamı | Varsayılan |
+|---|---|---|
+| `AIS0C_DATABASE_URL` | Uygulama veritabanı | yok |
+| `AIS0C_API_AUTH` | Kimlik doğrulama modu; bugün yalnızca `dev` (T-035 `oidc`'yi ekler) | yok, ayar olmadan başlamaz |
+| `AIS0C_API_DEV_USERS_FILE` | `dev` modunun okuduğu kullanıcı dosyası | `dev` modunda yok |
+| `AIS0C_API_HOST` | Dinleme adresi | `127.0.0.1` |
+| `AIS0C_API_PORT` | Dinleme portu | `8000` |
+| `TEMPORAL_ADDRESS` | Temporal frontend; yalnızca `POST /catalog/sync` için | `127.0.0.1:7233` |
+| `TEMPORAL_NAMESPACE` | Namespace | `default` |
+
+`AIS0C_API_AUTH` verilmezse veya bilinmeyen bir değerse servis açılmaz (çıkış kodu 2). `dev` modu geliştirme içindir ve açılışta uyarı olarak loglanır.
+
+**Dev kullanıcı dosyası.** `deploy/compose/secrets/api/dev-users.json`, git dışıdır (`deploy/compose/secrets/.gitignore`). Dosyada token'ın kendisi değil **sha256'ı** durur; API gelen token'ın sha256'sını hesaplayıp karşılaştırır. Token'ı üretip hash'ini dosyaya yaz:
+
+```bash
+TOKEN=$(openssl rand -hex 32)
+HASH=$(printf '%s' "$TOKEN" | sha256sum | cut -d' ' -f1)
+mkdir -p deploy/compose/secrets/api
+cat > deploy/compose/secrets/api/dev-users.json <<EOF
+{
+  "users": [
+    {
+      "token_sha256": "$HASH",
+      "subject": "soc-operator-1",
+      "display_name": "SOC Operatör 1",
+      "roles": ["admin"]
+    }
+  ]
+}
+EOF
+chmod 600 deploy/compose/secrets/api/dev-users.json
+echo "token: $TOKEN"
+```
+
+Roller kapsayıcıdır: `admin` ⊇ `hunter` ⊇ `operator`. Dosyada token'ın kendisi hiçbir zaman bulunmaz; hash'i olan tek şey budur.
+
+Aramak için `Authorization: Bearer <token>` başlığı:
+
+```bash
+curl -sS -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8000/api/v1/me
+```
+
+Arayüzün OpenAPI şeması `services/api/openapi.json`'dur; `uv run python -m ais0c_api.openapi services/api/openapi.json` ile yeniden üretilir ve T-029 arayüz tiplerini buradan alır.
+
 ### Executor worker (QRadar notu ve e-posta)
 
 Action Executor'ın iki activity'si (`write_offense_note`, `send_email`) kendi sürecinde ve `soc-executor` kuyruğunda çalışır ([T-045](../../docs/impl/tasks/T-045-executor-vaka-akisi.md), T-33 (1)): `uv run python -m ais0c_worker executor`. Dev'de host'ta çalışır. Ajan token'ı, model registry'si ve LiteLLM istemez; `deploy/compose/secrets/executor` dizinini ve SMTP ayarlarını yalnızca bu süreç okur.
@@ -223,6 +271,17 @@ Anahtarı yığın çalışırken eklediysen önce LiteLLM'i yeniden oluştur: `
   ```
 
   Worker'ın diğer testleri (`services/worker/tests/test_batch_worker.py`) yığını gerektirmez: kendi PostgreSQL'ini ve Temporal'ının yerel geliştirme sunucusunu açar, gateway'i temsil eden bir HTTP sunucusu kullanır.
+- API'nin testleri (`services/api/tests/`) yığını gerektirmez: gerçek PostgreSQL'ini testcontainers ile açar, gerçek uygulamayı bu veritabanının üzerine kurar ve sahte bir Temporal ile `POST /catalog/sync`'i sınar. Model, QRadar veya Temporal sunucusu çağırmaz. `tests/api/` altındaki testler paketler arasıdır: OpenAPI şemasının güncel olduğunu ve iki paketin Schedule kimliğinin aynı olduğunu kontrol ederler.
+
+  ```bash
+  uv run pytest services/api/tests tests/api
+  ```
+
+  OpenAPI şemasını değiştirdiysen yeniden üret; aksi halde şema testi kırmızı olur:
+
+  ```bash
+  uv run python -m ais0c_api.openapi services/api/openapi.json
+  ```
 
 ## Durdurma ve sıfırlama
 

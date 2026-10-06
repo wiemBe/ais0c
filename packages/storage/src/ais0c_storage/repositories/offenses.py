@@ -1,9 +1,10 @@
 """`offenses_seen` and `offense_groups`: intake, repeat check and grouping (architecture §9)."""
 
 from collections.abc import Collection, Sequence
+from dataclasses import dataclass
 from datetime import datetime
 
-from sqlalchemy import func, select, update
+from sqlalchemy import func, select, tuple_, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -174,6 +175,74 @@ async def find_offense_group(
         .limit(1)
     )
     return await fetch_one(session, statement)
+
+
+@dataclass(frozen=True)
+class GroupCursor:
+    """Where a group page ended: the row's own `window_start` and `group_id`."""
+
+    window_start: datetime
+    group_id: str
+
+
+async def list_offense_groups(
+    session: AsyncSession,
+    *,
+    statuses: Collection[GroupStatus] | None = None,
+    window_from: datetime | None = None,
+    window_to: datetime | None = None,
+    after: GroupCursor | None = None,
+    limit: int = 50,
+) -> list[OffenseGroupRow]:
+    """Groups matching every given filter, newest window first.
+
+    `after` is the last row of the previous page (`newest_group_cursor`): the page starts after
+    it in the same order, so a page never repeats or skips a row whose `window_start` is the
+    same as its neighbours'.
+    """
+    statement = select(OffenseGroupRow)
+    if statuses is not None:
+        statement = statement.where(OffenseGroupRow.status.in_(list(statuses)))
+    if window_from is not None:
+        statement = statement.where(OffenseGroupRow.window_start >= window_from)
+    if window_to is not None:
+        statement = statement.where(OffenseGroupRow.window_start < window_to)
+    if after is not None:
+        statement = statement.where(
+            tuple_(OffenseGroupRow.window_start, OffenseGroupRow.group_id)
+            < tuple_(after.window_start, after.group_id)
+        )
+    statement = statement.order_by(OffenseGroupRow.window_start.desc(), OffenseGroupRow.group_id)
+    return await fetch_all(session, statement.limit(limit))
+
+
+def newest_group_cursor(row: OffenseGroupRow) -> GroupCursor:
+    return GroupCursor(window_start=row.window_start, group_id=row.group_id)
+
+
+async def list_group_offenses(session: AsyncSession, group_id: str) -> list[OffenseSeenRow]:
+    """The offenses of one group, by offense ID: what the group holds, in a stable order."""
+    statement = (
+        select(OffenseSeenRow)
+        .where(OffenseSeenRow.group_id == group_id)
+        .order_by(OffenseSeenRow.offense_id)
+    )
+    return await fetch_all(session, statement)
+
+
+async def list_offenses_by_ids(
+    session: AsyncSession, offense_ids: Collection[int]
+) -> dict[int, OffenseSeenRow]:
+    """The recorded offenses among `offense_ids`, by offense ID; unknown IDs are left out.
+
+    One query for a whole page of cases, so the analyst API can put each row's rule IDs in its
+    answer without a query per case (T-028).
+    """
+    wanted = set(offense_ids)
+    if not wanted:
+        return {}
+    statement = select(OffenseSeenRow).where(OffenseSeenRow.offense_id.in_(list(wanted)))
+    return {row.offense_id: row for row in await fetch_all(session, statement)}
 
 
 async def increment_offense_group(

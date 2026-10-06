@@ -111,12 +111,32 @@ source = { editable = "services/api" }
 dependencies = [
     { name = "ais0c-contracts" },
     { name = "ais0c-storage" },
+    { name = "fastapi" },
+    { name = "temporalio" },
+    { name = "uvicorn" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "anyio" },
+    { name = "httpx2" },
+    { name = "testcontainers" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "ais0c-contracts", editable = "packages/contracts" },
     { name = "ais0c-storage", editable = "packages/storage" },
+    { name = "fastapi", specifier = ">=0.142.2,<0.143" },
+    { name = "temporalio", specifier = ">=1.34,<2" },
+    { name = "uvicorn", specifier = ">=0.54,<0.55" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "anyio", specifier = ">=4.15,<5" },
+    { name = "httpx2", specifier = ">=2.13.1,<3" },
+    { name = "testcontainers", specifier = ">=4.15,<5" },
 ]
 
 [[package]]

@@ -2,13 +2,17 @@
 
 from ais0c_storage.repositories.audit import append_audit, list_audit
 from ais0c_storage.repositories.cases import (
+    CaseCursor,
+    SlaBucket,
     begin_case_reevaluation,
     create_case,
     get_case,
     list_cases,
+    newest_case_cursor,
     record_case_decision,
     set_case_run_id,
     set_case_status,
+    sla_metrics,
 )
 from ais0c_storage.repositories.catalog import (
     SyncedLogSource,
@@ -34,6 +38,7 @@ from ais0c_storage.repositories.critical_assets import (
     CRITICAL_ASSET_LEVELS,
     add_critical_asset,
     delete_critical_asset,
+    get_critical_asset,
     list_critical_assets,
 )
 from ais0c_storage.repositories.evidence import (
@@ -41,25 +46,37 @@ from ais0c_storage.repositories.evidence import (
     find_unknown_evidence_ids,
     get_evidence,
     get_evidence_refs,
+    list_evidence_by_ids,
     record_evidence,
     to_evidence_ref,
+)
+from ais0c_storage.repositories.feedback import (
+    add_operator_feedback,
+    list_operator_feedback,
 )
 from ais0c_storage.repositories.flags import (
     PLATFORM_FLAG_AUDIT_ACTION,
     PLATFORM_FLAG_OBJECT_TYPE,
     get_platform_flag,
+    list_platform_flags,
     set_platform_flag,
 )
 from ais0c_storage.repositories.notes import get_note, list_notes, record_note, update_note_status
 from ais0c_storage.repositories.notification_recipients import (
     add_allowed_email_domain,
     add_notification_recipient,
+    check_recipient_domains,
     delete_allowed_email_domain,
     delete_notification_recipient,
     list_allowed_email_domains,
     list_notification_recipients,
+    replace_notification_recipients,
 )
-from ais0c_storage.repositories.notification_routes import list_notification_route_groups
+from ais0c_storage.repositories.notification_routes import (
+    list_notification_route_groups,
+    list_notification_routes,
+    replace_notification_routes,
+)
 from ais0c_storage.repositories.notifications import (
     get_notification,
     list_notifications,
@@ -67,6 +84,7 @@ from ais0c_storage.repositories.notifications import (
     update_notification_status,
 )
 from ais0c_storage.repositories.offenses import (
+    GroupCursor,
     add_offense_seen,
     count_offenses,
     create_offense_group,
@@ -74,11 +92,21 @@ from ais0c_storage.repositories.offenses import (
     get_offense_group,
     get_offense_seen,
     increment_offense_group,
+    list_group_offenses,
+    list_offense_groups,
+    list_offenses_by_ids,
     list_pending_offenses,
+    newest_group_cursor,
     update_offense_group,
     update_offense_seen,
 )
-from ais0c_storage.repositories.qa_items import add_qa_items, list_qa_items
+from ais0c_storage.repositories.qa_items import (
+    add_qa_items,
+    get_qa_item,
+    list_qa_items,
+    list_qa_queue,
+    resolve_qa_item,
+)
 from ais0c_storage.repositories.recommendations import (
     list_recommendations,
     replace_recommendations,
@@ -86,9 +114,11 @@ from ais0c_storage.repositories.recommendations import (
 from ais0c_storage.repositories.runs import (
     finish_agent_run,
     get_agent_run,
+    get_last_agent_run,
     latest_model_releases,
     list_agent_runs,
     list_tool_calls,
+    list_tools_for_evidence,
     record_tool_call,
     start_agent_run,
 )
@@ -99,6 +129,9 @@ __all__ = [
     "EXCERPT_RETENTION",
     "PLATFORM_FLAG_AUDIT_ACTION",
     "PLATFORM_FLAG_OBJECT_TYPE",
+    "CaseCursor",
+    "GroupCursor",
+    "SlaBucket",
     "SyncedLogSource",
     "SyncedRule",
     "accept_catalog_rule_draft",
@@ -106,9 +139,11 @@ __all__ = [
     "add_critical_asset",
     "add_notification_recipient",
     "add_offense_seen",
+    "add_operator_feedback",
     "add_qa_items",
     "append_audit",
     "begin_case_reevaluation",
+    "check_recipient_domains",
     "count_offenses",
     "create_case",
     "create_offense_group",
@@ -124,13 +159,16 @@ __all__ = [
     "get_catalog_log_sources",
     "get_catalog_rule",
     "get_catalog_rules",
+    "get_critical_asset",
     "get_evidence",
     "get_evidence_refs",
+    "get_last_agent_run",
     "get_note",
     "get_notification",
     "get_offense_group",
     "get_offense_seen",
     "get_platform_flag",
+    "get_qa_item",
     "increment_offense_group",
     "latest_model_releases",
     "list_agent_runs",
@@ -140,28 +178,43 @@ __all__ = [
     "list_catalog_log_sources",
     "list_catalog_rules",
     "list_critical_assets",
+    "list_evidence_by_ids",
+    "list_group_offenses",
     "list_notes",
     "list_notification_recipients",
     "list_notification_route_groups",
+    "list_notification_routes",
     "list_notifications",
+    "list_offense_groups",
+    "list_offenses_by_ids",
+    "list_operator_feedback",
     "list_pending_offenses",
+    "list_platform_flags",
     "list_qa_items",
+    "list_qa_queue",
     "list_recommendations",
     "list_tool_calls",
+    "list_tools_for_evidence",
     "list_urgent_events",
+    "newest_case_cursor",
+    "newest_group_cursor",
     "record_case_decision",
     "record_evidence",
     "record_note",
     "record_notification",
     "record_tool_call",
+    "replace_notification_recipients",
+    "replace_notification_routes",
     "replace_recommendations",
     "replace_urgent_events",
+    "resolve_qa_item",
     "set_case_run_id",
     "set_case_status",
     "set_catalog_log_sources_missing",
     "set_catalog_rule_draft",
     "set_catalog_rules_missing",
     "set_platform_flag",
+    "sla_metrics",
     "start_agent_run",
     "sync_catalog_log_sources",
     "sync_catalog_rules",

@@ -1,15 +1,20 @@
-"""`cases`: one row per case workflow, holding its latest decision."""
+"""`cases`: one row per case workflow, holding its latest decision.
+
+The list functions carry the filters and the keyset the analyst API pages with (T-028):
+`list_cases` and `sla_metrics`.
+"""
 
 from collections.abc import Collection
+from dataclasses import dataclass
 from datetime import datetime
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, tuple_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ais0c_contracts import CaseReport, CaseSource, CaseVerdict, Confidence, Level
 from ais0c_storage.columns import revalidate
 from ais0c_storage.enums import CaseStatus
-from ais0c_storage.models import CaseRow
+from ais0c_storage.models import CaseRow, OffenseSeenRow
 from ais0c_storage.repositories._common import fetch_all, get_row, insert_new, update_one
 
 
@@ -129,6 +134,18 @@ async def set_case_run_id(session: AsyncSession, case_id: str, run_id: str) -> C
     return await update_one(session, statement, CaseRow, f"case {case_id!r}")
 
 
+@dataclass(frozen=True)
+class CaseCursor:
+    """Where a case page ended: the row's own `created_at` and `case_id`."""
+
+    created_at: datetime
+    case_id: str
+
+
+def newest_case_cursor(row: CaseRow) -> CaseCursor:
+    return CaseCursor(created_at=row.created_at, case_id=row.case_id)
+
+
 async def list_cases(
     session: AsyncSession,
     *,
@@ -136,11 +153,19 @@ async def list_cases(
     sources: Collection[CaseSource] | None = None,
     verdicts: Collection[CaseVerdict] | None = None,
     notify_levels: Collection[Level] | None = None,
+    rule_ids: Collection[int] | None = None,
     created_from: datetime | None = None,
     created_to: datetime | None = None,
+    after: CaseCursor | None = None,
     limit: int = 50,
 ) -> list[CaseRow]:
-    """Cases matching every given filter, newest first."""
+    """Cases matching every given filter, newest first.
+
+    `rule_ids` keeps the cases whose offense carries any of the given QRadar rule IDs; a case
+    of a hunt or a group has no rule and is never kept. `after` is the last row of the previous
+    page (`newest_case_cursor`): the page starts after it in the same order, so a page never
+    repeats or skips a row whose `created_at` is the same as its neighbours'.
+    """
     statement = select(CaseRow)
     if statuses is not None:
         statement = statement.where(CaseRow.status.in_(list(statuses)))
@@ -150,9 +175,87 @@ async def list_cases(
         statement = statement.where(CaseRow.verdict.in_(list(verdicts)))
     if notify_levels is not None:
         statement = statement.where(CaseRow.notify_level.in_(list(notify_levels)))
+    if rule_ids is not None:
+        statement = statement.where(
+            CaseRow.offense_id.in_(
+                select(OffenseSeenRow.offense_id).where(
+                    OffenseSeenRow.rule_ids.overlap(list(rule_ids))
+                )
+            )
+        )
     if created_from is not None:
         statement = statement.where(CaseRow.created_at >= created_from)
     if created_to is not None:
         statement = statement.where(CaseRow.created_at < created_to)
+    if after is not None:
+        statement = statement.where(
+            tuple_(CaseRow.created_at, CaseRow.case_id) < tuple_(after.created_at, after.case_id)
+        )
     statement = statement.order_by(CaseRow.created_at.desc(), CaseRow.case_id).limit(limit)
     return await fetch_all(session, statement)
+
+
+@dataclass(frozen=True)
+class SlaBucket:
+    """The SLA outcome of one `floor_level` over a set of cases.
+
+    `floor_level` is None for the cases whose floor is empty. The five numbers are the cases
+    with that floor: how many there are, and how their decision came out. They add up to
+    `total`.
+    """
+
+    floor_level: Level | None
+    total: int
+    on_time: int
+    late: int
+    undecided: int
+    running: int
+
+
+async def sla_metrics(
+    session: AsyncSession, *, sla_due_from: datetime, sla_due_to: datetime
+) -> list[SlaBucket]:
+    """How the cases whose SLA deadline is in `[sla_due_from, sla_due_to)` met it, per floor.
+
+    Only the case's own latest evaluation counts: `decided_at` is where the current decision was
+    recorded, and a case that is still `running` has none yet. `on_time` decided at or before
+    its deadline, `late` after it, `undecided` reached `no_ai_decision` (D-30) and `running` is
+    still going. Ordered by severity, the floor-less bucket last.
+    """
+    decided = CaseRow.decided_at.is_not(None)
+    on_time = decided & (CaseRow.decided_at <= CaseRow.sla_due_at)
+    late = decided & (CaseRow.decided_at > CaseRow.sla_due_at)
+    # `count(*) FILTER (WHERE ...)` rather than `sum(boolean)`: PostgreSQL has no sum of boolean.
+    statement = (
+        select(
+            CaseRow.floor_level,
+            func.count(),
+            func.count().filter(on_time),
+            func.count().filter(late),
+            func.count().filter(CaseRow.status == CaseStatus.NO_AI_DECISION),
+            func.count().filter(CaseRow.status == CaseStatus.RUNNING),
+        )
+        .where(CaseRow.sla_due_at >= sla_due_from, CaseRow.sla_due_at < sla_due_to)
+        .group_by(CaseRow.floor_level)
+    )
+    rows = await session.execute(statement)
+    buckets = [
+        SlaBucket(
+            floor_level=floor_level,
+            total=total,
+            on_time=int(on_time or 0),
+            late=int(late or 0),
+            undecided=int(undecided or 0),
+            running=int(running or 0),
+        )
+        for floor_level, total, on_time, late, undecided, running in rows
+    ]
+    return sorted(buckets, key=_floor_order)
+
+
+def _floor_order(bucket: SlaBucket) -> tuple[int, str]:
+    """Critical first, low last, and the floor-less bucket after every level."""
+    order = (Level.CRITICAL, Level.HIGH, Level.MEDIUM, Level.LOW)
+    if bucket.floor_level is None:
+        return (len(order), "")
+    return (order.index(bucket.floor_level), bucket.floor_level.value)

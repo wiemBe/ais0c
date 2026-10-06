@@ -76,18 +76,37 @@ async def list_catalog_rules(
     *,
     defined: bool | None = None,
     mode: CatalogMode | None = None,
+    qradar_enabled: bool | None = None,
+    missing: bool | None = None,
     search: str | None = None,
+    after_rule_id: int | None = None,
+    limit: int | None = None,
 ) -> list[CatalogRuleRow]:
-    """Rules matching every given filter; `search` matches part of the rule name, ignoring
-    case."""
+    """Rules matching every given filter, by rule ID.
+
+    `search` matches part of the rule name, ignoring case. `qradar_enabled` filters on the state
+    QRadar reports (T-37); `missing=True` keeps the rules QRadar no longer lists, `False` the
+    ones it lists. `after_rule_id` starts the page after that rule ID; `limit` leaves it
+    unlimited.
+    """
     statement = select(CatalogRuleRow)
     if defined is not None:
         statement = statement.where(CatalogRuleRow.defined == defined)
     if mode is not None:
         statement = statement.where(CatalogRuleRow.mode == mode)
+    if qradar_enabled is not None:
+        statement = statement.where(CatalogRuleRow.qradar_enabled == qradar_enabled)
+    if missing is not None:
+        marked = CatalogRuleRow.missing_since.is_not(None)
+        statement = statement.where(marked if missing else ~marked)
     if search:
         statement = statement.where(CatalogRuleRow.rule_name.icontains(search, autoescape=True))
-    return await fetch_all(session, statement.order_by(CatalogRuleRow.rule_id))
+    if after_rule_id is not None:
+        statement = statement.where(CatalogRuleRow.rule_id > after_rule_id)
+    statement = statement.order_by(CatalogRuleRow.rule_id)
+    if limit is not None:
+        statement = statement.limit(limit)
+    return await fetch_all(session, statement)
 
 
 async def sync_catalog_rules(
@@ -285,15 +304,25 @@ async def list_catalog_log_sources(
     *,
     defined: bool | None = None,
     in_scope: bool | None = None,
+    missing: bool | None = None,
     search: str | None = None,
+    after_log_source_id: int | None = None,
+    limit: int | None = None,
 ) -> list[CatalogLogSourceRow]:
-    """Log sources matching every given filter; `search` matches part of the name or the type
-    name, ignoring case."""
+    """Log sources matching every given filter, by log source ID.
+
+    `search` matches part of the name or the type name, ignoring case. `missing` is
+    `catalog_rules`' (T-37). `after_log_source_id` starts the page after that ID; `limit` leaves
+    it unlimited.
+    """
     statement = select(CatalogLogSourceRow)
     if defined is not None:
         statement = statement.where(CatalogLogSourceRow.defined == defined)
     if in_scope is not None:
         statement = statement.where(CatalogLogSourceRow.in_scope == in_scope)
+    if missing is not None:
+        marked = CatalogLogSourceRow.missing_since.is_not(None)
+        statement = statement.where(marked if missing else ~marked)
     if search:
         statement = statement.where(
             or_(
@@ -301,7 +330,12 @@ async def list_catalog_log_sources(
                 CatalogLogSourceRow.type_name.icontains(search, autoescape=True),
             )
         )
-    return await fetch_all(session, statement.order_by(CatalogLogSourceRow.log_source_id))
+    if after_log_source_id is not None:
+        statement = statement.where(CatalogLogSourceRow.log_source_id > after_log_source_id)
+    statement = statement.order_by(CatalogLogSourceRow.log_source_id)
+    if limit is not None:
+        statement = statement.limit(limit)
+    return await fetch_all(session, statement)
 
 
 async def sync_catalog_log_sources(

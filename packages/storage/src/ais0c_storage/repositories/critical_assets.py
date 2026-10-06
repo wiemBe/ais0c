@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ais0c_contracts import Level, ShortText
 from ais0c_storage.enums import CriticalAssetKind
 from ais0c_storage.models import CriticalAssetRow
-from ais0c_storage.repositories._common import fetch_all, insert_row
+from ais0c_storage.repositories._common import fetch_all, get_row, insert_row
 
 CRITICAL_ASSET_LEVELS = frozenset({Level.HIGH, Level.CRITICAL})
 
@@ -41,6 +41,11 @@ async def add_critical_asset(
     _LABEL.validate_python(label)
     values = dict(kind=kind, value=_normalized(kind, value), label=label, level=level)
     return await insert_row(session, CriticalAssetRow, values)
+
+
+async def get_critical_asset(session: AsyncSession, asset_id: uuid.UUID) -> CriticalAssetRow | None:
+    """The asset as it is in the database now; None when there is no such asset."""
+    return await get_row(session, CriticalAssetRow, asset_id)
 
 
 async def delete_critical_asset(session: AsyncSession, asset_id: uuid.UUID) -> bool:

@@ -1,5 +1,6 @@
 """`agent_runs` and `tool_calls`."""
 
+from collections.abc import Collection
 from datetime import datetime
 
 import pydantic_core
@@ -13,6 +14,7 @@ from ais0c_storage.enums import PolicyDecision
 from ais0c_storage.models import AGENT_RUN_RESULT, AgentRunResult, AgentRunRow, ToolCallRow
 from ais0c_storage.repositories._common import (
     fetch_all,
+    fetch_one,
     get_row,
     insert_new,
     insert_row,
@@ -114,6 +116,24 @@ async def get_agent_run(session: AsyncSession, run_id: str) -> AgentRunRow | Non
     return await get_row(session, AgentRunRow, run_id)
 
 
+async def get_last_agent_run(
+    session: AsyncSession, case_id: str, *, agent_id: str
+) -> AgentRunRow | None:
+    """The newest run of `agent_id` for a case, newest first by start time then run ID.
+
+    For the analyst API's case detail (T-028): the last Verification of the current evaluation is
+    the one the queue shows, and a case that has none (no plan step, or a run that never got to
+    it) returns None rather than an error.
+    """
+    statement = (
+        select(AgentRunRow)
+        .where(AgentRunRow.case_id == case_id, AgentRunRow.agent_id == agent_id)
+        .order_by(AgentRunRow.started_at.desc(), AgentRunRow.run_id.desc())
+        .limit(1)
+    )
+    return await fetch_one(session, statement)
+
+
 async def list_agent_runs(
     session: AsyncSession, *, case_id: str | None = None, hunt_id: str | None = None
 ) -> list[AgentRunRow]:
@@ -177,3 +197,29 @@ async def list_tool_calls(session: AsyncSession, run_id: str) -> list[ToolCallRo
         .order_by(ToolCallRow.created_at, ToolCallRow.id)
     )
     return await fetch_all(session, statement)
+
+
+async def list_tools_for_evidence(
+    session: AsyncSession, evidence_ids: Collection[str]
+) -> dict[str, str]:
+    """The gateway tool that issued each of `evidence_ids`, by evidence ID.
+
+    The evidence table holds no tool: an `EvidenceRef` is the query and its identifiers. The tool
+    call that recorded it does, so the analyst API's evidence list (T-028) reads it from there.
+    An evidence ID no call carries, or one several calls share, maps to the earliest call; the
+    value is `""` when nothing carries the ID.
+    """
+    wanted = set(evidence_ids)
+    if not wanted:
+        return {}
+    statement = (
+        select(ToolCallRow.evidence_id, ToolCallRow.intent)
+        .where(ToolCallRow.evidence_id.in_(list(wanted)))
+        .order_by(ToolCallRow.created_at, ToolCallRow.id)
+    )
+    rows = await session.execute(statement)
+    tools: dict[str, str] = {}
+    for evidence_id, intent in rows:
+        if evidence_id is not None:
+            tools.setdefault(evidence_id, intent.tool_id)
+    return tools

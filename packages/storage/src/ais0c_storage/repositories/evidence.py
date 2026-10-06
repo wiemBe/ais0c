@@ -40,6 +40,25 @@ async def get_evidence(session: AsyncSession, evidence_id: str) -> EvidenceRow |
     return await get_row(session, EvidenceRow, evidence_id)
 
 
+async def list_evidence_by_ids(
+    session: AsyncSession, evidence_ids: Collection[str]
+) -> list[EvidenceRow]:
+    """The stored evidence among `evidence_ids`, by ID; unknown IDs are left out.
+
+    `get_evidence_refs` gives the same rows as `EvidenceRef` models; this keeps the row, so a
+    caller can show `retrieved_at` and `expires_at` as they are (the analyst API's evidence list,
+    T-028).
+    """
+    if not evidence_ids:
+        return []
+    statement = (
+        select(EvidenceRow)
+        .where(EvidenceRow.evidence_id.in_(list(evidence_ids)))
+        .order_by(EvidenceRow.retrieved_at, EvidenceRow.evidence_id)
+    )
+    return await fetch_all(session, statement)
+
+
 async def get_evidence_refs(
     session: AsyncSession, evidence_ids: Collection[str]
 ) -> dict[str, EvidenceRef]:
