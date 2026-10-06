@@ -62,6 +62,7 @@ Genel kurallar:
 |---|---|---|
 | `id` | uuid PK | |
 | `case_id` | text FK | |
+| `evaluation_no` | int | Kaydın açıldığı değerlendirme; `(case_id, evaluation_no, reason)` tekildir (T-57) |
 | `reason` | text | `QAReason` |
 | `status` | text | `open`, `resolved` |
 | `resolved_by`, `resolved_at` | text?, timestamptz? | |
@@ -93,6 +94,7 @@ Genel kurallar:
 | `task` | jsonb | `AgentTask` |
 | `result` | jsonb? | İlgili sonuç modeli |
 | `tokens`, `tool_calls` | int | |
+| `error` | text? | Başarısız veya bütçeye takılan çalışmanın nedeni, en çok 2000 karakter (T-57) |
 | `skill` | jsonb? | `SkillRef` (T-21) |
 | `model_release` | jsonb? | `ModelRelease` (T-24) |
 | `started_at`, `ended_at` | timestamptz | |
