@@ -425,14 +425,14 @@ Otomatik aksiyonlu kurallar `skip` olarak işaretlendiğinde fırtınanın ana k
 
 - **Grup anahtarı:** Offense'i tetikleyen kural setinin hash'i. Aynı kural setinden 24 saatlik kayan pencere içinde gelen offense'ler aynı gruba girer. QRadar aynı kural ve aynı offense kaynağına ait yeni event'leri zaten mevcut offense'e ekler. Bu yüzden fırtına genellikle aynı kuralın çok sayıda farklı kaynak veya hedef için ayrı offense açmasıyla oluşur.
 - **Tam analiz sınırı:** Bir gruptan saatte en fazla N offense tam analize girer (başlangıç: 5). Sınırı aşan offense'ler gruba eklenir, tek tek analiz edilmez.
-- **Grup değerlendirmesi:** Sınır aşıldığında grup "fırtına" durumuna geçer ve tek bir vaka gibi bir kez değerlendirilir. Değerlendirmenin girdisi, gruptaki offense'lerin ortak ve farklı alanlarının (kaynaklar, hedefler, kullanıcılar, log source'lar) deterministik özetidir. Grup kararı, gruba sonradan eklenen offense'lere kısa bir notla aktarılır: "Grup G-.. içinde değerlendirildi: <karar>, ayrıntı: <link>". Grubun seviyesi critical/high ise operatöre grup başına tek e-posta gider.
-- **Gruba gömülmeyenler:** Şu offense'ler grup sınırına takılmaz; her zaman tam analiz alır (T-14, T-22):
+- **Grup değerlendirmesi:** Sınır aşıldığında grup "fırtına" durumuna geçer. Grup vakası toplama süresi kadar (başlangıç: 10 dk) bekler, sonra tek bir vaka gibi bir kez değerlendirilir; böylece ani artışın tamamı özete girer (T-62). Değerlendirmenin girdisi, gruptaki offense'lerin ortak ve farklı alanlarının (kaynaklar, hedefler, kullanıcılar, log source'lar) deterministik özetidir. Grup kararı, gruba sonradan eklenen offense'lere kısa bir notla aktarılır: "Grup G-.. içinde değerlendirildi: <karar>, ayrıntı: <link>". Grubun seviyesi critical/high ise operatöre grup başına tek e-posta gider.
+- **Gruba gömülmeyenler:** Şu offense'ler grup sınırına takılmaz; tam analiz alır (T-14, T-22, T-46, T-62):
   - Kritik varlık veya ayrıcalıklı kullanıcı içerenler
   - IOC eşleşmesi olanlar
   - Katalog tabanı high/critical olanlar
-  - Grupta daha önce görülmemiş bir kaynak, hedef, QID veya log source içerenler
+  - Grupta daha önce görülmemiş bir log source veya offense kategorisi içerenler (QID Faz 2'de, T-46). Bu yenilik kaçışları grup başına saatte en çok N'dir; fazlası gruba girer.
 
-  Böylece saldırgan gerçek saldırısını bir gürültü fırtınasının içine saklayamaz.
+  Grupta ilk kez görülen kaynak, hedef veya kullanıcı tek başına kaçış değildir. QRadar aynı kural ve aynı kaynak için yeni offense açmadığından fırtınadaki hemen her offense yeni bir değer taşır; bu değerler kaçış olsaydı fırtına gruplamayı boşa çıkarırdı. Bu değerler grubun özetine girer ve grup kararının süresi kuralıyla yeniden değerlendirmeyi tetikler. Böylece saldırgan gerçek saldırısını bir gürültü fırtınasının içine saklayamaz, fırtına da gruplamayı boşa çıkaramaz.
 - **Rastgele örnek:** Fırtınadaki her gruptan saatte bir offense rastgele seçilip tam analiz edilir (T-22).
 - **Grup kararının süresi:** Grup kararı 24 saatte bir veya grubun hacmi ya da dağılımı belirgin şekilde değişince yeniden değerlendirilir (T-22).
 - **Birikme sonrası öncelik:** Bir kesintiden sonra offense'ler birikirse `OffenseIntake` bekleyenleri ön önceliğe göre başlatır: önce katalog tabanı yüksek olanlar, sonra kritik varlık veya IOC eşleşmesi olanlar. Aynı anda açık `CaseWorkflow` sayısı sınırlıdır; sırası gelmeyenler Postgres'teki bekleme kuyruğunda durur.
