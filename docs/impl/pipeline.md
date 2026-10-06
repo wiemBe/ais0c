@@ -91,7 +91,7 @@ Sıra:
 
 | Görev | Kapsam | Bağımlı olduğu |
 |---|---|---|
-| T-028 | API: vakalar, adımlar, geri bildirim, QA, gruplar, katalog (storage'da `qradar_enabled` ve `missing` filtreleri dahil, T-37), kritik varlıklar, alıcılar ve yönlendirme (T-036'nın repository'leri), SLA metrikleri, platform bayrakları, `/me`, `/health` ([api.md](api.md)); geliştirme için basit kimlik doğrulama modu | T-022, T-026, T-036 |
+| T-028 | API: vakalar, adımlar, geri bildirim, QA, gruplar, katalog (storage'da `qradar_enabled` ve `missing` filtreleri dahil, T-37), kritik varlıklar, alıcılar ve yönlendirme (T-036'nın repository'leri), SLA metrikleri, platform bayrakları, `/me`, `/health` ([api.md](api.md)); geliştirme için basit kimlik doğrulama modu. Dosya: [T-028](tasks/T-028-api.md) (T-63) | T-022, T-026, T-036 |
 | T-029 | Arayüz MVP: kuyruk, vaka detayı, geri bildirim, QA, gruplar, katalog, kill switch | T-028 |
 | T-030 | Harness Faz 1: golden suite koşucusu, `pass^k`, adversarial FN, güven katmanları ve skill suite'leri, on-prem modellerle model geçiş gate'i | T-026 |
 | T-031 | Prod shadow dağıtımı: prod compose, LiteLLM prod konfigürasyonu, shadow modu, case, batch ve executor worker'larının compose servisleri (T-33, T-037, T-045), dağıtım notları | T-018, T-026, T-037, T-045, H-7 |

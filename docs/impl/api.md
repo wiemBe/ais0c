@@ -102,6 +102,8 @@ Rol sütunu, o işlemi yapabilen en düşük rolü gösterir. `hunter`, `operato
 | GET | `/metrics/sla` | operator | Seviye bazında ajan SLA uyumu; `from`, `to` |
 | GET | `/metrics/agents` | operator | Hata oranı, kota kullanımı, model gecikmesi |
 | GET | `/admin/versions` | admin | Çalışan ajan, prompt, model, policy ve hunt pack sürümleri |
+| GET | `/admin/platform-flags` | operator | Platform bayrakları ve son değişiklikleri; bugün yalnızca kill switch (`writes_enabled`, T-23). Satırı olmayan bayrak kapalıdır. |
+| PUT | `/admin/platform-flags/{name}` | admin | Gövde: `{ enabled, reason }`; `reason` zorunludur. Bilinmeyen bayrak 404'tür. Kapatma her zaman tek adımdır (acil durdurma); açmanın çift kontrole girip girmeyeceğine T-033 karar verir (T-63). |
 | GET | `/me` | operator | Oturumdaki kullanıcı ve rolleri |
 | GET | `/health` | — | Kimlik doğrulama istemez; yalnızca canlılık bilgisi döner |
 
