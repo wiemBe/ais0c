@@ -11,9 +11,8 @@ The profile's tool list (`GET /v1/tools`) names its write tool as one, so the ag
 `ToolsetProfile` refuses to load it, on purpose. `NoteToolset` is the executor's own reading of
 that list. Only the executor holds the profile's token (deploy/compose/secrets/executor/).
 
-The activity's name is not in `ais0c_activities.names`: that list must match the activities
-the workflows call (services/worker/tests/test_names.py), and no workflow writes notes before
-T-026.
+The activity's name is in `ais0c_activities.names` since T-045: CaseWorkflow calls it on the
+`soc-executor` task queue, in the executor's own process (T-33 (1)).
 """
 
 import os
@@ -32,6 +31,7 @@ from temporalio.exceptions import ApplicationError
 
 from ais0c_activities.db import SessionFactory
 from ais0c_activities.gateway import SystemRun, system_run, utc_now
+from ais0c_activities.names import WRITE_OFFENSE_NOTE
 from ais0c_activities.runtime import GATEWAY_URL_ENV, RuntimeConfigError, read_token
 from ais0c_agents import GatewayClient, GatewayError
 from ais0c_agents.gateway_http import TOOLS_PATH, HttpGatewayClient
@@ -52,7 +52,6 @@ from ais0c_executor.note import (
 )
 from ais0c_storage import create_engine, create_session_factory, database_url
 
-WRITE_OFFENSE_NOTE: Final = "write_offense_note"
 NOTE_PROFILE: Final = "qradar-note-write"
 ADD_NOTE: Final = "add_offense_note"
 READ_NOTES: Final = "get_offense_notes"

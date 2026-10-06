@@ -172,7 +172,11 @@ async def test_pending_cases_start_by_pre_priority_within_the_limit(
         )
 
     async with running_platform(
-        env, sessions, settings=CaseSettings(max_concurrent_cases=2)
+        env,
+        sessions,
+        settings=CaseSettings(
+            case_url_base="https://ais0c.example.com/cases", max_concurrent_cases=2
+        ),
     ) as platform:
         first = await platform.run_intake()
         await env.sleep(timedelta(minutes=10))
@@ -277,7 +281,9 @@ async def test_the_case_worker_runs_workflows_in_the_sandbox(
         source=FakeOffenseSource(),
         triage=triage_runtime(TriageModel(), RecordingGateway()),
         chain=chain_runtime(ChainModels(), RecordingGateway()),
-        settings=CaseSettings(),
+        settings=CaseSettings(
+            case_url_base="https://ais0c.example.com/cases",
+        ),
     )
 
     config = worker.config()
@@ -307,5 +313,7 @@ async def test_the_case_worker_needs_pydantic_ais_plugin(
             source=FakeOffenseSource(),
             triage=triage_runtime(TriageModel(), RecordingGateway()),
             chain=chain_runtime(ChainModels(), RecordingGateway()),
-            settings=CaseSettings(),
+            settings=CaseSettings(
+                case_url_base="https://ais0c.example.com/cases",
+            ),
         )

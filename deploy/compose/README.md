@@ -146,6 +146,33 @@ AIS0C_WORKER_SECRETS_DIR=deploy/compose/secrets/agents \
 
 Açılışta `knowledge-sync` Schedule'ını kurar: her gün 03:00 Europe/Istanbul'da `soc-batch` kuyruğunda bir `KnowledgeSync` başlatır. Aynı Schedule'ı elle tetiklemek `POST /catalog/sync`'in (T-028) yapacağı gibidir; süren bir koşunun üstüne ikinci bir koşu başlatmaz. `Ctrl-C` veya `SIGTERM` ile düzgünce durur; yarım kalan işi bir sonraki worker tarihinden devam ettirir.
 
+### Executor worker (QRadar notu ve e-posta)
+
+Action Executor'ın iki activity'si (`write_offense_note`, `send_email`) kendi sürecinde ve `soc-executor` kuyruğunda çalışır ([T-045](../../docs/impl/tasks/T-045-executor-vaka-akisi.md), T-33 (1)): `uv run python -m ais0c_worker executor`. Dev'de host'ta çalışır. Ajan token'ı, model registry'si ve LiteLLM istemez; `deploy/compose/secrets/executor` dizinini ve SMTP ayarlarını yalnızca bu süreç okur.
+
+| Değişken | Anlamı | Varsayılan |
+|---|---|---|
+| `AIS0C_DATABASE_URL` | Uygulama veritabanı | yok |
+| `AIS0C_GATEWAY_URL` | MCP Policy Gateway | yok |
+| `AIS0C_EXECUTOR_SECRETS_DIR` | `gateway-token-qradar-note-write` (ve SMTP girişi varsa `smtp-password`) dosyalarının dizini | `/run/secrets` |
+| `AIS0C_SMTP_*` | Relay ayarları; dev'de Mailpit (yukarıda, "E-posta") | yok |
+| `TEMPORAL_ADDRESS`, `TEMPORAL_NAMESPACE` | Temporal | `127.0.0.1:7233`, `default` |
+
+```bash
+set -a; . deploy/compose/.env; set +a
+AIS0C_DATABASE_URL="postgresql+psycopg://ais0c:${AIS0C_DB_PASSWORD}@127.0.0.1:5432/ais0c" \
+AIS0C_GATEWAY_URL=http://127.0.0.1:8090 \
+AIS0C_EXECUTOR_SECRETS_DIR=deploy/compose/secrets/executor \
+AIS0C_SMTP_HOST=127.0.0.1 AIS0C_SMTP_PORT=1025 AIS0C_SMTP_TLS=none \
+AIS0C_SMTP_FROM=ai-soc@example.com \
+  uv run python -m ais0c_worker executor
+```
+
+- Gateway `qradar` profiliyle açık olmalıdır: worker açılışta not profilinin araç listesini okur. Token, SMTP ayarı veya gateway yoksa `RuntimeConfigError` ile durur (çıkış kodu 2).
+- Notun ve e-postanın vaka linkini case worker kurar; case worker `AIS0C_CASE_URL_BASE` olmadan başlamaz (örnek: `AIS0C_CASE_URL_BASE=http://127.0.0.1:5173/cases`).
+- Kill switch kapalıyken (veritabanında bayrak yoksa da kapalıdır) case workflow aynı çağrıları yapar, executor yazmaz; `notes_written` ve `notifications` satırları `disabled` olur (shadow modu, T-23). Executor worker çalışmıyorsa vaka beklemez: çağrılar `soc-executor` kuyruğunda en fazla bir saat bekler, worker o arada açılırsa sırayla yazılır.
+- Lab'da not yazılacaksa yalnızca planner'ın verdiği offense'e yazılır; lab offense'i açılmaz ve kapatılmaz.
+
 ### Lab QRadar
 
 Lab QRadar, libvirt ağında (`virbr0`) bir VM'dir. libvirt başka köprülerden gelen trafiği reddettiği için compose'un bridge ağlarından, varsayılan ağ dahil, lab QRadar'a ulaşılamaz (ECONNREFUSED). [`docker-compose.lab.yaml`](docker-compose.lab.yaml) QRadar'a giden iki MCP instance'ını dış `qradar-vmnet` ağına bağlar. Bu ağ `virbr0` üzerinde bir macvlan'dır ve konteyneri doğrudan VM'lerin segmentine koyar. Bir kez oluşturulur; değerler libvirt'in varsayılan ağına göredir:

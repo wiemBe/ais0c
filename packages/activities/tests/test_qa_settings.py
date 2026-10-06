@@ -4,18 +4,24 @@ import pytest
 
 from ais0c_activities import CaseSettings
 
+BASE = "https://ais0c.example.com/cases"
+
 QA_VARIABLES = ("AIS0C_QA_SAMPLE_PERCENT", "AIS0C_QA_UNDEFINED_SAMPLE_PERCENT")
 
 
 def test_the_rates_default_to_ten_and_thirty_percent() -> None:
-    settings = CaseSettings.from_env({})
+    settings = CaseSettings.from_env({"AIS0C_CASE_URL_BASE": BASE})
 
     assert (settings.qa_sample_percent, settings.qa_undefined_sample_percent) == (10, 30)
 
 
 def test_the_rates_come_from_the_environment() -> None:
     settings = CaseSettings.from_env(
-        {"AIS0C_QA_SAMPLE_PERCENT": " 0 ", "AIS0C_QA_UNDEFINED_SAMPLE_PERCENT": "100"}
+        {
+            "AIS0C_CASE_URL_BASE": BASE,
+            "AIS0C_QA_SAMPLE_PERCENT": " 0 ",
+            "AIS0C_QA_UNDEFINED_SAMPLE_PERCENT": "100",
+        }
     )
 
     assert (settings.qa_sample_percent, settings.qa_undefined_sample_percent) == (0, 100)
@@ -25,9 +31,9 @@ def test_the_rates_come_from_the_environment() -> None:
 @pytest.mark.parametrize("name", QA_VARIABLES)
 def test_a_rate_that_is_not_a_percentage_is_rejected(name: str, value: str) -> None:
     with pytest.raises(ValueError, match=f"{name} must be a whole percentage from 0 to 100"):
-        CaseSettings.from_env({name: value})
+        CaseSettings.from_env({"AIS0C_CASE_URL_BASE": BASE, name: value})
 
 
 def test_settings_reject_a_rate_outside_zero_to_hundred() -> None:
     with pytest.raises(ValueError, match="percentages from 0 to 100"):
-        CaseSettings(qa_sample_percent=101)
+        CaseSettings(case_url_base="https://ais0c.example.com/cases", qa_sample_percent=101)

@@ -8,7 +8,8 @@ out or triage gives no decision. `close_case` ends the case when the offense is 
 
 An update of the offense is fetched and recorded (`record_offense_update`) whether or not it is
 evaluated again (D-31). `reevaluation_interval` and `agent_retry_delay` hand the workflow its
-settings, which it may not read itself.
+settings, which it may not read itself; `case_url` hands it the case's link on the platform
+(T-045), which the executor's note and e-mail carry.
 """
 
 from collections.abc import Callable
@@ -23,6 +24,7 @@ from ais0c_activities.enrichment import IocMatcher, NoIocMatcher, build_enrichme
 from ais0c_activities.levels import at_least, max_level
 from ais0c_activities.names import (
     AGENT_RETRY_DELAY,
+    CASE_URL,
     CLOSE_CASE,
     ENRICH_OFFENSE,
     FETCH_OFFENSE,
@@ -107,7 +109,14 @@ class CaseActivities:
             self.record_decision,
             self.mark_no_ai_decision,
             self.close_case,
+            self.case_url,
         ]
+
+    @activity.defn(name=CASE_URL)
+    async def case_url(self, case_id: str) -> str:
+        """The platform page of the case: the link on its QRadar note and alert e-mail
+        (T-045 criterion 6). The base is the worker's `AIS0C_CASE_URL_BASE` setting."""
+        return self._settings.case_url(case_id)
 
     @activity.defn(name=FETCH_OFFENSE)
     async def fetch_offense(self, offense_id: int) -> OffenseSnapshot:

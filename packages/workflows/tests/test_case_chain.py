@@ -28,6 +28,7 @@ from workflow_fakes import (
     TriageStub,
     agent_failure,
     answer_agents,
+    executor_worker,
     investigation_of,
     offense,
     plan_of,
@@ -179,15 +180,16 @@ async def investigates(call: AgentCall) -> ChainResult:
 async def running_case(
     env: WorkflowEnvironment, fakes: CaseFakes
 ) -> AsyncIterator[WorkflowHandle[CaseWorkflow, CaseView]]:
-    async with Worker(
-        env.client,
-        task_queue=CASE_TASK_QUEUE,
-        workflows=[CaseWorkflow, TriageStub, AgentStub],
-        activities=fakes.activities(),
-    ):
-        yield await env.client.start_workflow(
-            CaseWorkflow.run, args=[OFFENSE_ID], id=CASE_ID, task_queue=CASE_TASK_QUEUE
-        )
+    async with executor_worker(env, fakes):
+        async with Worker(
+            env.client,
+            task_queue=CASE_TASK_QUEUE,
+            workflows=[CaseWorkflow, TriageStub, AgentStub],
+            activities=fakes.activities(),
+        ):
+            yield await env.client.start_workflow(
+                CaseWorkflow.run, args=[OFFENSE_ID], id=CASE_ID, task_queue=CASE_TASK_QUEUE
+            )
 
 
 async def decided_once(fakes: CaseFakes, env: WorkflowEnvironment) -> CaseFakes:

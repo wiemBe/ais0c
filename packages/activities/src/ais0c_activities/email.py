@@ -8,9 +8,8 @@ the outcome in `notifications` and `audit_log`. The e-mail goes to the company's
 directly: the relay is not a security product, so no gateway is involved (AGENTS.md hard
 rule 1), and only the executor writes (hard rule 2).
 
-The activity's name is not in `ais0c_activities.names`: that list must match the activities
-the workflows call (services/worker/tests/test_names.py), and no workflow sends e-mail before
-T-026.
+The activity's name is in `ais0c_activities.names` since T-045: CaseWorkflow calls it on the
+`soc-executor` task queue, in the executor's own process (T-33 (1)).
 """
 
 import os
@@ -27,6 +26,7 @@ from temporalio.exceptions import ApplicationError
 
 from ais0c_activities.db import SessionFactory
 from ais0c_activities.gateway import utc_now
+from ais0c_activities.names import SEND_EMAIL
 from ais0c_activities.runtime import RuntimeConfigError
 from ais0c_executor.common import DEFAULT_SECRETS_DIR, EXECUTOR_SECRETS_DIR_ENV, KillSwitch
 from ais0c_executor.email import (
@@ -41,7 +41,6 @@ from ais0c_executor.email import (
 )
 from ais0c_storage import create_engine, create_session_factory, database_url
 
-SEND_EMAIL: Final = "send_email"
 SMTP_HOST_ENV: Final = "AIS0C_SMTP_HOST"
 SMTP_PORT_ENV: Final = "AIS0C_SMTP_PORT"
 SMTP_TLS_ENV: Final = "AIS0C_SMTP_TLS"

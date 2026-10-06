@@ -196,11 +196,15 @@ def _as_int(value: JsonValue) -> int:
 def batch_environ(
     gateway: StubGateway, database_url: str, secrets_dir: Path, **extra: str
 ) -> dict[str, str]:
-    """The batch worker's environment; `extra` adds a setting or overrides one."""
+    """The batch worker's environment; `extra` adds a setting or overrides one.
+
+    `AIS0C_CASE_URL_BASE` is here for the tests that also start the process without a command,
+    which is the case worker: its settings need the case link base (T-045)."""
     return {
         "AIS0C_DATABASE_URL": database_url,
         "AIS0C_GATEWAY_URL": gateway.url,
         "AIS0C_WORKER_SECRETS_DIR": str(secrets_dir),
+        "AIS0C_CASE_URL_BASE": "https://ais0c.example.com/cases",
         **extra,
     }
 

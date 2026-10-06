@@ -39,6 +39,11 @@ EVALUATION_WINDOW: Final = "evaluation_window"
 CANDIDATE_SKILLS: Final = "candidate_skills"
 PLAN_BUDGETS: Final = "plan_budgets"
 RECORD_PLAN: Final = "record_plan"
+# The executor calls of an evaluation (CaseWorkflow, T-045): the case link on the case queue,
+# the note and the alert e-mail on the `soc-executor` queue (ais0c_workflows.names).
+CASE_URL: Final = "case_url"
+WRITE_OFFENSE_NOTE: Final = "write_offense_note"
+SEND_EMAIL: Final = "send_email"
 
 # Triage run activities (TriageWorkflow). The agent's model and tool activities come from
 # Pydantic AI's TemporalDurability.

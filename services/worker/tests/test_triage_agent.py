@@ -254,7 +254,9 @@ async def test_a_worker_restart_resumes_the_triage_run(
         source=source,
         triage=triage_runtime(first_model, first_gateway),
         chain=chain_runtime(ChainModels(), first_gateway),
-        settings=CaseSettings(),
+        settings=CaseSettings(
+            case_url_base="https://ais0c.example.com/cases",
+        ),
     )
     async with first_worker:
         go_live = await env.client.execute_workflow(
@@ -276,7 +278,9 @@ async def test_a_worker_restart_resumes_the_triage_run(
         source=source,
         triage=triage_runtime(second_model, second_gateway),
         chain=chain_runtime(ChainModels(), second_gateway),
-        settings=CaseSettings(),
+        settings=CaseSettings(
+            case_url_base="https://ais0c.example.com/cases",
+        ),
     )
     async with second_worker:
 

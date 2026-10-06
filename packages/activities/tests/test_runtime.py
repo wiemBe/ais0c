@@ -24,6 +24,7 @@ from ais0c_activities import (
     ModelReleaseError,
     RuntimeConfigError,
     load_case_runtime,
+    load_executor_runtime,
     load_model_releases,
 )
 from ais0c_activities.runtime import read_token
@@ -66,6 +67,9 @@ class StubGateway:
         self.requests: list[tuple[str, str | None]] = []
         # The profile a token gets; a test may hand one token another profile.
         self.serves = {token: name for name, token in TOKENS.items()}
+        # A raw body for a served profile, in the gateway's shape: for profiles that are not a
+        # `ToolsetProfile`, such as the note profile with its write tool.
+        self.bodies: dict[str, str] = {}
         stub = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -76,7 +80,11 @@ class StubGateway:
                 if self.path != "/v1/tools" or name is None:
                     self.send_error(401)
                     return
-                body = profile(name).model_dump_json().encode()
+                body = (
+                    stub.bodies[name].encode()
+                    if name in stub.bodies
+                    else profile(name).model_dump_json().encode()
+                )
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
                 self.send_header("Content-Length", str(len(body)))
@@ -103,6 +111,9 @@ def gateway() -> Iterator[StubGateway]:
     stub.close()
 
 
+BASE = "https://ais0c.example.com/cases"
+
+
 @pytest.fixture
 def environ(database_url: URL, gateway: StubGateway, tmp_path: Path) -> dict[str, str]:
     for name, token in TOKENS.items():
@@ -116,6 +127,7 @@ def environ(database_url: URL, gateway: StubGateway, tmp_path: Path) -> dict[str
         "LITELLM_BASE_URL": "http://127.0.0.1:4000",
         "LITELLM_API_KEY": "litellm-test-key",
         "AIS0C_MAX_CONCURRENT_CASES": "3",
+        "AIS0C_CASE_URL_BASE": BASE,
     }
 
 
@@ -326,3 +338,113 @@ def test_a_token_is_read_without_surrounding_space(tmp_path: Path) -> None:
     secret.write_text(f"  {TOKEN}\n", encoding="utf-8")
 
     assert read_token(secret).get_secret_value() == TOKEN
+
+
+# --- the executor worker's runtime (T-045 criterion 1) -----------------------------------------
+
+
+# GET /v1/tools for the note profile, with its write tool; the note activity validates it.
+NOTE_PROFILE_BODY = json.dumps(
+    {
+        "name": "qradar-note-write",
+        "connector": "qradar",
+        "tools": [
+            {
+                "id": "add_offense_note",
+                "description": "Add a note to a QRadar offense.",
+                "schema_version": "a1b2c3d4e5f60718",
+                "cost_class": "low",
+                "risk": "write",
+                "parameters": {"type": "object", "properties": {}, "additionalProperties": False},
+            },
+            {
+                "id": "get_offense_notes",
+                "description": "Read one page of an offense's notes.",
+                "schema_version": "0f1e2d3c4b5a6978",
+                "cost_class": "low",
+                "risk": "read",
+                "parameters": {"type": "object", "properties": {}, "additionalProperties": False},
+            },
+        ],
+    }
+)
+NOTE_TOKEN = "executor-note-token-0123456789abcdef"  # noqa: S105 - a test value
+
+
+@pytest.fixture
+def executor_environ(database_url: URL, gateway: StubGateway, tmp_path: Path) -> dict[str, str]:
+    """The executor worker's environment: the note profile's token and the relay, and no agent
+    token, model registry or LiteLLM (T-33 (1))."""
+    gateway.serves[NOTE_TOKEN] = "qradar-note-write"
+    gateway.bodies["qradar-note-write"] = NOTE_PROFILE_BODY
+    secrets = tmp_path / "executor"
+    secrets.mkdir()
+    (secrets / "gateway-token-qradar-note-write").write_text(NOTE_TOKEN + "\n", encoding="utf-8")
+    return {
+        "AIS0C_DATABASE_URL": database_url.render_as_string(hide_password=False),
+        "AIS0C_GATEWAY_URL": gateway.url,
+        "AIS0C_EXECUTOR_SECRETS_DIR": str(secrets),
+        "AIS0C_SMTP_HOST": "127.0.0.1",
+        "AIS0C_SMTP_PORT": "1025",
+        "AIS0C_SMTP_TLS": "none",
+        "AIS0C_SMTP_FROM": "ai-soc@example.com",
+    }
+
+
+async def test_the_executor_runtime_builds_without_any_agent_token(
+    executor_environ: dict[str, str],
+) -> None:
+    runtime = await load_executor_runtime(executor_environ)
+    try:
+        assert len(runtime.activities()) == 2  # write_offense_note and send_email, nothing else
+    finally:
+        await runtime.close()
+
+
+async def test_a_missing_note_token_stops_the_executor_runtime(
+    executor_environ: dict[str, str], tmp_path: Path
+) -> None:
+    executor_environ["AIS0C_EXECUTOR_SECRETS_DIR"] = str(tmp_path / "elsewhere")
+
+    with pytest.raises(RuntimeConfigError, match="gateway-token-qradar-note-write"):
+        await load_executor_runtime(executor_environ)
+
+
+async def test_a_missing_relay_setting_stops_the_executor_runtime(
+    executor_environ: dict[str, str],
+) -> None:
+    del executor_environ["AIS0C_SMTP_HOST"]
+
+    with pytest.raises(RuntimeConfigError, match="AIS0C_SMTP_HOST"):
+        await load_executor_runtime(executor_environ)
+
+
+async def test_the_case_runtime_builds_without_the_executors_secrets(
+    environ: dict[str, str],
+) -> None:
+    """The case worker asks for no executor secret and no relay: the split of T-33 (1)."""
+    assert not any(name.startswith("AIS0C_SMTP_") for name in environ)
+    assert "AIS0C_EXECUTOR_SECRETS_DIR" not in environ
+    runtime = await load_case_runtime(environ)
+    await runtime.close()
+
+    assert runtime.settings.case_url_base == BASE
+
+
+async def test_a_missing_smtp_password_stops_the_executor_runtime(
+    executor_environ: dict[str, str],
+) -> None:
+    """The relay's password is the executor's secret too: with a login and no password file the
+    executor worker does not start."""
+    executor_environ |= {"AIS0C_SMTP_USERNAME": "ai-soc", "AIS0C_SMTP_TLS": "starttls"}
+
+    with pytest.raises(RuntimeConfigError, match="smtp-password"):
+        await load_executor_runtime(executor_environ)
+
+
+async def test_the_case_runtime_needs_the_case_link_base(environ: dict[str, str]) -> None:
+    """T-045 criterion 6: without AIS0C_CASE_URL_BASE the case worker does not start."""
+    del environ["AIS0C_CASE_URL_BASE"]
+
+    with pytest.raises(RuntimeConfigError, match="AIS0C_CASE_URL_BASE is not set"):
+        await load_case_runtime(environ)

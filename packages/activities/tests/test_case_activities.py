@@ -63,7 +63,13 @@ def source() -> FakeOffenseSource:
 
 @pytest.fixture
 def activities(sessions: SessionFactory, source: FakeOffenseSource) -> CaseActivities:
-    return CaseActivities(sessions=sessions, source=source, settings=CaseSettings())
+    return CaseActivities(
+        sessions=sessions,
+        source=source,
+        settings=CaseSettings(
+            case_url_base="https://ais0c.example.com/cases",
+        ),
+    )
 
 
 async def start(
@@ -413,7 +419,13 @@ async def test_no_ai_decision_applies_only_to_a_running_evaluation(
 async def test_closing_marks_the_case_closed_and_the_offense_done(
     sessions: SessionFactory, source: FakeOffenseSource, activities: CaseActivities
 ) -> None:
-    intake = IntakeActivities(sessions=sessions, source=source, settings=CaseSettings())
+    intake = IntakeActivities(
+        sessions=sessions,
+        source=source,
+        settings=CaseSettings(
+            case_url_base="https://ais0c.example.com/cases",
+        ),
+    )
     env = ActivityEnvironment()
     await env.run(intake.admit_offenses, [offense(7)], T0)
     await start(activities, 1, offense(7))
@@ -493,7 +505,13 @@ async def test_an_update_is_recorded_when_it_is_newer(
     sessions: SessionFactory, source: FakeOffenseSource, activities: CaseActivities
 ) -> None:
     """T-014 criterion 2: the case records the offense's latest state, evaluated or not."""
-    intake = IntakeActivities(sessions=sessions, source=source, settings=CaseSettings())
+    intake = IntakeActivities(
+        sessions=sessions,
+        source=source,
+        settings=CaseSettings(
+            case_url_base="https://ais0c.example.com/cases",
+        ),
+    )
     env = ActivityEnvironment()
     await env.run(intake.admit_offenses, [offense(7)], T0)
     v2 = T0 + timedelta(minutes=10)
@@ -514,10 +532,25 @@ async def test_the_workflow_gets_its_timings_from_the_settings(sessions: Session
         sessions=sessions,
         source=FakeOffenseSource(),
         settings=CaseSettings(
-            reevaluation_interval=timedelta(minutes=45), agent_retry_delay=timedelta(minutes=2)
+            case_url_base="https://ais0c.example.com/cases",
+            reevaluation_interval=timedelta(minutes=45),
+            agent_retry_delay=timedelta(minutes=2),
         ),
     )
     env = ActivityEnvironment()
 
     assert await env.run(activities.reevaluation_interval) == timedelta(minutes=45)
     assert await env.run(activities.agent_retry_delay) == timedelta(minutes=2)
+
+
+async def test_the_case_link_is_the_base_and_the_case_id(sessions: SessionFactory) -> None:
+    """T-045 criterion 6: the link on the case's notes and e-mails."""
+    activities = CaseActivities(
+        sessions=sessions,
+        source=FakeOffenseSource(),
+        settings=CaseSettings(case_url_base="https://soc.example.com/ais0c/cases"),
+    )
+
+    link = await ActivityEnvironment().run(activities.case_url, "case-7")
+
+    assert link == "https://soc.example.com/ais0c/cases/case-7"

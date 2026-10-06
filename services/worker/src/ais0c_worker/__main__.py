@@ -1,4 +1,4 @@
-"""Run a worker: `python -m ais0c_worker` (the case worker), `python -m ais0c_worker batch`.
+"""Run a worker: `python -m ais0c_worker` (the case worker), `... batch` or `... executor`.
 
 Settings: `ais0c_worker.main`.
 """

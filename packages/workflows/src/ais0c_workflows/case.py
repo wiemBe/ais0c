@@ -24,6 +24,17 @@ A link that gives no result does not stop the chain: without a plan the default 
 without Investigation Triage's decision stays, without Verification the case goes to operator
 review (`verifier_conflict`), and without Reporting the decision is recorded without a report.
 
+After the decision is recorded, the Action Executor writes the evaluation's QRadar note, and its
+alert e-mail when the level is high or critical (D-18, D-22, T-045). An evaluation without a
+decision gets the "AI değerlendirmesi yapılamadı" note as soon as it is without one, and a
+decision that arrives late writes its own note after it (D-30). The executor's activities run on
+their own `soc-executor` queue, in their own process (T-33 (1)). The case does not wait for them:
+each call runs beside it, after the earlier calls of the same activity, so an offense's notes
+reach QRadar in order; only closing the case or continuing as new waits for the calls in
+progress. A failure that stays after the retries changes neither the decision record nor the
+workflow. With writes switched off (shadow mode, T-23) the same calls are made and the executor
+records them as `disabled`.
+
 Any agent's run the model's outage ended (a model request that failed for good, or a run out of
 its wall clock) is run once more after the configured wait (D-33); meanwhile only the SLA timer
 marks the case `no_ai_decision`.
@@ -45,6 +56,7 @@ from enum import StrEnum
 from temporalio import workflow
 from temporalio.common import WorkflowIDReusePolicy
 from temporalio.exceptions import (
+    ActivityError,
     CancelledError,
     ChildWorkflowError,
     WorkflowAlreadyStartedError,
@@ -57,10 +69,12 @@ from ais0c_workflows.names import (
     AGENT_WORKFLOW,
     CANDIDATE_SKILLS,
     CASE_STATE,
+    CASE_URL,
     CASE_WORKFLOW,
     CLOSE_CASE,
     ENRICH_OFFENSE,
     EVALUATION_WINDOW,
+    EXECUTOR_TASK_QUEUE,
     FETCH_OFFENSE,
     MARK_NO_AI_DECISION,
     OFFENSE_CLOSED,
@@ -70,8 +84,10 @@ from ais0c_workflows.names import (
     RECORD_OFFENSE_UPDATE,
     RECORD_PLAN,
     REEVALUATION_INTERVAL,
+    SEND_EMAIL,
     START_EVALUATION,
     TRIAGE_WORKFLOW,
+    WRITE_OFFENSE_NOTE,
     agent_workflow_id,
     triage_workflow_id,
 )
@@ -113,6 +129,19 @@ with workflow.unsafe.imports_passed_through():
         notify_level,
         qa_reasons,
         undisputed_claims,
+    )
+    from ais0c_workflows.notify import (
+        ALERT_LEVELS,
+        EXECUTOR_ATTEMPT_TIMEOUT,
+        EXECUTOR_RETRY,
+        EXECUTOR_TOTAL_TIMEOUT,
+        CaseAlertRequest,
+        EvaluationNoteRequest,
+        NoDecisionNoteRequest,
+        case_alert,
+        evaluation_note,
+        no_decision_note,
+        note_content,
     )
     from ais0c_workflows.plan import (
         INVESTIGATION,
@@ -178,6 +207,9 @@ class CaseWorkflow:
         self._latest_version: datetime | None = None
         self._deferred_at: datetime | None = None
         self._closed = False
+        # The executor's calls in progress: the last one of each activity (`_write`).
+        self._writes: dict[str, asyncio.Task[None]] = {}
+        self._case_url: str | None = None
 
     @workflow.run
     async def run(self, offense_id: int, carry: CaseCarry | None = None) -> CaseView:
@@ -191,11 +223,17 @@ class CaseWorkflow:
             elif self._update_due() or self._deferred_due():
                 await self._check_update()
             elif workflow.info().is_continue_as_new_suggested():
+                if self._writing():
+                    # The executor's calls end in this run; a signal meanwhile is seen next.
+                    await self._writes_done()
+                    continue
                 workflow.continue_as_new(args=[offense_id, self._carry()])
             else:
                 await self._wait()
         await call(CLOSE_CASE, self._case_id, offense_id, result_type=type(None))
         self._status = CaseStatus.CLOSED
+        # The notes and e-mails of the case's last evaluations still go out.
+        await self._writes_done()
         return self.state()
 
     @workflow.signal(name=OFFENSE_UPDATED)
@@ -326,6 +364,7 @@ class CaseWorkflow:
             if self._status is CaseStatus.RUNNING:
                 await self._no_ai_decision(evaluation_no)
             return
+        decided_at = workflow.now()
         self._notify_level = await call(
             RECORD_DECISION,
             self._case_id,
@@ -338,10 +377,11 @@ class CaseWorkflow:
             decision.report,
             list(decision.qa_reasons),
             offense.rule_ids,
-            workflow.now(),
+            decided_at,
             result_type=Level,
         )
         self._status = CaseStatus.DECIDED
+        await self._notify(evaluation_no, offense, decision, self._notify_level, decided_at)
 
     # --- the chain ---------------------------------------------------------------------------
 
@@ -670,8 +710,116 @@ class CaseWorkflow:
         return True
 
     async def _no_ai_decision(self, evaluation_no: int) -> None:
+        """Mark the evaluation without an AI decision and write the "AI değerlendirmesi
+        yapılamadı" note (criterion 4): at the SLA deadline, or when the chain ends without a
+        decision. A decision that arrives late writes its own note after it (D-30)."""
         await call(MARK_NO_AI_DECISION, self._case_id, evaluation_no, result_type=type(None))
         self._status = CaseStatus.NO_AI_DECISION
+        ended_at = workflow.now()
+        self._write(
+            WRITE_OFFENSE_NOTE,
+            no_decision_note(
+                case_id=self._case_id,
+                offense_id=self._offense_id,
+                evaluation_no=evaluation_no,
+                case_url=await self._case_link(),
+                evaluated_at=ended_at,
+            ),
+        )
+
+    # --- the executor's note and e-mail --------------------------------------------------------
+
+    async def _notify(
+        self,
+        evaluation_no: int,
+        offense: OffenseSnapshot,
+        decision: ChainDecision,
+        level: Level,
+        decided_at: datetime,
+    ) -> None:
+        """The note of the decision just recorded, and its alert e-mail when its notification
+        level is high or critical (criteria 4 and 5).
+
+        Both are built from the same evaluation's record: the decision, the level
+        `record_decision` returned and the report, or the fixed summary without one. Whether a
+        re-evaluation is e-mailed again is the executor's rule (D-42).
+        """
+        content = note_content(
+            case_id=self._case_id,
+            offense_id=offense.offense_id,
+            evaluation_no=evaluation_no,
+            case_url=await self._case_link(),
+            verdict=decision.verdict,
+            confidence=decision.confidence,
+            notify_level=level,
+            report=decision.report,
+        )
+        self._write(
+            WRITE_OFFENSE_NOTE,
+            evaluation_note(case_id=self._case_id, evaluated_at=decided_at, content=content),
+        )
+        if level in ALERT_LEVELS:
+            self._write(
+                SEND_EMAIL,
+                case_alert(
+                    case_id=self._case_id,
+                    offense_name=offense.description,
+                    evaluated_at=decided_at,
+                    content=content,
+                ),
+            )
+
+    async def _case_link(self) -> str:
+        """The case's page on the platform, from the worker's setting (criterion 6)."""
+        if self._case_url is None:
+            self._case_url = await call(CASE_URL, self._case_id, result_type=str)
+        return self._case_url
+
+    def _write(
+        self, name: str, request: EvaluationNoteRequest | NoDecisionNoteRequest | CaseAlertRequest
+    ) -> None:
+        """Start one executor call beside the case, after the earlier calls of activity `name`:
+        an offense's notes reach QRadar in the order the case made them, and a note that is
+        retried holds up neither the case nor the e-mail."""
+        self._writes[name] = asyncio.create_task(
+            self._executor_call(name, request, after=self._writes.get(name))
+        )
+
+    async def _executor_call(
+        self,
+        name: str,
+        request: EvaluationNoteRequest | NoDecisionNoteRequest | CaseAlertRequest,
+        *,
+        after: asyncio.Task[None] | None,
+    ) -> None:
+        """One call to an executor activity on the `soc-executor` queue.
+
+        The outcome is the executor's own record (`notes_written`, `notifications`), so the
+        workflow does not read it; with writes off it is `disabled` (T-23). A failure the
+        retries did not get past is logged and changes nothing else (criterion 8).
+        """
+        if after is not None:
+            await after
+        try:
+            await call(
+                name,
+                request,
+                result_type=dict[str, object],
+                attempt_timeout=EXECUTOR_ATTEMPT_TIMEOUT,
+                total_timeout=EXECUTOR_TOTAL_TIMEOUT,
+                retry_policy=EXECUTOR_RETRY,
+                task_queue=EXECUTOR_TASK_QUEUE,
+            )
+        except ActivityError as error:
+            workflow.logger.warning("%s of case %s failed: %s", name, self._case_id, error)
+
+    def _writing(self) -> bool:
+        return any(not task.done() for task in self._writes.values())
+
+    async def _writes_done(self) -> None:
+        """Wait for the executor's calls in progress, each at most EXECUTOR_TOTAL_TIMEOUT."""
+        for task in list(self._writes.values()):
+            await task
 
     def _carry(self) -> CaseCarry:
         return CaseCarry(

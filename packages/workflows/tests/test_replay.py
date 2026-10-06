@@ -21,6 +21,7 @@ from workflow_fakes import (
     IntakeFakes,
     TriageCall,
     TriageStub,
+    executor_worker,
     offense,
     triage_failure,
     triage_result,
@@ -49,7 +50,8 @@ async def replay(history: WorkflowHistory) -> None:
 
 async def case_history(env: WorkflowEnvironment) -> WorkflowHistory:
     """A case with a missed SLA and a late decision, an update that is not evaluated again, one
-    that is, whose Triage run the model's outage ends and its retry decides, and a closure."""
+    that is, whose Triage run the model's outage ends and its retry decides, and a closure. The
+    executor's notes run beside the case (T-045)."""
     now = await env.get_current_time()
 
     async def scripted(call: TriageCall) -> TriageResult:
@@ -60,11 +62,14 @@ async def case_history(env: WorkflowEnvironment) -> WorkflowHistory:
         return triage_result()
 
     fakes = CaseFakes(offense(101, start=now), triage_behavior=scripted)
-    async with Worker(
-        env.client,
-        task_queue=CASE_TASK_QUEUE,
-        workflows=[CaseWorkflow, TriageStub, AgentStub],
-        activities=fakes.activities(),
+    async with (
+        executor_worker(env, fakes),
+        Worker(
+            env.client,
+            task_queue=CASE_TASK_QUEUE,
+            workflows=[CaseWorkflow, TriageStub, AgentStub],
+            activities=fakes.activities(),
+        ),
     ):
         handle = await env.client.start_workflow(
             CaseWorkflow.run, args=[101], id="case-101", task_queue=CASE_TASK_QUEUE
@@ -86,6 +91,8 @@ async def case_history(env: WorkflowEnvironment) -> WorkflowHistory:
         await handle.result()
     assert fakes.evaluations == [(1, now), (2, new_user)]
     assert {"no_ai_decision", "retry"} <= set(fakes.events.names())
+    # The no-decision note at the deadline, then the late decision's, then evaluation 2's.
+    assert len(fakes.note_requests) == 3
     return await handle.fetch_history()
 
 

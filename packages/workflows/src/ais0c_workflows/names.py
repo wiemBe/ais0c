@@ -8,6 +8,9 @@ from typing import Final
 
 CASE_TASK_QUEUE: Final = "soc-case"
 BATCH_TASK_QUEUE: Final = "soc-batch"
+# The Action Executor's activities run in their own process on their own queue, with their own
+# secrets (T-33 (1), T-045).
+EXECUTOR_TASK_QUEUE: Final = "soc-executor"
 
 OFFENSE_INTAKE: Final = "OffenseIntake"
 CASE_WORKFLOW: Final = "CaseWorkflow"
@@ -67,6 +70,11 @@ EVALUATION_WINDOW: Final = "evaluation_window"
 CANDIDATE_SKILLS: Final = "candidate_skills"
 PLAN_BUDGETS: Final = "plan_budgets"
 RECORD_PLAN: Final = "record_plan"
+# The executor calls of an evaluation (T-045): the case link of a note or e-mail, then the
+# note and the alert e-mail themselves, the last two on the executor's own task queue.
+CASE_URL: Final = "case_url"
+WRITE_OFFENSE_NOTE: Final = "write_offense_note"
+SEND_EMAIL: Final = "send_email"
 
 # TriageWorkflow activities. The agent's model requests and tool calls are activities too;
 # Pydantic AI's TemporalDurability registers them under names it derives from the agent.
@@ -101,6 +109,9 @@ ACTIVITY_NAMES: Final = frozenset(
         CANDIDATE_SKILLS,
         PLAN_BUDGETS,
         RECORD_PLAN,
+        CASE_URL,
+        WRITE_OFFENSE_NOTE,
+        SEND_EMAIL,
         BEGIN_TRIAGE_RUN,
         FINISH_TRIAGE_RUN,
         BEGIN_AGENT_RUN,

@@ -36,6 +36,7 @@ from temporalio import activity
 from temporalio.client import WorkflowHandle, WorkflowHistory
 from temporalio.exceptions import ApplicationError
 from temporalio.testing import WorkflowEnvironment
+from temporalio.worker import Worker
 
 from ais0c_activities import (
     CaseSettings,
@@ -80,7 +81,13 @@ from ais0c_storage.repositories import (
 )
 from ais0c_worker import build_case_worker
 from ais0c_workflows import IntakeCheckpoint, OffenseIntake
-from ais0c_workflows.names import CASE_TASK_QUEUE
+from ais0c_workflows.names import (
+    CASE_TASK_QUEUE,
+    EXECUTOR_TASK_QUEUE,
+    SEND_EMAIL,
+    WRITE_OFFENSE_NOTE,
+)
+from ais0c_workflows.notify import CaseAlertRequest, NoteRequest
 
 WAIT_SECONDS = 15
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -598,6 +605,28 @@ async def eventually[T](
             await asyncio.sleep(0.05)
 
 
+class ExecutorStub:
+    """The executor's two activities as fakes: they record what the workflow built and succeed,
+    as the executor would with writes on. The real activities run in test_executor_flow.py."""
+
+    def __init__(self) -> None:
+        self.notes: list[NoteRequest] = []
+        self.emails: list[CaseAlertRequest] = []
+
+    def activities(self) -> list[Callable[..., object]]:
+        return [self.write_offense_note, self.send_email]
+
+    @activity.defn(name=WRITE_OFFENSE_NOTE)
+    async def write_offense_note(self, request: NoteRequest) -> dict[str, object]:
+        self.notes.append(request)
+        return {"result": "written"}
+
+    @activity.defn(name=SEND_EMAIL)
+    async def send_email(self, request: CaseAlertRequest) -> dict[str, object]:
+        self.emails.append(request)
+        return {"result": "sent"}
+
+
 class Platform:
     def __init__(
         self,
@@ -607,6 +636,7 @@ class Platform:
         model: TriageModel,
         gateway: RecordingGateway,
         chain: ChainModels,
+        executor: ExecutorStub,
     ) -> None:
         self.env = env
         self.sessions = sessions
@@ -614,6 +644,7 @@ class Platform:
         self.model = model
         self.gateway = gateway
         self.chain = chain
+        self.executor = executor
         self.intake_runs: list[WorkflowHandle[OffenseIntake, IntakeCheckpoint]] = []
 
     async def run_intake(self, seed: IntakeCheckpoint | None = None) -> IntakeCheckpoint:
@@ -665,10 +696,20 @@ async def running_platform(
     model: TriageModel | None = None,
     chain: ChainModels | None = None,
     wall_clock_seconds: int | None = None,
+    executor_stub: bool = True,
 ) -> AsyncIterator[Platform]:
+    """The platform with its case worker; `executor_stub=False` leaves the `soc-executor` queue
+    to the test, which runs the real executor activities on it (test_executor_flow.py)."""
     gateway = RecordingGateway(sessions)
+    executor = ExecutorStub()
     platform = Platform(
-        env, sessions, FakeOffenseSource(), model or TriageModel(), gateway, chain or ChainModels()
+        env,
+        sessions,
+        FakeOffenseSource(),
+        model or TriageModel(),
+        gateway,
+        chain or ChainModels(),
+        executor,
     )
     worker = build_case_worker(
         env.client,
@@ -676,7 +717,20 @@ async def running_platform(
         source=platform.source,
         triage=triage_runtime(platform.model, gateway, wall_clock_seconds=wall_clock_seconds),
         chain=chain_runtime(platform.chain, gateway),
-        settings=settings or CaseSettings(),
+        settings=settings
+        or CaseSettings(
+            case_url_base="https://ais0c.example.com/cases",
+        ),
     )
+    if executor_stub:
+        executor_activities = Worker(
+            env.client,
+            task_queue=EXECUTOR_TASK_QUEUE,
+            workflows=[],
+            activities=executor.activities(),
+        )
+        async with executor_activities, worker:
+            yield platform
+        return
     async with worker:
         yield platform

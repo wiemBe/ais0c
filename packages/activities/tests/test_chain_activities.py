@@ -121,7 +121,9 @@ def activities(
         agents=AGENTS,
         skills=skills,
         skills_mode=mode,
-        settings=CaseSettings(),
+        settings=CaseSettings(
+            case_url_base="https://ais0c.example.com/cases",
+        ),
         clock=lambda: NOW,
     )
 
@@ -501,7 +503,12 @@ async def test_the_plan_budgets_are_the_settings_and_the_manifests(
 ) -> None:
     plan_budget, agents = await ActivityEnvironment().run(activities(sessions, skills).plan_budgets)
 
-    assert plan_budget == CaseSettings().plan_budget
+    assert (
+        plan_budget
+        == CaseSettings(
+            case_url_base="https://ais0c.example.com/cases",
+        ).plan_budget
+    )
     assert set(agents) == {"investigation", "verification"}
     budgets = AGENTS["verification"].manifest.budgets
     assert agents["verification"] == Budget(

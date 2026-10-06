@@ -24,6 +24,7 @@ from workflow_fakes import (
     CrashingTriage,
     TriageCall,
     TriageStub,
+    executor_worker,
     offense,
     triage_failure,
     triage_result,
@@ -56,19 +57,20 @@ async def running_case(
     carry: CaseCarry | None = None,
     triage_workflow: type = TriageStub,
 ) -> AsyncIterator[WorkflowHandle[CaseWorkflow, CaseView]]:
-    async with Worker(
-        env.client,
-        task_queue=CASE_TASK_QUEUE,
-        workflows=[CaseWorkflow, triage_workflow, AgentStub],
-        activities=fakes.activities(),
-    ):
-        handle = await env.client.start_workflow(
-            CaseWorkflow.run,
-            args=[OFFENSE_ID] if carry is None else [OFFENSE_ID, carry],
-            id=CASE_ID,
+    async with executor_worker(env, fakes):
+        async with Worker(
+            env.client,
             task_queue=CASE_TASK_QUEUE,
-        )
-        yield handle
+            workflows=[CaseWorkflow, triage_workflow, AgentStub],
+            activities=fakes.activities(),
+        ):
+            handle = await env.client.start_workflow(
+                CaseWorkflow.run,
+                args=[OFFENSE_ID] if carry is None else [OFFENSE_ID, carry],
+                id=CASE_ID,
+                task_queue=CASE_TASK_QUEUE,
+            )
+            yield handle
 
 
 async def state_when(

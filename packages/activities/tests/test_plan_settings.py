@@ -11,12 +11,16 @@ from ais0c_contracts import Budget
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
 PLAN_VARIABLES = ("AIS0C_PLAN_TOKENS", "AIS0C_PLAN_TOOL_CALLS", "AIS0C_PLAN_SECONDS")
+BASE = "https://ais0c.example.com/cases"
+CASE_URL_BASE_ENV = {"AIS0C_CASE_URL_BASE": BASE}
 
 
 def test_the_plan_budget_defaults_to_the_task_values() -> None:
-    settings = CaseSettings.from_env({})
+    settings = CaseSettings.from_env(CASE_URL_BASE_ENV)
 
-    assert settings == CaseSettings()
+    assert settings == CaseSettings(
+        case_url_base=BASE,
+    )
     assert (settings.plan_tokens, settings.plan_tool_calls, settings.plan_seconds) == (
         400000,
         40,
@@ -35,12 +39,18 @@ def test_the_default_plan_tokens_pay_for_investigation_and_verification() -> Non
     ]
 
     assert tokens == [300000, 80000]
-    assert sum(tokens) <= CaseSettings().plan_tokens
+    assert (
+        sum(tokens)
+        <= CaseSettings(
+            case_url_base=BASE,
+        ).plan_tokens
+    )
 
 
 def test_the_plan_budget_comes_from_the_environment() -> None:
     settings = CaseSettings.from_env(
         {
+            **CASE_URL_BASE_ENV,
             "AIS0C_PLAN_TOKENS": "300000",
             "AIS0C_PLAN_TOOL_CALLS": " 50 ",
             "AIS0C_PLAN_SECONDS": "600",
@@ -49,11 +59,18 @@ def test_the_plan_budget_comes_from_the_environment() -> None:
 
     assert settings.plan_budget == Budget(tokens=300000, tool_calls=50, seconds=600)
     # The other settings keep their defaults.
-    assert settings.max_concurrent_cases == CaseSettings().max_concurrent_cases
+    assert (
+        settings.max_concurrent_cases
+        == CaseSettings(
+            case_url_base=BASE,
+        ).max_concurrent_cases
+    )
 
 
 def test_an_unset_or_blank_plan_variable_keeps_its_default() -> None:
-    settings = CaseSettings.from_env({"AIS0C_PLAN_TOKENS": "  ", "AIS0C_PLAN_SECONDS": "120"})
+    settings = CaseSettings.from_env(
+        {**CASE_URL_BASE_ENV, "AIS0C_PLAN_TOKENS": "  ", "AIS0C_PLAN_SECONDS": "120"}
+    )
 
     assert settings.plan_budget == Budget(tokens=400000, tool_calls=40, seconds=120)
 
@@ -62,13 +79,13 @@ def test_an_unset_or_blank_plan_variable_keeps_its_default() -> None:
 @pytest.mark.parametrize("name", PLAN_VARIABLES)
 def test_a_plan_value_that_is_not_a_positive_integer_is_rejected(name: str, value: str) -> None:
     with pytest.raises(ValueError, match=f"{name} must be a positive integer"):
-        CaseSettings.from_env({name: value})
+        CaseSettings.from_env({**CASE_URL_BASE_ENV, name: value})
 
 
 def test_settings_reject_a_plan_budget_that_is_not_positive() -> None:
     with pytest.raises(ValueError, match="plan budget must be positive"):
-        CaseSettings(plan_tokens=0)
+        CaseSettings(case_url_base=BASE, plan_tokens=0)
     with pytest.raises(ValueError, match="plan budget must be positive"):
-        CaseSettings(plan_tool_calls=-1)
+        CaseSettings(case_url_base=BASE, plan_tool_calls=-1)
     with pytest.raises(ValueError, match="plan budget must be positive"):
-        CaseSettings(plan_seconds=0)
+        CaseSettings(case_url_base=BASE, plan_seconds=0)

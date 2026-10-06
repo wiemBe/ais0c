@@ -44,7 +44,11 @@ def source() -> FakeOffenseSource:
 @pytest.fixture
 def intake(sessions: SessionFactory, source: FakeOffenseSource) -> IntakeActivities:
     return IntakeActivities(
-        sessions=sessions, source=source, settings=CaseSettings(max_concurrent_cases=2)
+        sessions=sessions,
+        source=source,
+        settings=CaseSettings(
+            case_url_base="https://ais0c.example.com/cases", max_concurrent_cases=2
+        ),
     )
 
 

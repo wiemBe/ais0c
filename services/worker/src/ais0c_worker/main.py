@@ -1,4 +1,4 @@
-"""The worker processes: `python -m ais0c_worker` and `python -m ais0c_worker batch`.
+"""The worker processes: `python -m ais0c_worker`, `... batch` and `... executor`.
 
 | Variable | Meaning | Default |
 |---|---|---|
@@ -10,17 +10,20 @@
 Without a command the process is the case worker, as it has been: `run_case_worker` reads the
 offenses and runs the agent chain of each case (`ais0c_worker.case_worker`). With the command `batch` it is
 the batch worker of the `soc-batch` queue, `run_batch_worker`, which runs KnowledgeSync's
-catalog sync.
+catalog sync. With the command `executor` it is the executor worker of the `soc-executor` queue,
+`run_executor_worker`, which runs only the QRadar note and the alert e-mail, with the executor's
+own secrets (T-33 (1), T-045): no agent token, no model, no Schedule.
 
 The database, the gateway, LiteLLM and the configuration files are the runtime's settings
-(`ais0c_activities.runtime`); the batch worker needs only the database and the gateway. Either
+(`ais0c_activities.runtime`); the batch worker needs only the database and the gateway, the
+executor worker the database, the note profile's gateway token and the SMTP relay. Either
 process stops on SIGINT or SIGTERM. Work it leaves unfinished is not lost: the next worker
 continues each workflow from its history.
 
 The case worker warns at start-up about every model alias whose release in the model registry
 differs from the one its last agent run recorded: a new model release, for which the model gate
-must run again (T-24, docs/agent-harness.md §5, B2). The batch worker calls no model and has no
-warning.
+must run again (T-24, docs/agent-harness.md §5, B2). The batch and executor workers call no
+model and have no warning.
 """
 
 import argparse
@@ -39,10 +42,12 @@ from ais0c_activities import (
     SessionFactory,
     load_batch_runtime,
     load_case_runtime,
+    load_executor_runtime,
     model_release_changes,
 )
 from ais0c_worker.batch_worker import build_batch_worker
 from ais0c_worker.case_worker import build_case_worker, connect
+from ais0c_worker.executor_worker import build_executor_worker
 from ais0c_worker.schedule import ensure_intake_schedule, ensure_knowledge_sync_schedule
 
 TEMPORAL_ADDRESS_ENV: Final = "TEMPORAL_ADDRESS"
@@ -52,6 +57,7 @@ KNOWLEDGE_SYNC_SCHEDULE_ENV: Final = "AIS0C_KNOWLEDGE_SYNC_SCHEDULE"
 
 CASE_COMMAND: Final = "case"
 BATCH_COMMAND: Final = "batch"
+EXECUTOR_COMMAND: Final = "executor"
 
 # A setting, a file or a secret the worker needs is missing or invalid.
 EXIT_CONFIG_ERROR: Final = 2
@@ -108,6 +114,27 @@ async def run_batch_worker(stop: asyncio.Event, environ: Mapping[str, str] | Non
         await runtime.close()
 
 
+async def run_executor_worker(
+    stop: asyncio.Event, environ: Mapping[str, str] | None = None
+) -> None:
+    """Run the `soc-executor` worker until `stop` is set; `environ` defaults to `os.environ`.
+
+    Raises `RuntimeConfigError` before it runs anything when the runtime cannot be built: a
+    missing executor secret, an invalid SMTP setting, or a gateway that does not serve the note
+    profile (T-045 criterion 1).
+    """
+    env = os.environ if environ is None else environ
+    runtime = await load_executor_runtime(env)
+    try:
+        client = await connect(_address(env), namespace=_namespace(env))
+        async with build_executor_worker(client, runtime):
+            logger.info("executor worker running")
+            await stop.wait()
+        logger.info("executor worker stopped")
+    finally:
+        await runtime.close()
+
+
 async def warn_on_model_release_changes(
     sessions: SessionFactory, releases: Mapping[str, ModelRelease]
 ) -> list[ModelReleaseChange]:
@@ -127,15 +154,16 @@ async def warn_on_model_release_changes(
 _RUNNERS: Final[Mapping[str, Run]] = {
     CASE_COMMAND: run_case_worker,
     BATCH_COMMAND: run_batch_worker,
+    EXECUTOR_COMMAND: run_executor_worker,
 }
 
 
 def main(argv: Sequence[str] | None = None, environ: Mapping[str, str] | None = None) -> int:
     """Run the worker the command line names; returns the exit status.
 
-    Without a command it is the case worker, `batch` the batch worker. Exit status: 0 when the
-    process stopped on SIGINT or SIGTERM; 2 when a setting, a file or a secret it needs is
-    missing or invalid.
+    Without a command it is the case worker, `batch` the batch worker, `executor` the executor
+    worker. Exit status: 0 when the process stopped on SIGINT or SIGTERM; 2 when a setting, a
+    file or a secret it needs is missing or invalid.
     """
     logging.basicConfig(
         level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
@@ -161,6 +189,10 @@ def _command(argv: Sequence[str] | None) -> str:
         help="the soc-case worker: offenses, cases and their agents (the default)",
     )
     commands.add_parser(BATCH_COMMAND, help="the soc-batch worker: KnowledgeSync's catalog sync")
+    commands.add_parser(
+        EXECUTOR_COMMAND,
+        help="the soc-executor worker: the QRadar note and the alert e-mail",
+    )
     args = parser.parse_args(argv)
     return CASE_COMMAND if args.command is None else str(args.command)
 

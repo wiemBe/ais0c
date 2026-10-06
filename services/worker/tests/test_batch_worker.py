@@ -58,7 +58,13 @@ from ais0c_agents import FakeGatewayClient
 from ais0c_contracts import CatalogMode
 from ais0c_storage.repositories import list_catalog_log_sources, list_catalog_rules
 from ais0c_worker import build_batch_worker, connect
-from ais0c_worker.main import BATCH_COMMAND, EXIT_CONFIG_ERROR, main, run_batch_worker
+from ais0c_worker.main import (
+    BATCH_COMMAND,
+    EXECUTOR_COMMAND,
+    EXIT_CONFIG_ERROR,
+    main,
+    run_batch_worker,
+)
 from ais0c_workflows import KnowledgeSync, KnowledgeSyncResult
 from ais0c_workflows.names import BATCH_TASK_QUEUE, KNOWLEDGE_SYNC, KNOWLEDGE_SYNC_SCHEDULE_ID
 from ais0c_workflows.schedules import SOC_TIME_ZONE
@@ -349,6 +355,11 @@ def test_the_command_line_names_the_worker_and_reports_a_bad_start_up(
     error = capsys.readouterr().err
     assert error.startswith("error: the catalog sync needs qradar-inventory-read")
     assert "the gateway serves qradar-hunt-read" in error
+
+    # T-045: `executor` selects the executor worker, which stops without its own secrets.
+    assert main([EXECUTOR_COMMAND], worker_environ) == EXIT_CONFIG_ERROR
+    error = capsys.readouterr().err
+    assert "gateway-token-qradar-note-write" in error
 
 
 def test_an_unknown_command_is_rejected(capsys: pytest.CaptureFixture[str]) -> None:

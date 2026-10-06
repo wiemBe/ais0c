@@ -175,6 +175,7 @@ async def test_the_worker_warns_when_it_starts(
         "TEMPORAL_ADDRESS": env.client.service_client.config.target_host,
         # The time-skipping test server has no Schedules.
         "AIS0C_INTAKE_SCHEDULE": "off",
+        "AIS0C_CASE_URL_BASE": "https://ais0c.example.com/cases",
     }
     stop = asyncio.Event()
     stop.set()

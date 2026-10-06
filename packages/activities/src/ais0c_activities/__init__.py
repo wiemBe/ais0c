@@ -4,8 +4,9 @@ No workflow logic. Activities are registered under the names in `ais0c_activitie
 the workflows use to call them. The agents' model and tool activities come from Pydantic AI's
 TemporalDurability (`TriageRuntime`, and `ChainRuntime` for the Orchestrator, Investigation,
 Verification and Reporting). The Action Executor's note and e-mail activities
-(`NoteActivities`, `EmailActivities`) are not on the case queue; no workflow calls them before
-T-045. The `soc-batch` task queue has KnowledgeSync's catalog sync (`CatalogSyncActivities`,
+(`NoteActivities`, `EmailActivities`) run in their own process on the `soc-executor` task queue,
+from `ExecutorRuntime` (T-33 (1), T-045); the case queue has the rest, including `case_url`. The
+`soc-batch` task queue has KnowledgeSync's catalog sync (`CatalogSyncActivities`,
 `BatchRuntime.activities`).
 """
 
@@ -35,7 +36,6 @@ from ais0c_activities.catalog import (
 from ais0c_activities.chain import ChainActivities
 from ais0c_activities.db import SessionFactory
 from ais0c_activities.email import (
-    SEND_EMAIL,
     EmailActivities,
     EmailRuntime,
     load_email_runtime,
@@ -50,6 +50,7 @@ from ais0c_activities.enrichment import (
     floor_level,
     match_critical_assets,
 )
+from ais0c_activities.executor_runtime import ExecutorRuntime, load_executor_runtime
 from ais0c_activities.gateway import (
     GatewayProfile,
     GatewayTool,
@@ -81,9 +82,9 @@ from ais0c_activities.model_release import (
     model_release_changes,
     parse_model_releases,
 )
+from ais0c_activities.names import SEND_EMAIL, WRITE_OFFENSE_NOTE
 from ais0c_activities.note import (
     NOTE_PROFILE,
-    WRITE_OFFENSE_NOTE,
     GatewayOffenseNotes,
     NoteActivities,
     NoteGatewayClient,
@@ -162,6 +163,7 @@ __all__ = [
     "ChainRuntime",
     "EmailActivities",
     "EmailRuntime",
+    "ExecutorRuntime",
     "FakeOffenseSource",
     "GatewayOffenseNotes",
     "GatewayOffenseSource",
@@ -207,6 +209,7 @@ __all__ = [
     "load_batch_runtime",
     "load_case_runtime",
     "load_email_runtime",
+    "load_executor_runtime",
     "load_model_releases",
     "load_note_runtime",
     "load_smtp_settings",

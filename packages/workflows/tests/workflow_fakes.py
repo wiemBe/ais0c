@@ -5,13 +5,16 @@ unchanged. IPs are from the RFC 5737 ranges.
 """
 
 import asyncio
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
 from temporalio import activity, workflow
 from temporalio.common import RetryPolicy
 from temporalio.exceptions import ActivityError, ApplicationError
+from temporalio.testing import WorkflowEnvironment
+from temporalio.worker import Worker
 
 from ais0c_contracts import (
     AgentTask,
@@ -56,9 +59,11 @@ from ais0c_workflows.names import (
     BEGIN_TRIAGE_RUN,
     CANDIDATE_SKILLS,
     CASE_STATE,
+    CASE_URL,
     CLOSE_CASE,
     ENRICH_OFFENSE,
     EVALUATION_WINDOW,
+    EXECUTOR_TASK_QUEUE,
     FETCH_OFFENSE,
     FETCH_OFFENSE_CHANGES,
     FIND_CLOSED_OFFENSES,
@@ -72,9 +77,17 @@ from ais0c_workflows.names import (
     RECORD_OFFENSE_UPDATE,
     RECORD_PLAN,
     REEVALUATION_INTERVAL,
+    SEND_EMAIL,
     START_CASE,
     START_EVALUATION,
     TRIAGE_WORKFLOW,
+    WRITE_OFFENSE_NOTE,
+)
+from ais0c_workflows.notify import (
+    CaseAlertRequest,
+    EvaluationNoteRequest,
+    NoDecisionNoteRequest,
+    NoteRequest,
 )
 
 WAIT_SECONDS = 10
@@ -547,6 +560,20 @@ class RecordedPlan:
     steps: list[str]
 
 
+type ExecutorRequest = EvaluationNoteRequest | NoDecisionNoteRequest | CaseAlertRequest
+# What the executor fakes answer an attempt with (the request, the attempt's number); raising
+# plays a failure. The workflow does not read the outcome, so it is a plain mapping.
+type ExecutorBehavior = Callable[[ExecutorRequest, int], Awaitable[dict[str, object]]]
+
+
+async def written(request: ExecutorRequest, attempt: int) -> dict[str, object]:
+    return {"result": "written"}
+
+
+async def email_sent(request: ExecutorRequest, attempt: int) -> dict[str, object]:
+    return {"result": "sent"}
+
+
 class CaseFakes:
     """Case activities for one offense, and the activity TriageStub runs.
 
@@ -557,6 +584,14 @@ class CaseFakes:
     `triage_behavior` gets each TriageCall; `triage_runs` collects the IDs of the triage runs
     that called it. `agent_behavior` answers the chain agents' runs (AgentStub) and
     `agent_calls` collects each attempt; `candidates` is what the router lists.
+
+    The executor's activities are fakes too (T-045): `case_url` on the case queue,
+    `write_offense_note` and `send_email` on the executor's own queue (`executor_activities`).
+    `note_behavior` and `email_behavior` get each attempt's request and number and answer with
+    the activity's outcome, or raise to play a failure; the first attempts' requests are
+    collected in `note_requests` and `email_requests`, every attempt's number in
+    `note_attempts` and `email_attempts`, and each call is an event of `executor_events`
+    ("note"/"email", its number).
     """
 
     def __init__(
@@ -570,6 +605,9 @@ class CaseFakes:
         triage_behavior: TriageBehavior = decide_at_once,
         agent_behavior: AgentBehavior = answer_agents,
         candidates: Sequence[tuple[str, SkillRef, Budget]] = (),
+        note_behavior: ExecutorBehavior = written,
+        email_behavior: ExecutorBehavior = email_sent,
+        case_url_base: str = "https://ais0c.example.com/cases",
     ) -> None:
         self.offense = offense
         self.floor_level = floor_level
@@ -579,8 +617,12 @@ class CaseFakes:
         self.triage_behavior = triage_behavior
         self.agent_behavior = agent_behavior
         self.candidates = list(candidates)
+        self.note_behavior = note_behavior
+        self.email_behavior = email_behavior
+        self.case_url_base = case_url_base
         self.events = Events()
         self.agent_events = Events()
+        self.executor_events = Events()
         self.agent_calls: list[AgentCall] = []
         self.chain_decisions: list[RecordedDecision] = []
         self.plans: list[RecordedPlan] = []
@@ -589,6 +631,11 @@ class CaseFakes:
         self.decisions: list[tuple[int, Level | None, datetime]] = []
         self.closed_records: list[tuple[str, int]] = []
         self.triage_runs: list[str] = []
+        self.case_urls: list[str] = []
+        self.note_requests: list[NoteRequest] = []
+        self.note_attempts: list[int] = []
+        self.email_requests: list[CaseAlertRequest] = []
+        self.email_attempts: list[int] = []
 
     def activities(self) -> list[Callable[..., object]]:
         return [
@@ -602,12 +649,17 @@ class CaseFakes:
             self.record_decision,
             self.mark_no_ai_decision,
             self.close_case,
+            self.case_url,
             self.evaluation_window,
             self.candidate_skills,
             self.plan_budgets,
             self.record_plan,
             self.scripted_agent,
         ]
+
+    def executor_activities(self) -> list[Callable[..., object]]:
+        """The executor's two activities, for a worker on the `soc-executor` queue (criterion 2)."""
+        return [self.write_offense_note, self.send_email]
 
     def requests(self, agent: AgentKind) -> list[AgentRequest]:
         """The requests of `agent`'s runs, first attempts only."""
@@ -713,6 +765,29 @@ class CaseFakes:
         self.closed_records.append((case_id, offense_id))
         await self.events.add("closed")
 
+    @activity.defn(name=CASE_URL)
+    async def case_url(self, case_id: str) -> str:
+        self.case_urls.append(case_id)
+        return f"{self.case_url_base}/{case_id}"
+
+    @activity.defn(name=WRITE_OFFENSE_NOTE)
+    async def write_offense_note(self, request: NoteRequest) -> dict[str, object]:
+        attempt = activity.info().attempt
+        self.note_attempts.append(attempt)
+        if attempt == 1:
+            self.note_requests.append(request)
+            await self.executor_events.add("note", len(self.note_requests))
+        return await self.note_behavior(request, attempt)
+
+    @activity.defn(name=SEND_EMAIL)
+    async def send_email(self, request: CaseAlertRequest) -> dict[str, object]:
+        attempt = activity.info().attempt
+        self.email_attempts.append(attempt)
+        if attempt == 1:
+            self.email_requests.append(request)
+            await self.executor_events.add("email", len(self.email_requests))
+        return await self.email_behavior(request, attempt)
+
     @activity.defn(name=EVALUATION_WINDOW)
     async def evaluation_window(self, offense: OffenseSnapshot) -> TimeWindow:
         return TimeWindow(
@@ -750,6 +825,22 @@ class CaseFakes:
         self.agent_calls.append(call)
         await self.agent_events.add(str(call.agent), request.evaluation_no)
         return await self.agent_behavior(call)
+
+
+# --- the executor's worker --------------------------------------------------------------------
+
+
+@asynccontextmanager
+async def executor_worker(env: WorkflowEnvironment, fakes: CaseFakes) -> AsyncIterator[None]:
+    """The executor's activities on their own `soc-executor` queue, as the real worker runs
+    them (criterion 2): the case queue's worker does not carry them."""
+    async with Worker(
+        env.client,
+        task_queue=EXECUTOR_TASK_QUEUE,
+        workflows=[],
+        activities=fakes.executor_activities(),
+    ):
+        yield
 
 
 # --- TriageWorkflow ---------------------------------------------------------------------------

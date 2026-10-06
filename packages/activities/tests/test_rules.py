@@ -28,6 +28,8 @@ from ais0c_contracts import (
 from ais0c_storage.enums import CriticalAssetKind
 from ais0c_storage.models import CriticalAssetRow
 
+BASE = "https://ais0c.example.com/cases"
+
 SKIP = CatalogMode.SKIP
 ANALYZE = CatalogMode.ANALYZE
 
@@ -197,9 +199,10 @@ def test_pre_priority_puts_high_catalog_floors_first_then_asset_or_ioc_hits() ->
 
 
 def test_settings_default_to_the_architecture_values() -> None:
-    settings = CaseSettings.from_env({})
+    settings = CaseSettings.from_env({"AIS0C_CASE_URL_BASE": BASE})
 
-    assert settings == CaseSettings()
+    assert settings == CaseSettings(case_url_base=BASE)
+    assert settings.case_url("case-101") == f"{BASE}/case-101"
     assert settings.group_full_analyses_per_hour == 5
     assert (settings.sla_high, settings.sla_low) == (timedelta(minutes=10), timedelta(minutes=60))
     assert settings.max_concurrent_cases == 10
@@ -211,6 +214,7 @@ def test_settings_default_to_the_architecture_values() -> None:
 def test_settings_come_from_the_environment() -> None:
     settings = CaseSettings.from_env(
         {
+            "AIS0C_CASE_URL_BASE": "https://soc.example.com/cases",
             "AIS0C_MAX_CONCURRENT_CASES": "3",
             "AIS0C_GROUP_FULL_ANALYSES_PER_HOUR": " 8 ",
             "AIS0C_SLA_HIGH_MINUTES": "5",
@@ -221,6 +225,7 @@ def test_settings_come_from_the_environment() -> None:
     )
 
     assert settings == CaseSettings(
+        case_url_base="https://soc.example.com/cases",
         max_concurrent_cases=3,
         group_full_analyses_per_hour=8,
         sla_high=timedelta(minutes=5),
@@ -244,18 +249,37 @@ def test_settings_come_from_the_environment() -> None:
 )
 def test_invalid_settings_are_rejected(name: str, value: str) -> None:
     with pytest.raises(ValueError, match=name):
-        CaseSettings.from_env({name: value})
+        CaseSettings.from_env({"AIS0C_CASE_URL_BASE": BASE, name: value})
 
 
 def test_settings_reject_impossible_values() -> None:
     with pytest.raises(ValueError, match="max_concurrent_cases"):
-        CaseSettings(max_concurrent_cases=0)
+        CaseSettings(case_url_base=BASE, max_concurrent_cases=0)
     with pytest.raises(ValueError, match="SLA"):
-        CaseSettings(sla_high=timedelta(0))
+        CaseSettings(case_url_base=BASE, sla_high=timedelta(0))
     with pytest.raises(ValueError, match="re-evaluation interval"):
-        CaseSettings(reevaluation_interval=timedelta(0))
+        CaseSettings(case_url_base=BASE, reevaluation_interval=timedelta(0))
     with pytest.raises(ValueError, match="retry delay"):
-        CaseSettings(agent_retry_delay=timedelta(seconds=-1))
+        CaseSettings(case_url_base=BASE, agent_retry_delay=timedelta(seconds=-1))
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "",
+        "  ",
+        "ftp://ais0c.example.com/cases",
+        "https://ais0c.example.com/cases/",
+        "https://ais0c.example.com/cases?view=1",
+        "https://ais0c.example.com/cases#top",
+        "https://ais0c.example.com/" + "c" * 200,
+        "x" * 200,
+    ],
+)
+def test_an_unusable_case_url_base_is_rejected(value: str) -> None:
+    """T-045 criterion 6: without a usable base the worker does not start."""
+    with pytest.raises(ValueError, match=r"AIS0C_CASE_URL_BASE|case_url_base"):
+        CaseSettings.from_env({"AIS0C_CASE_URL_BASE": value})
 
 
 @pytest.mark.parametrize(
@@ -269,12 +293,12 @@ def test_settings_reject_impossible_values() -> None:
     ],
 )
 def test_the_sla_depends_on_the_level(level: Level | None, sla: timedelta) -> None:
-    assert CaseSettings().sla_for(level) == sla
+    assert CaseSettings(case_url_base=BASE).sla_for(level) == sla
 
 
 def test_the_sla_runs_from_creation_then_from_each_update() -> None:
     snapshot = offense(1, start=T0, updated=T0 + timedelta(hours=3))
-    settings = CaseSettings()
+    settings = CaseSettings(case_url_base=BASE)
 
     first = sla_deadline(snapshot, evaluation_no=1, level=Level.HIGH, settings=settings)
     second = sla_deadline(snapshot, evaluation_no=2, level=None, settings=settings)
