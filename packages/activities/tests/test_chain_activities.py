@@ -467,7 +467,7 @@ async def test_the_router_lists_the_candidates_of_each_plan_agent(
     )
 
     assert listed == [
-        ("investigation", ref_of(skills), Budget(tokens=120000, tool_calls=24, seconds=300))
+        ("investigation", ref_of(skills), Budget(tokens=250000, tool_calls=24, seconds=300))
     ]
     assert (
         await ActivityEnvironment().run(
