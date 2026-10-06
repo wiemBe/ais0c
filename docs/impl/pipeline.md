@@ -65,7 +65,7 @@ Sıra:
 3. İnceleme düzeltmeleri (2026-10-06): önce T-046; sonra paralel T-047 ve T-023'ün devamı. (Bitti, `main` `f201c43`.)
 4. Paralel: T-026 (ajan zinciri; dosyası gerçek arayüzlere göre güncellendi) ve T-048 (ajanın son cevabı, Investigation bütçesi, Ariel zaman penceresi). (Bitti, `main` `c301e1e`.)
 5. T-049 (zincir düzeltmeleri: Ariel zaman sınırı epoch milisaniye, son cevap, Verification penceresi, QA ve çalışma kaydı, dev skill'leri). (Bitti, `main` `530c01e`.)
-6. Paralel (2026-10-06): T-045 (executor'ın akışa bağlanması; dosyası gözden geçirildi), T-050 (aramanın kanıt penceresi, araç açıklamaları), T-051 (Verification'ın bütçe aşımı).
+6. Paralel (2026-10-06): T-045 (executor'ın akışa bağlanması; dosyası gözden geçirildi), T-050 (aramanın kanıt penceresi, araç açıklamaları), T-051 (Verification'ın bütçe aşımı). (Bitti, `main` `89d17f1`; kararlar T-59–T-61.)
 7. Ardından: T-027. Planner dosyasını T-045 birleşince gözden geçirir. Bu üçünün dosyalarını planner, bağımlı oldukları görevler birleşince gerçek arayüzlere göre gözden geçirir; o zamana kadar ajana verilmez.
 
 | Görev | Kapsam | İzinli dizinler | Bağımlı olduğu | Dosya |
@@ -100,7 +100,7 @@ Sıra:
 
 | Görev | Kapsam | Bağımlı olduğu |
 |---|---|---|
-| T-032 | Asgari sağlık alarmları: intake durdu, log source sustu, not/e-posta hataları (yalnızca `failed`, e-postada `rejected` de; `disabled` hiçbir zaman hata sayılmaz, T-37); e-posta ve QRadar'a syslog (T-23) | T-017, T-020, T-022, T-045 |
+| T-032 | Asgari sağlık alarmları: intake durdu, log source sustu, not/e-posta hataları (yalnızca `failed`, e-postada `rejected` de; `disabled` hiçbir zaman hata sayılmaz, T-37); `soc-executor` kuyruğunda worker yok ve bırakılan executor çağrısının `failed` kaydı (`executor_unavailable`, T-59 (7)); e-posta ve QRadar'a syslog (T-23) | T-017, T-020, T-022, T-045 |
 | T-033 | Çift kontrol: `change_approvals` akışı, API ve arayüz (D-36) | T-028, T-029 |
 | T-034 | AI olay müdahale playbook'ları: `docs/ai-incident-response.md` (D-37) | — |
 | T-035 | OIDC entegrasyonu ve audit saklama | H-6 |
