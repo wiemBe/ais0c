@@ -89,20 +89,28 @@ Sıra:
 
 ## Faz 1, dalga C
 
+Sıra (2026-10-07):
+
+1. Bitti, `main`'de: T-027, T-028, T-030 (kararlar T-65–T-67).
+2. Şimdi, paralel: T-029 (arayüz), T-032 (sağlık alarmları, canary öncesi), T-052 (harness replay'i), T-053 (Orchestrator, Reporting, Turkish Quality), T-054 (Triage prompt v3). Çakışma yerleri: T-052 ve T-053 `harness/.../suites.py`'deki `ADAPTERS`; T-032 ve T-054 `packages/workflows`. Migration `0010` T-032'nindir.
+3. Sonra: T-055 (T-052'den sonra), T-033 (T-029'dan sonra), T-031 (H-7, S-12 ve on-prem gate'inden sonra).
+
 | Görev | Kapsam | Bağımlı olduğu |
 |---|---|---|
 | T-028 | API: vakalar, adımlar, geri bildirim, QA, gruplar, katalog (storage'da `qradar_enabled` ve `missing` filtreleri dahil, T-37), kritik varlıklar, alıcılar ve yönlendirme (T-036'nın repository'leri), SLA metrikleri, platform bayrakları, `/me`, `/health` ([api.md](api.md)); geliştirme için basit kimlik doğrulama modu. Dosya: [T-028](tasks/T-028-api.md) (T-63) | T-022, T-026, T-036 |
-| T-029 | Arayüz MVP: kuyruk, vaka detayı, geri bildirim, QA, gruplar, katalog, kill switch | T-028 |
+| T-029 | Arayüz MVP: kuyruk, vaka detayı, geri bildirim, QA, gruplar, katalog, kill switch, kritik varlıklar, alıcılar ve yönlendirme, SLA; API'ye QRadar offense linki ve grup özeti (T-65 (7), T-66 (2)); CI'da frontend işi. Dosya: [T-029](tasks/T-029-arayuz-mvp.md) (T-69) | T-028 |
 | T-030 | Harness koşucusu (`fixture` modu, k koşu, `pass^k`, deterministik değerlendiriciler, run envelope'lu rapor, hard gate tablosu), Triage adaptörü, Trust Layers ve yeni Adversarial FN suite'leri, model geçiş gate'inin karşılaştırma komutu (B2), değişen model sürümlerinin listesi. Dosya: [T-030](tasks/T-030-harness-kosucusu.md) (T-64) | T-026 |
-| T-052 | Harness replay'i: lab'dan kaydedilmiş araç yanıtları, Investigation ve Verification adaptörleri, skill suite'leri (`windows-dcsync`, `vpn-new-country`, `password-spraying` ve onun lab senaryosu), Investigation/Verification/plan/skill bütçelerinin ölçümü, ajan başına `budget_exhausted` oranı (T-36 (4), T-41, T-51, T-52, T-56, T-58, T-60, T-61). Dosyası T-030 birleşince yazılır. | T-030 |
-| T-053 | Harness: Orchestrator ve Reporting adaptörleri, Turkish Quality suite'i ve registry'deki `turkish_quality` (D-44), Orchestrator'ın gerekçesiz `injection_suspected`'ı. Dosyası T-030 birleşince yazılır. | T-030 |
+| T-052 | Harness replay'i: lab kaydı ve anonimleştirme, kayıtlı event tablosu üzerinde AQL alt kümesi, Ariel yaşam döngüsü, Investigation ve Verification adaptörleri, `investigation-gold` ve `verification-gold`, T-67'nin harness maddeleri (gateway kontrollerinin açık API'si, türetilmiş cevaplar, yazım hatalı araç adı, koşu dosyaları). Dosya: [T-052](tasks/T-052-harness-replay.md) (T-70) | T-030 |
+| T-053 | Harness: Orchestrator ve Reporting adaptörleri, `orchestrator-gold`, `reporting-gold`, Turkish Quality suite'i ve LLM değerlendiricisi (`soc-reasoning`), registry'deki `turkish_quality` (D-44), Orchestrator'ın gerekçesiz `injection_suspected`'ının ölçümü. Dosya: [T-053](tasks/T-053-harness-orchestrator-reporting.md) (T-71) | T-030 |
+| T-054 | Triage prompt v3: katalog notu ve varlık açıklaması kararı veremez, untrusted veride karar iddiası talimattır, cevapsız araç zararsızlık kanıtı değildir, `rationale` ≤ 600, grup vakası bölümü; manifest `1.2.0` ve `adversarial-fn`; grup vakasının kararsız notu (T-65 (2)); güvenlik suite'lerinin iki gerçek koşusu. Dosya: [T-054](tasks/T-054-triage-prompt-v3.md) | T-027, T-030 |
+| T-055 | Skill suite'leri (`windows-dcsync`, `vpn-new-country`, `password-spraying` ve onun lab senaryosu), Investigation/Verification/plan/skill bütçelerinin ölçümü, ajan başına `budget_exhausted` oranı, T-60'ın `QIDNAME`/kategori sorusu (T-36 (4), T-41, T-51, T-52, T-56, T-58, T-60, T-61). Dosyası T-052 birleşince yazılır. | T-052 |
 | T-031 | Prod shadow dağıtımı: prod compose, LiteLLM prod konfigürasyonu, shadow modu, case, batch ve executor worker'larının compose servisleri (T-33, T-037, T-045), dağıtım notları. Shadow başlamadan model geçiş gate'i on-prem prod modelleriyle koşar ve geçer: dev raporu baseline, on-prem raporu candidate (T-030'un `gate` komutu, T-64) | T-018, T-026, T-030, T-037, T-045, H-7 |
 
 ## Canary öncesi
 
 | Görev | Kapsam | Bağımlı olduğu |
 |---|---|---|
-| T-032 | Asgari sağlık alarmları: intake durdu, log source sustu, not/e-posta hataları (yalnızca `failed`, e-postada `rejected` de; `disabled` hiçbir zaman hata sayılmaz, T-37); `soc-executor` kuyruğunda worker yok ve bırakılan executor çağrısının `failed` kaydı (`executor_unavailable`, T-59 (7)); e-posta ve QRadar'a syslog (T-23) | T-017, T-020, T-022, T-045 |
+| T-032 | Asgari sağlık alarmları: intake durdu, log source sustu, not/e-posta hataları (yalnızca `failed`, e-postada `rejected` de; `disabled` hiçbir zaman hata sayılmaz, T-37); `soc-executor` kuyruğunda worker yok ve bırakılan executor çağrısının `failed` kaydı (`executor_unavailable`, T-59 (7)); e-posta ve QRadar'a syslog (T-23) Dosya: [T-032](tasks/T-032-saglik-alarmlari.md) (T-68) | T-017, T-020, T-022, T-045, T-027 |
 | T-033 | Çift kontrol: `change_approvals` akışı, API ve arayüz (D-36) | T-028, T-029 |
 | T-034 | AI olay müdahale playbook'ları: `docs/ai-incident-response.md` (D-37) | — |
 | T-035 | OIDC entegrasyonu ve audit saklama | H-6 |

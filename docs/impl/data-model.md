@@ -255,7 +255,7 @@ Hangi uyarının hangi alıcı gruplarına gideceği (D-41).
 | `level` | text? | `Level`; hunt raporu için boş |
 | `list_name` | text | `notification_recipients.list_name` |
 
-Benzersiz: (`kind`, `level`, `list_name`), `NULLS NOT DISTINCT` ile; hunt raporunun boş seviyesi de tek sayılır (T-43). Başlangıç kayıtları: `case_alert`/`group_alert` × `high` → `operators`; × `critical` → `operators`, `exec`, `analyst-eng`; `hunt_report` → `hunters`.
+Benzersiz: (`kind`, `level`, `list_name`), `NULLS NOT DISTINCT` ile; hunt raporunun boş seviyesi de tek sayılır (T-43). Başlangıç kayıtları: `case_alert`/`group_alert` × `high` → `operators`; × `critical` → `operators`, `exec`, `analyst-eng`; `hunt_report` → `hunters`; `health_alarm` (seviyesiz) → `analyst-eng` (migration `0010`, T-68).
 
 ### `allowed_email_domains`
 
@@ -358,6 +358,20 @@ PK: (`hunt_id`, `hypothesis_id`, `log_source_type`, `slice_start`). Kapsama tabl
 | `tuning_proposals` | `id` PK, `cluster_id` FK, `proposal` jsonb (`TuningProposal`), `status` (`open`/`accepted`/`rejected`), `decided_by`, `decided_at`, `comment` |
 
 ## Platform bayrakları ve onaylar
+
+### `health_alarms`
+
+Asgari sağlık alarmlarının durumu (T-23, T-68). Bir (`kind`, `subject`) için en çok bir açık kayıt vardır (kısmi tekil index, `status = open`). Migration `0010`, kod T-032.
+
+| Sütun | Tip | Not |
+|---|---|---|
+| `id` | bigserial PK | |
+| `kind` | text | `intake_stalled`, `log_source_silent`, `write_failures`, `executor_absent` |
+| `subject` | text | Alarmın konusu: log source kimliği, `note`/`email`, `qradar_unreachable` vb. |
+| `status` | text | `open`, `resolved` |
+| `opened_at`, `last_seen_at` | timestamptz | |
+| `resolved_at`, `last_notified_at` | timestamptz? | |
+| `details` | jsonb | Sayılar ve zamanlar; serbest metin yok |
 
 ### `platform_flags`
 

@@ -30,7 +30,7 @@ Tablolardaki kısaltmalar: `ShortText` en fazla 300, `Summary` en fazla 600 kara
 | `FeedbackReason` | `correct`, `was_tp_not_fp`, `was_fp_not_tp`, `missing_context`, `wrong_urgent_events`, `other` |
 | `CostClass` | `low`, `medium`, `high` |
 | `ToolStatus` | `ok`, `denied`, `error` |
-| `EmailKind` | `case_alert`, `group_alert`, `hunt_report` |
+| `EmailKind` | `case_alert`, `group_alert`, `hunt_report`, `health_alarm` (sözleşme 0.5.0, T-68) |
 | `TuningChange` | `reference_set_exception`, `building_block`, `threshold`, `time_window`, `other` |
 
 ## Kanıt ve ortak parçalar
