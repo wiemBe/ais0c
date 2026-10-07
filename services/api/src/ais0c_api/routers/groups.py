@@ -7,15 +7,31 @@ offenses and whatever the group's own case holds.
 
 from typing import Annotated
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Request
 
-from ais0c_api.dependencies import OPERATOR, FromParam, ReadSession, ToParam, aware
-from ais0c_api.models import GroupDetail, GroupOffense, GroupSummary, Page
+from ais0c_api.dependencies import (
+    OPERATOR,
+    FromParam,
+    ReadSession,
+    ToParam,
+    aware,
+    offense_url_of,
+)
+from ais0c_api.models import (
+    GroupDetail,
+    GroupDigest,
+    GroupOffense,
+    GroupSummary,
+    GroupValueCount,
+    GroupValueKindSummary,
+    Page,
+)
 from ais0c_api.pagination import DEFAULT_LIMIT, CursorParam, LimitParam, paginate, timestamp_cursor
 from ais0c_api.problems import not_found
-from ais0c_storage.enums import GroupStatus
+from ais0c_storage.enums import GroupStatus, OffenseStatus
 from ais0c_storage.models import OffenseGroupRow, OffenseSeenRow
 from ais0c_storage.repositories import (
+    count_group_values,
     get_case,
     get_offense_group,
     list_group_offenses,
@@ -49,13 +65,19 @@ def summary(row: OffenseGroupRow) -> GroupSummary:
     )
 
 
-def offense_row(row: OffenseSeenRow) -> GroupOffense:
+# The most frequent values of a kind the summary names.
+TOP_VALUES = 5
+
+
+def offense_row(row: OffenseSeenRow, url: str | None) -> GroupOffense:
     return GroupOffense(
         offense_id=row.offense_id,
         description=row.description,
         status=row.status,
         case_id=row.case_id,
         first_seen_at=row.first_seen_at,
+        full_analysis_reason=row.full_analysis_reason,
+        qradar_offense_url=url,
     )
 
 
@@ -85,8 +107,15 @@ async def get_groups(
 
 
 @router.get("/{group_id}", response_model=GroupDetail)
-async def get_group(group_id: str, _user: OPERATOR, session: ReadSession) -> GroupDetail:
-    """The group, the offenses it holds and the decision of its own case.
+async def get_group(
+    request: Request, group_id: str, _user: OPERATOR, session: ReadSession
+) -> GroupDetail:
+    """The group, the offenses it holds, the deterministic summary and the decision of its own
+    case.
+
+    The summary is counted from the group's rows (no model): the number of offenses, the time
+    range, the rules, and for each kind of value the number of different values and the most
+    frequent ones.
 
     A group with no case yet (still being filled) answers with the group and its offenses; an
     unknown `group_id` is a 404.
@@ -94,11 +123,32 @@ async def get_group(group_id: str, _user: OPERATOR, session: ReadSession) -> Gro
     row = await get_offense_group(session, group_id)
     if row is None:
         raise not_found("group.not_found")
-    offenses = [offense_row(offense) for offense in await list_group_offenses(session, group_id)]
+    members = await list_group_offenses(session, group_id)
+    offenses = [
+        offense_row(offense, offense_url_of(request, offense.offense_id)) for offense in members
+    ]
+    counts = await count_group_values(
+        session, group_id, top=TOP_VALUES, statuses=list(OffenseStatus)
+    )
+    digest = GroupDigest(
+        offense_count=len(members),
+        first_seen_at=members[0].first_seen_at if members else None,
+        last_seen_at=max((m.first_seen_at for m in members), default=None),
+        rule_ids=sorted({rule for m in members for rule in m.rule_ids}),
+        values=[
+            GroupValueKindSummary(
+                kind=kind,
+                distinct=count.distinct,
+                top=[GroupValueCount(value=value, offenses=n) for value, n in count.top],
+            )
+            for kind, count in sorted(counts.items(), key=lambda item: item[0].value)
+        ],
+    )
     case = None if row.case_id is None else await get_case(session, row.case_id)
     return GroupDetail(
         group=summary(row),
         offenses=offenses,
+        summary=digest,
         case_id=case.case_id if case is not None else None,
         case_status=case.status if case is not None else None,
         verdict=case.verdict if case is not None else None,

@@ -69,5 +69,6 @@ def build_service(settings: Settings | None = None) -> Service:
         sessions=sessions,
         authenticator=authenticator,
         schedule_trigger=TemporalScheduleTrigger(address, namespace),
+        offense_url_template=resolved.qradar_offense_url_template,
     )
     return Service(app=app, settings=resolved)

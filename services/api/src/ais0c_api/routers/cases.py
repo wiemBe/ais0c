@@ -5,11 +5,11 @@ Only reading the platform's own tables, and writing the one thing an operator po
 closes a case, changes a rule or runs an action (D-02, D-19).
 """
 
-from collections.abc import Collection, Sequence
+from collections.abc import Callable, Collection, Sequence
 from datetime import datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ais0c_api import audit
@@ -21,6 +21,7 @@ from ais0c_api.dependencies import (
     WriteSession,
     aware,
     now,
+    offense_url_of,
 )
 from ais0c_api.models import (
     AgentStep,
@@ -94,7 +95,11 @@ def case_cursor(cursor: str | None) -> CaseCursor | None:
 
 
 async def summaries(
-    session: AsyncSession, rows: list[CaseRow], *, at: datetime
+    session: AsyncSession,
+    rows: list[CaseRow],
+    *,
+    at: datetime,
+    offense_url: Callable[[int | None], str | None],
 ) -> list[CaseSummary]:
     """The queue rows, each with its offense's description and rule IDs in one extra query for
     the page."""
@@ -126,6 +131,7 @@ async def summaries(
                 # A re-evaluation keeps the previous decision's `decided_at` until it records its
                 # own, so the status, not `decided_at`, says whether the clock still runs.
                 sla_overdue=row.status in UNDECIDED_STATUSES and row.sla_due_at < at,
+                qradar_offense_url=offense_url(row.offense_id),
             )
         )
     return summaries
@@ -133,6 +139,7 @@ async def summaries(
 
 @router.get("", response_model=Page[CaseSummary])
 async def get_cases(
+    request: Request,
     _user: OPERATOR,
     session: ReadSession,
     status: StatusFilter = None,
@@ -163,7 +170,10 @@ async def get_cases(
     )
     # A cursor holds the last row's sort key as plain strings, which is what it decodes to.
     page, next_cursor = paginate(rows, limit, lambda row: [row.created_at.isoformat(), row.case_id])
-    return Page(items=await summaries(session, page, at=now()), next_cursor=next_cursor)
+    items = await summaries(
+        session, page, at=now(), offense_url=lambda offense_id: offense_url_of(request, offense_id)
+    )
+    return Page(items=items, next_cursor=next_cursor)
 
 
 def decided_evaluation(row: CaseRow, runs: Sequence[AgentRunRow]) -> int:
@@ -271,7 +281,9 @@ async def evidence_items(
 
 
 @router.get("/{case_id}", response_model=CaseDetail)
-async def get_case_detail(case_id: str, _user: OPERATOR, session: ReadSession) -> CaseDetail:
+async def get_case_detail(
+    request: Request, case_id: str, _user: OPERATOR, session: ReadSession
+) -> CaseDetail:
     """The whole case: the report, the urgent events by rank, the recommendations, the
     Verification, the data gaps, the evidence, the notes written and the e-mails sent.
 
@@ -312,7 +324,14 @@ async def get_case_detail(case_id: str, _user: OPERATOR, session: ReadSession) -
     calls = await list_tool_calls_of_runs(session, [run.run_id for run in evaluation_runs])
 
     return CaseDetail(
-        case=(await summaries(session, [row], at=now()))[0],
+        case=(
+            await summaries(
+                session,
+                [row],
+                at=now(),
+                offense_url=lambda offense_id: offense_url_of(request, offense_id),
+            )
+        )[0],
         evaluation_no=evaluation_no,
         report=report,
         urgent_events=urgent,

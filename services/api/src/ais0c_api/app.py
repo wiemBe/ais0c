@@ -49,6 +49,7 @@ def build_app(
     sessions: SessionFactory,
     authenticator: DevAuthenticator,
     schedule_trigger: ScheduleTrigger,
+    offense_url_template: str | None = None,
 ) -> FastAPI:
     """The API as an ASGI app.
 
@@ -66,6 +67,7 @@ def build_app(
     app.state.sessions = sessions
     app.state.authenticator = authenticator
     app.state.schedule_trigger = schedule_trigger
+    app.state.offense_url_template = offense_url_template
 
     app.include_router(api_router)
     _add_error_handlers(app)

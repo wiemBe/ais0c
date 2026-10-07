@@ -38,7 +38,9 @@ from ais0c_contracts import (
 from ais0c_storage.enums import (
     CaseStatus,
     CriticalAssetKind,
+    FullAnalysisReason,
     GroupStatus,
+    GroupValueKind,
     NoteStatus,
     NotificationStatus,
     OffenseStatus,
@@ -137,6 +139,9 @@ class CaseSummary(ApiModel):
     rule_ids: list[int] = Field(default_factory=list)
     # True when the current evaluation has no decision and its SLA deadline has passed.
     sla_overdue: bool = False
+    # The offense's page in the QRadar console; None without an offense or without a configured
+    # template (T-029).
+    qradar_offense_url: str | None = None
 
 
 class EvidenceItem(ApiModel):
@@ -308,6 +313,35 @@ class GroupOffense(ApiModel):
     status: OffenseStatus
     case_id: str | None = None
     first_seen_at: datetime
+    # Why the offense got a full analysis instead of joining the group; None for an offense the
+    # group took, a skipped one and one recorded before the column existed.
+    full_analysis_reason: FullAnalysisReason | None = None
+    qradar_offense_url: str | None = None
+
+
+class GroupValueCount(ApiModel):
+    """One value of a group and the number of its offenses that carry it."""
+
+    value: str
+    offenses: int
+
+
+class GroupValueKindSummary(ApiModel):
+    """One kind of value (source IP, user, log source, ...) over the group's offenses."""
+
+    kind: GroupValueKind
+    distinct: int
+    top: list[GroupValueCount] = Field(default_factory=list)
+
+
+class GroupDigest(ApiModel):
+    """The deterministic summary of a group, counted from its rows (T-029 criterion 9; no model)."""
+
+    offense_count: int
+    first_seen_at: datetime | None = None
+    last_seen_at: datetime | None = None
+    rule_ids: list[int] = Field(default_factory=list)
+    values: list[GroupValueKindSummary] = Field(default_factory=list)
 
 
 class GroupDetail(ApiModel):
@@ -315,6 +349,7 @@ class GroupDetail(ApiModel):
 
     group: GroupSummary
     offenses: list[GroupOffense] = Field(default_factory=list)
+    summary: GroupDigest
     # The group's case decision, whatever it is; None while the group has no case.
     case_id: str | None = None
     case_status: CaseStatus | None = None

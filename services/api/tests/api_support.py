@@ -415,13 +415,19 @@ class Harness:
         return rows[0] if rows else None
 
 
-def build_harness(sessions: async_sessionmaker[AsyncSession], users_file: DevUsersFile) -> Harness:
+def build_harness(
+    sessions: async_sessionmaker[AsyncSession],
+    users_file: DevUsersFile,
+    *,
+    offense_url_template: str | None = None,
+) -> Harness:
     """The app over `sessions`, with the dev users of `users_file` and a fake Temporal."""
     trigger = FakeScheduleTrigger()
     app = build_app(
         sessions=sessions,
         authenticator=DevAuthenticator.from_file(users_file.path),
         schedule_trigger=trigger,
+        offense_url_template=offense_url_template,
     )
     return Harness(
         client=httpx2.AsyncClient(

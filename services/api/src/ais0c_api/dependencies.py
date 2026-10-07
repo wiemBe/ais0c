@@ -48,6 +48,14 @@ def trigger_of(request: Request) -> ScheduleTrigger:
     return request.app.state.schedule_trigger
 
 
+def offense_url_of(request: Request, offense_id: int | None) -> str | None:
+    """The QRadar console page of the offense, or None when no template is set (T-029)."""
+    template: str | None = request.app.state.offense_url_template
+    if template is None or offense_id is None:
+        return None
+    return template.replace("{offense_id}", str(offense_id))
+
+
 async def read_session(request: Request) -> AsyncIterator[AsyncSession]:
     """A session for a request that only reads; the transaction is closed, never committed."""
     async with sessions_of(request)() as session:

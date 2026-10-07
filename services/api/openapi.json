@@ -438,6 +438,17 @@
             ],
             "title": "Offense Id"
           },
+          "qradar_offense_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Qradar Offense Url"
+          },
           "rule_ids": {
             "items": {
               "type": "integer"
@@ -1154,6 +1165,17 @@
         "title": "FieldError",
         "type": "object"
       },
+      "FullAnalysisReason": {
+        "description": "`offenses_seen.full_analysis_reason`: why an offense of a group got a full analysis\n(architecture §9; T-14, T-22, T-62). Not in data-model.md (T-027). Empty for an offense the\ngroup took, a skipped one and one recorded before the column existed.\n\nThe hourly limit counts `limit` and `exempt`; `novelty` and `sample` have counters of their\nown, so they do not use up the limit.",
+        "enum": [
+          "limit",
+          "exempt",
+          "novelty",
+          "sample"
+        ],
+        "title": "FullAnalysisReason",
+        "type": "string"
+      },
       "GroupDetail": {
         "additionalProperties": false,
         "description": "`GET /groups/{group_id}`: the group, its offenses and its evaluation's decision.",
@@ -1209,6 +1231,9 @@
               }
             ]
           },
+          "summary": {
+            "$ref": "#/components/schemas/GroupDigest"
+          },
           "verdict": {
             "anyOf": [
               {
@@ -1221,9 +1246,63 @@
           }
         },
         "required": [
-          "group"
+          "group",
+          "summary"
         ],
         "title": "GroupDetail",
+        "type": "object"
+      },
+      "GroupDigest": {
+        "additionalProperties": false,
+        "description": "The deterministic summary of a group, counted from its rows (T-029 criterion 9; no model).",
+        "properties": {
+          "first_seen_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Seen At"
+          },
+          "last_seen_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Seen At"
+          },
+          "offense_count": {
+            "title": "Offense Count",
+            "type": "integer"
+          },
+          "rule_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Rule Ids",
+            "type": "array"
+          },
+          "values": {
+            "items": {
+              "$ref": "#/components/schemas/GroupValueKindSummary"
+            },
+            "title": "Values",
+            "type": "array"
+          }
+        },
+        "required": [
+          "offense_count"
+        ],
+        "title": "GroupDigest",
         "type": "object"
       },
       "GroupOffense": {
@@ -1250,9 +1329,30 @@
             "title": "First Seen At",
             "type": "string"
           },
+          "full_analysis_reason": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FullAnalysisReason"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "offense_id": {
             "title": "Offense Id",
             "type": "integer"
+          },
+          "qradar_offense_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Qradar Offense Url"
           },
           "status": {
             "$ref": "#/components/schemas/OffenseStatus"
@@ -1327,6 +1427,64 @@
           "status"
         ],
         "title": "GroupSummary",
+        "type": "object"
+      },
+      "GroupValueCount": {
+        "additionalProperties": false,
+        "description": "One value of a group and the number of its offenses that carry it.",
+        "properties": {
+          "offenses": {
+            "title": "Offenses",
+            "type": "integer"
+          },
+          "value": {
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "value",
+          "offenses"
+        ],
+        "title": "GroupValueCount",
+        "type": "object"
+      },
+      "GroupValueKind": {
+        "description": "`offense_group_values.kind`: the values a group keeps of its offenses (T-46, T-62).\nNot in data-model.md (T-027).",
+        "enum": [
+          "source_ip",
+          "destination_ip",
+          "username",
+          "log_source",
+          "category"
+        ],
+        "title": "GroupValueKind",
+        "type": "string"
+      },
+      "GroupValueKindSummary": {
+        "additionalProperties": false,
+        "description": "One kind of value (source IP, user, log source, ...) over the group's offenses.",
+        "properties": {
+          "distinct": {
+            "title": "Distinct",
+            "type": "integer"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/GroupValueKind"
+          },
+          "top": {
+            "items": {
+              "$ref": "#/components/schemas/GroupValueCount"
+            },
+            "title": "Top",
+            "type": "array"
+          }
+        },
+        "required": [
+          "kind",
+          "distinct"
+        ],
+        "title": "GroupValueKindSummary",
         "type": "object"
       },
       "Health": {
@@ -3860,7 +4018,7 @@
     },
     "/api/v1/groups/{group_id}": {
       "get": {
-        "description": "The group, the offenses it holds and the decision of its own case.\n\nA group with no case yet (still being filled) answers with the group and its offenses; an\nunknown `group_id` is a 404.",
+        "description": "The group, the offenses it holds, the deterministic summary and the decision of its own\ncase.\n\nThe summary is counted from the group's rows (no model): the number of offenses, the time\nrange, the rules, and for each kind of value the number of different values and the most\nfrequent ones.\n\nA group with no case yet (still being filled) answers with the group and its offenses; an\nunknown `group_id` is a 404.",
         "operationId": "get_group_api_v1_groups__group_id__get",
         "parameters": [
           {

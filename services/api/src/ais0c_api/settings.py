@@ -11,6 +11,7 @@ Environment variables:
 | `AIS0C_API_DEV_USERS_FILE` | The dev users file `dev` mode reads | none in `dev` |
 | `AIS0C_API_HOST` | Listen address | `127.0.0.1` |
 | `AIS0C_API_PORT` | Listen port | `8000` |
+| `AIS0C_QRADAR_OFFENSE_URL_TEMPLATE` | `https` URL of an offense page in the QRadar console, with one `{offense_id}` placeholder; without it no offense carries a link | none |
 
 `AIS0C_API_AUTH` has no default and only one accepted value: without it, or with a value the
 code does not know, the service refuses to start. Choosing the mode explicitly is what keeps
@@ -31,6 +32,8 @@ AUTH_ENV: Final = "AIS0C_API_AUTH"
 DEV_USERS_FILE_ENV: Final = "AIS0C_API_DEV_USERS_FILE"
 HOST_ENV: Final = "AIS0C_API_HOST"
 PORT_ENV: Final = "AIS0C_API_PORT"
+OFFENSE_URL_TEMPLATE_ENV: Final = "AIS0C_QRADAR_OFFENSE_URL_TEMPLATE"
+OFFENSE_ID_PLACEHOLDER: Final = "{offense_id}"
 
 
 class AuthMode(StrEnum):
@@ -51,6 +54,8 @@ class Settings:
     temporal_namespace: str
     host: str
     port: int
+    # The QRadar console's offense page with `{offense_id}` in it; None when no link is wanted.
+    qradar_offense_url_template: str | None = None
 
     @classmethod
     def from_env(cls, environ: Mapping[str, str] | None = None) -> "Settings":
@@ -80,6 +85,9 @@ class Settings:
             raise SettingsError(f"{PORT_ENV} must be a port number") from None
         if not 1 <= port <= 65535:
             raise SettingsError(f"{PORT_ENV} must be between 1 and 65535")
+        template = env.get(OFFENSE_URL_TEMPLATE_ENV, "").strip() or None
+        if template is not None:
+            _check_offense_url_template(template)
         return cls(
             auth_mode=mode,
             dev_users_file=Path(users_file) if users_file else None,
@@ -88,8 +96,23 @@ class Settings:
             # Not 0.0.0.0: the API is reached through the UI's own origin, not from the network.
             host=env.get(HOST_ENV, "").strip() or "127.0.0.1",
             port=port,
+            qradar_offense_url_template=template,
         )
 
     def temporal_target(self) -> tuple[str, str]:
         """`(address, namespace)` for a Temporal client."""
         return self.temporal_address, self.temporal_namespace
+
+
+def _check_offense_url_template(template: str) -> None:
+    """`https` and one `{offense_id}`: a link that leaves the console's origin or cannot name an
+    offense is a setting error, not a broken link in the UI."""
+    if not template.startswith("https://"):
+        raise SettingsError(f"{OFFENSE_URL_TEMPLATE_ENV} must start with https://")
+    if template.count(OFFENSE_ID_PLACEHOLDER) != 1:
+        raise SettingsError(
+            f"{OFFENSE_URL_TEMPLATE_ENV} must contain {OFFENSE_ID_PLACEHOLDER} exactly once"
+        )
+    leftover = template.replace(OFFENSE_ID_PLACEHOLDER, "")
+    if "{" in leftover or "}" in leftover:
+        raise SettingsError(f"{OFFENSE_URL_TEMPLATE_ENV} has braces besides the placeholder")
