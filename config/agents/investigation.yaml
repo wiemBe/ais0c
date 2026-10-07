@@ -10,9 +10,12 @@ output_schema: InvestigationResult
 toolset_profile: qradar-investigate-read
 max_steps: 30
 budgets:
-  tokens: 300000
+  # T-062 (T-85): the token limit is a runaway guard, ~2x the largest completed run, not a cost
+  # limit; the binding limits are the wall clock (SLA), max_steps and the tool calls. The wall
+  # clock is decision T-81's: 360 s, 20% over the largest completed T-055 run (293.8 s).
+  tokens: 600000
   tool_calls: 24
-  wall_clock_seconds: 300
+  wall_clock_seconds: 360
 autonomy: L0
 can_delegate: false
 prompt: prompts/investigation/v2.md

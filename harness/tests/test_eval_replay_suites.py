@@ -453,7 +453,7 @@ def test_the_investigation_task_is_the_workers() -> None:
         played.evaluated_moment(stored),  # type: ignore[attr-defined]
     )
     assert task.task.budget == found.budget_for(played)
-    assert (task.task.budget.tokens, task.task.budget.tool_calls) == (250000, 24)
+    assert (task.task.budget.tokens, task.task.budget.tool_calls) == (600000, 24)
     assert task.skill is not None
     assert task.skill.ref.skill_id == "windows-dcsync"
     assert [claim.text for claim in task.triage.claims] == [

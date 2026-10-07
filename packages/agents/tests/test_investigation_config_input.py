@@ -48,9 +48,9 @@ def test_manifest_has_the_required_values_and_loads_against_the_registry() -> No
     assert raw["toolset_profile"] == "qradar-investigate-read"
     assert raw["max_steps"] == 30
     assert raw["budgets"] == {
-        "tokens": 300000,
+        "tokens": 600000,
         "tool_calls": 24,
-        "wall_clock_seconds": 300,
+        "wall_clock_seconds": 360,
     }
     assert raw["prompt"] == "prompts/investigation/v2.md"
     assert raw["shared_rules"] == "prompts/_shared/rules/v2.md"
@@ -86,9 +86,19 @@ def test_input_is_local_bounded_and_has_no_triage_rationale() -> None:
         InvestigationTask.model_validate(task.model_dump() | {"knowledge": [runbook()] * 11})
 
 
-@pytest.mark.parametrize("skill_id", ["password-spraying", "vpn-new-country", "windows-dcsync"])
-def test_the_draft_skills_token_budget_fits_one_investigation(skill_id: str) -> None:
-    # T-048 criterion 2 (decision T-52): 250 000 tokens per skill, under the manifest's 300 000.
+@pytest.mark.parametrize(
+    ("skill_id", "tokens"),
+    [
+        # T-062: the measured skill (its suite sk-dcs-01-03) follows the investigation's guard.
+        ("windows-dcsync", 600000),
+        # The unmeasured drafts keep their starting values until their suites measure them.
+        ("password-spraying", 250000),
+        ("vpn-new-country", 250000),
+    ],
+)
+def test_the_draft_skills_token_budget_fits_one_investigation(skill_id: str, tokens: int) -> None:
+    # T-062 (decision T-85): a skill's token limit is a runaway guard like the manifest's own;
+    # a skill run never exceeds the investigation run's token budget.
     path = REPO_ROOT / "skills" / skill_id / "1.0.0" / "skill.yaml"
     raw = yaml.safe_load(path.read_text(encoding="utf-8"))
     manifest = load_manifest(
@@ -96,8 +106,8 @@ def test_the_draft_skills_token_budget_fits_one_investigation(skill_id: str) -> 
     )
 
     assert raw["status"] == "draft"
-    assert raw["budgets"]["tokens"] == 250000
-    assert raw["budgets"]["tokens"] < manifest.budgets.tokens == 300000
+    assert raw["budgets"]["tokens"] == tokens
+    assert raw["budgets"]["tokens"] <= manifest.budgets.tokens == 600000
 
 
 def test_every_input_reaches_the_model_in_its_own_trust_layer() -> None:

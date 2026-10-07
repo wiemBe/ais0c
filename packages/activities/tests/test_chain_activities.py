@@ -474,7 +474,7 @@ async def test_the_router_lists_the_candidates_of_each_plan_agent(
     )
 
     assert listed == [
-        ("investigation", ref_of(skills), Budget(tokens=250000, tool_calls=24, seconds=300))
+        ("investigation", ref_of(skills), Budget(tokens=600000, tool_calls=24, seconds=360))
     ]
     assert (
         await ActivityEnvironment().run(
@@ -494,7 +494,7 @@ async def test_drafts_are_candidates_in_dev(sessions: SessionFactory, tmp_path: 
     )
 
     assert listed == [
-        ("investigation", ref_of(registry), Budget(tokens=250000, tool_calls=24, seconds=300))
+        ("investigation", ref_of(registry), Budget(tokens=600000, tool_calls=24, seconds=360))
     ]
 
 

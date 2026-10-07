@@ -50,6 +50,7 @@ from pydantic_ai.messages import (
     ModelMessage,
     ModelRequest,
     ModelResponse,
+    RetryPromptPart,
     ToolCallPart,
     UserPromptPart,
 )
@@ -660,6 +661,21 @@ def _requests(messages: Sequence[ModelMessage], *, budget_tokens: int) -> list[d
     return requests
 
 
+def _output_retries(messages: Sequence[ModelMessage]) -> int:
+    """How often the model was asked to correct its output (T-80 (2), T-062).
+
+    The same count the harness reports (`ais0c_harness.eval.evaluate.retry_prompts`): a
+    `RetryPromptPart` for the output tool, or without a tool name.
+    """
+    return sum(
+        1
+        for message in messages
+        if isinstance(message, ModelRequest)
+        for part in message.parts
+        if isinstance(part, RetryPromptPart) and part.tool_name in (None, OUTPUT_TOOL)
+    )
+
+
 def _report(
     before: _Offense,
     after: _Offense,
@@ -724,6 +740,7 @@ def _report(
         "budget_exhausted_gap": result is not None
         and any(gap.reason is DataGapReason.BUDGET_EXHAUSTED for gap in result.data_gaps),
         "model_requests": sum(isinstance(message, ModelResponse) for message in run.messages),
+        "output_retries": _output_retries(run.messages),
         # T-051: what each request cost, and whether the reserve had run out before the next one.
         "requests": _requests(run.messages, budget_tokens=task.task.budget.tokens),
         "tokens": run.usage.tokens,

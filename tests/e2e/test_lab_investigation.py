@@ -27,7 +27,13 @@ import pytest
 import yaml
 from e2e_support import MODEL_REGISTRY, REPO_ROOT
 from pydantic import BaseModel, ConfigDict
-from pydantic_ai.messages import ModelRequest, ModelResponse, UserPromptPart
+from pydantic_ai.messages import (
+    ModelMessage,
+    ModelRequest,
+    ModelResponse,
+    RetryPromptPart,
+    UserPromptPart,
+)
 from sqlalchemy import select
 
 from ais0c_activities import (
@@ -52,6 +58,7 @@ from ais0c_agents import (
     load_manifest,
     load_model_registry,
 )
+from ais0c_agents.builder import OUTPUT_TOOL
 from ais0c_agents.gateway_http import HttpGatewayClient
 from ais0c_agents.runner import FINAL_ANSWER_PROMPT
 from ais0c_contracts import (
@@ -475,6 +482,21 @@ async def _cleanup_searches(
     return len(search_ids)
 
 
+def _output_retries(messages: Sequence[ModelMessage]) -> int:
+    """How often the model was asked to correct its output (T-80 (2), T-062).
+
+    The same count the harness reports (`ais0c_harness.eval.evaluate.retry_prompts`): a
+    `RetryPromptPart` for the output tool, or without a tool name.
+    """
+    return sum(
+        1
+        for message in messages
+        if isinstance(message, ModelRequest)
+        for part in message.parts
+        if isinstance(part, RetryPromptPart) and part.tool_name in (None, OUTPUT_TOOL)
+    )
+
+
 def _report(
     before: _Offense,
     after: _Offense,
@@ -550,6 +572,7 @@ def _report(
         ],
         "ariel_searches_cleaned": searches_cleaned,
         "model_requests": sum(isinstance(message, ModelResponse) for message in run.messages),
+        "output_retries": _output_retries(run.messages),
         "tools_withdrawn": any(
             isinstance(part, UserPromptPart) and part.content == FINAL_ANSWER_PROMPT
             for message in run.messages

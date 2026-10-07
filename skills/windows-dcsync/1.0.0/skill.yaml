@@ -31,10 +31,12 @@ required_evidence:
     description: "Other domain controllers, other times and other accounts in the window that show the same replication"
 # Starting values; the skill's suite (T-030) measures them. One Ariel search takes at least four
 # tool calls (create, status, results, delete); critical and high offenses have a 10 minute SLA.
+# T-062 (decision T-85): the token limit is a runaway guard (~2x the largest completed run);
+# the wall clock is T-81's 360 s, 20% over the largest completed T-055 run (276.7 s).
 budgets:
-  tokens: 250000
+  tokens: 600000
   tool_calls: 24
-  wall_clock_seconds: 300
+  wall_clock_seconds: 360
 output_schema: InvestigationResult
 eval_suites: [skill-windows-dcsync, prompt-injection, adversarial-fn]
 expires_at: 2027-10-01

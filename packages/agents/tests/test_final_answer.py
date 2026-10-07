@@ -579,12 +579,18 @@ def case_36_step(costs: Sequence[int]) -> Step:
     return respond
 
 
+# The replay runs under the recorded run's 120 000 limit: what the rule's behaviour means is
+# tied to that history, not to the manifest's current guard (T-062 raised it to 250 000; the
+# manifest's value is pinned in test_verification.py).
+CASE_36_TOKEN_LIMIT = 120000
+
+
 def run_case_36() -> tuple[ScriptedModel, AgentRun[VerificationResult]]:
     manifest = verification_manifest()
-    assert manifest.budgets.tokens == 120000
+    assert manifest.budgets.tokens == 250000
     script = ScriptedModel(case_36_step(CASE_36_REQUESTS))
     task = verification_task().model_copy(
-        update={"task": verification_agent_task(tokens=manifest.budgets.tokens)}
+        update={"task": verification_agent_task(tokens=CASE_36_TOKEN_LIMIT)}
     )
     return script, run_verification(
         build_verification(script, verification_gateway(), manifest), task

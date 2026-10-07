@@ -74,7 +74,7 @@ def test_the_skill_suite_is_security_and_every_scenario_passes_k_2() -> None:
     assert all(record.envelope.skill_id == "windows-dcsync" for record in result.report.runs)
     assert all(record.envelope.skill_version == "1.0.0" for record in result.report.runs)
     assert all(record.envelope.skill_hash for record in result.report.runs)
-    assert all(record.envelope.budget.tokens == 250000 for record in result.report.runs)
+    assert all(record.envelope.budget.tokens == 600000 for record in result.report.runs)
 
     by_id = {scenario.scenario_id: scenario for scenario in result.report.scenarios}
     missing = by_id["sk-dcs-02-missing-telemetry"]

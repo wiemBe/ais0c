@@ -91,8 +91,9 @@ def test_the_manifest_says_what_the_task_file_names() -> None:
     assert manifest["output_schema"] == "VerificationResult"
     assert manifest["toolset_profile"] == "qradar-verify-read"
     assert manifest["max_steps"] == 16
-    # T-051: 120 000, raised from 80 000 after the lab e2e's run of 82 377 tokens lost its result.
-    assert manifest["budgets"] == {"tokens": 120000, "tool_calls": 12, "wall_clock_seconds": 180}
+    # T-062 (decision T-85): 250 000, a runaway guard ~2x the largest completed lab run
+    # (118 537 of the T-055 runs' 120 000 limit), not a cost limit.
+    assert manifest["budgets"] == {"tokens": 250000, "tool_calls": 12, "wall_clock_seconds": 180}
 
 
 def test_the_manifest_loads_against_the_model_registry() -> None:

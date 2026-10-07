@@ -22,16 +22,17 @@ def test_the_plan_budget_defaults_to_the_task_values() -> None:
         case_url_base=BASE,
     )
     assert (settings.plan_tokens, settings.plan_tool_calls, settings.plan_seconds) == (
-        440000,
+        900000,
         40,
-        480,
+        600,
     )
-    assert settings.plan_budget == Budget(tokens=440000, tool_calls=40, seconds=480)
+    assert settings.plan_budget == Budget(tokens=900000, tool_calls=40, seconds=600)
 
 
 def test_the_default_plan_tokens_pay_for_investigation_and_verification() -> None:
-    # T-048 criterion 2 (decision T-52), T-051: a plan of both agents fits the default plan
-    # budget. Verification's 120 000 is what its lab run needed (82 377 tokens, 8 requests).
+    # T-048 criterion 2 (decision T-52), T-051, T-062: a plan of both agents fits the default
+    # plan budget. Verification's 250 000 and Investigation's 600 000 are the runaway guards of
+    # decision T-85; the plan's 900 000 also pays both agents' wall clocks (360 + 180 = 540 s).
     tokens = [
         yaml.safe_load((REPO_ROOT / f"config/agents/{agent}.yaml").read_text(encoding="utf-8"))[
             "budgets"
@@ -39,12 +40,25 @@ def test_the_default_plan_tokens_pay_for_investigation_and_verification() -> Non
         for agent in ("investigation", "verification")
     ]
 
-    assert tokens == [300000, 120000]
+    assert tokens == [600000, 250000]
     assert (
         sum(tokens)
         <= CaseSettings(
             case_url_base=BASE,
         ).plan_tokens
+    )
+    seconds = [
+        yaml.safe_load((REPO_ROOT / f"config/agents/{agent}.yaml").read_text(encoding="utf-8"))[
+            "budgets"
+        ]["wall_clock_seconds"]
+        for agent in ("investigation", "verification")
+    ]
+
+    assert (
+        sum(seconds)
+        <= CaseSettings(
+            case_url_base=BASE,
+        ).plan_seconds
     )
 
 
@@ -73,7 +87,7 @@ def test_an_unset_or_blank_plan_variable_keeps_its_default() -> None:
         {**CASE_URL_BASE_ENV, "AIS0C_PLAN_TOKENS": "  ", "AIS0C_PLAN_SECONDS": "120"}
     )
 
-    assert settings.plan_budget == Budget(tokens=440000, tool_calls=40, seconds=120)
+    assert settings.plan_budget == Budget(tokens=900000, tool_calls=40, seconds=120)
 
 
 @pytest.mark.parametrize("value", ["0", "-40", "forty", "1.5", "1e5"])

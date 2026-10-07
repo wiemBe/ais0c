@@ -10,9 +10,9 @@
 | `AIS0C_SLA_LOW_MINUTES` | 60 | Agent SLA for medium, low and unrated offenses |
 | `AIS0C_REEVALUATION_MINUTES` | 30 | An update that only brings more events is evaluated again once this long has passed since the last evaluation (D-31) |
 | `AIS0C_AGENT_RETRY_MINUTES` | 5 | Wait before an agent run that the model's outage ended runs once more (D-33) |
-| `AIS0C_PLAN_TOKENS` | 440000 | Plan budget: tokens of all the steps of one evaluation's plan together (T-41) |
+| `AIS0C_PLAN_TOKENS` | 900000 | Plan budget: tokens of all the steps of one evaluation's plan together (T-41). T-062 (T-85): a runaway guard, at least Investigation's and Verification's token budgets together (600 000 + 250 000) |
 | `AIS0C_PLAN_TOOL_CALLS` | 40 | Plan budget: tool calls of all the steps together |
-| `AIS0C_PLAN_SECONDS` | 480 | Plan budget: wall-clock seconds of all the steps together |
+| `AIS0C_PLAN_SECONDS` | 600 | Plan budget: wall-clock seconds of all the steps together. T-062 (T-81): Investigation's and Verification's wall clocks together (360 s + 180 s); the critical/high SLA is 10 minutes |
 | `AIS0C_QA_SAMPLE_PERCENT` | 10 | Low and medium FP decisions sampled for operator review (S-10) |
 | `AIS0C_QA_UNDEFINED_SAMPLE_PERCENT` | 30 | The same when a rule of the offense is undefined in the Analysis Catalog or not in it (D-35) |
 
@@ -23,8 +23,8 @@ link. The group limit, the settle time and the SLA defaults are the values of ar
 interval the one of D-31 and the retry wait the one of task T-014; the retry wait is also the
 re-evaluation interval of a case without an AI decision (T-30 (2)). §9 gives no number for the
 concurrent case limit; 10 is this package's choice. The plan budget's defaults are those of
-task T-044; T-030 measures them. The sample rates are those of decision T-42; 0 turns sampling
-off.
+task T-044, raised by T-062; T-030 measures them. The sample rates are those of decision T-42;
+0 turns sampling off.
 """
 
 import os
@@ -75,9 +75,9 @@ class CaseSettings:
     sla_low: timedelta = timedelta(minutes=60)
     reevaluation_interval: timedelta = timedelta(minutes=30)
     agent_retry_delay: timedelta = timedelta(minutes=5)
-    plan_tokens: int = 440000
+    plan_tokens: int = 900000
     plan_tool_calls: int = 40
-    plan_seconds: int = 480
+    plan_seconds: int = 600
     qa_sample_percent: int = 10
     qa_undefined_sample_percent: int = 30
 
