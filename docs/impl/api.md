@@ -47,11 +47,11 @@ Rol sütunu, o işlemi yapabilen en düşük rolü gösterir. `hunter`, `operato
 |---|---|---|---|
 | GET | `/catalog/rules` | operator | Filtre: `defined`, `mode`, `qradar_enabled`, `missing` (QRadar'da artık olmayanlar), `q` |
 | GET | `/catalog/rules/{rule_id}` | operator | Tek kural (T-028) |
-| PUT | `/catalog/rules/{rule_id}` | admin | Gövde: `{ mode, min_level?, has_automated_action, context_note?, attack_techniques? }` |
-| POST | `/catalog/rules/{rule_id}/accept-draft` | admin | AI'ın önerdiği açıklamayı onaylar |
+| PUT | `/catalog/rules/{rule_id}` | admin | Gövde: `{ mode, min_level?, has_automated_action, context_note?, attack_techniques? }`. Çift kontrol: 202 `{ change_id }`, ikinci admin onaylayınca yazılır (T-77). |
+| POST | `/catalog/rules/{rule_id}/accept-draft` | admin | AI'ın önerdiği açıklamayı onaylar. Çift kontrol: 202 `{ change_id }` (T-77). |
 | GET | `/catalog/log-sources` | operator | Filtre: `defined`, `in_scope`, `missing`, `q` |
 | GET | `/catalog/log-sources/{log_source_id}` | operator | Tek log source (T-028) |
-| PUT | `/catalog/log-sources/{log_source_id}` | admin | Gövde: `{ description?, owner?, criticality?, in_scope, context_note? }` |
+| PUT | `/catalog/log-sources/{log_source_id}` | admin | Gövde: `{ description?, owner?, criticality?, in_scope, context_note? }`. Çift kontrol: 202 `{ change_id }` (T-77). |
 | POST | `/catalog/sync` | admin | QRadar'dan senkronu hemen başlatır (`KnowledgeSync`) |
 
 ### Kritik varlıklar ve alıcılar
@@ -59,12 +59,26 @@ Rol sütunu, o işlemi yapabilen en düşük rolü gösterir. `hunter`, `operato
 | Metot | Yol | Rol | Açıklama |
 |---|---|---|---|
 | GET | `/critical-assets` | operator | |
-| POST | `/critical-assets` | admin | Gövde: `{ kind, value, label, level }` |
-| DELETE | `/critical-assets/{id}` | admin | |
+| POST | `/critical-assets` | admin | Gövde: `{ kind, value, label, level }`. Çift kontrol: 202 `{ change_id }` (T-77). Değer listede zaten varsa 409 `critical_asset.exists`. |
+| DELETE | `/critical-assets/{id}` | admin | Çift kontrol: 202 `{ change_id }` (T-77). |
 | GET | `/notification-recipients` | admin | |
 | PUT | `/notification-recipients/{list_name}` | admin | Gövde: `{ emails: [] }`. Yeni bir grup adı grubu oluşturur. İzinli alan adı dışındaki adres reddedilir. Bir yönlendirmenin kullandığı grubu boşaltmak 409'dur (`notification_recipients.group_in_use`, T-028). |
 | GET | `/notification-routes` | admin | Uyarı türü × seviye → alıcı grupları (D-41) |
 | PUT | `/notification-routes` | admin | Gövde: `{ routes: [{ kind, level?, list_name }] }`. Tablonun tamamını değiştirir; olmayan bir gruba yönlendirme reddedilir. |
+
+### Çift kontrol
+
+D-36 ve T-77: yukarıda "Çift kontrol" diye işaretli istekler nesneyi değiştirmez; `change_approvals`'a `pending` bir kayıt yazar ve 202 `{ change_id }` döner. Başka bir admin onaylayınca değişiklik aynı transaction'da uygulanır ve audit'lenir; nesnenin kendi audit eyleminin (`catalog.rule.update` vb.) aktörü onaylayandır, ayrıntıda `requested_by` ve `change_id` vardır.
+
+| Metot | Yol | Rol | Açıklama |
+|---|---|---|---|
+| GET | `/changes` | admin | Filtre: `status` (`pending`, `approved`, `rejected`), `object_type`; `cursor`, `limit`. Yeniden eskiye `requested_at`. |
+| GET | `/changes/{change_id}` | admin | İstek; nesnenin istekteki ve şimdiki değerleri |
+| POST | `/changes/{change_id}/approve` | admin | İsteyen onaylayamaz (403 `change.self_approval`). Nesne istekten sonra değiştiyse istek `rejected`/`stale` olur ve 409 `change.stale` döner. |
+| POST | `/changes/{change_id}/reject` | admin | Gövde: `{ comment? }`. İsteyen reddedemez (403 `change.self_approval`). |
+| POST | `/changes/{change_id}/withdraw` | admin | Yalnızca isteyen geri çeker (403 `change.not_requester`); kayıt `rejected`/`withdrawn` olur. |
+
+Problem kodları: `change.not_found` (404), `change.self_approval` (403), `change.not_requester` (403), `change.already_decided` (409), `change.stale` (409), `change.pending_exists` (409; aynı nesnenin bekleyen isteği var, gövde `change_id` taşır), `critical_asset.exists` (409).
 
 ### Tuning
 
@@ -106,7 +120,7 @@ Rol sütunu, o işlemi yapabilen en düşük rolü gösterir. `hunter`, `operato
 | GET | `/metrics/agents` | operator | Hata oranı, kota kullanımı, model gecikmesi |
 | GET | `/admin/versions` | admin | Çalışan ajan, prompt, model, policy ve hunt pack sürümleri |
 | GET | `/admin/platform-flags` | operator | Platform bayrakları ve son değişiklikleri; bugün yalnızca kill switch (`writes_enabled`, T-23). Satırı olmayan bayrak kapalıdır. |
-| PUT | `/admin/platform-flags/{name}` | admin | Gövde: `{ enabled, reason }`; `reason` zorunludur. Bilinmeyen bayrak 404'tür. Kapatma her zaman tek adımdır (acil durdurma); açmanın çift kontrole girip girmeyeceğine T-033 karar verir (T-63). |
+| PUT | `/admin/platform-flags/{name}` | admin | Gövde: `{ enabled, reason }`; `reason` zorunludur. Bilinmeyen bayrak 404'tür. Kapatma her zaman tek adımdır (acil durdurma), 200 döner ve bekleyen açma isteğini `stale` yapar. Açma (`enabled: true`) çift kontrole girer: 202 `{ change_id }` (T-63, T-77). |
 | GET | `/me` | operator | Oturumdaki kullanıcı ve rolleri |
 | GET | `/health` | — | Kimlik doğrulama istemez; yalnızca canlılık bilgisi döner |
 

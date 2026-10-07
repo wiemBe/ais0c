@@ -92,9 +92,9 @@ Sıra:
 
 Sıra (2026-10-07):
 
-1. Bitti, `main`'de: T-027–T-030, T-032 (kararlar T-65–T-73); T-052, T-053, T-054 (T-74–T-76; T-054'ün gate'i geçmedi).
-2. Şimdi, paralel: T-056 (düzeltme payı, token ve istek sınırı; Triage'ın gate'inin yeniden koşulması), T-055 (skill suite'i, bütçeler, replay'in eksikleri), T-057 (Orchestrator ve Reporting prompt v2), T-033 (çift kontrol; migration `0011`), T-058 (lab senaryo seti), T-059 (Triage Gold). Çakışma yerleri: T-055, T-057 ve T-059 harness'te (`report.py`, senaryo biçimi).
-3. Sonra: T-060 (T-058'in kuralları lab'a kurulup senaryolar koşulunca), T-031 (H-7, S-12 ve on-prem gate'inden sonra), T-035 (H-6).
+1. Bitti, `main`'de: T-027–T-030, T-032 (kararlar T-65–T-73); T-052, T-053, T-054 (T-74–T-76; T-054'ün gate'i geçmedi); T-033, T-055, T-056, T-058, T-059 (T-79–T-83; Triage'ın güvenlik gate'i T-056'nın koşularında geçti, T-058'in lab kuralları planner tarafından kuruldu).
+2. Şimdi, paralel: T-057 (Orchestrator ve Reporting prompt v2; sürüyor), T-061 (lab kurallarının zip'i QRadar biçiminde), T-062 (bütçeler: v2 ile ölçüm), T-063 (Triage prompt v4). Çakışma yerleri: T-057 ve T-063 prompt sürümlerini sabitleyen testlerde; T-062 ve T-063 `harness/`'ta yalnızca koşu yapar.
+3. Planner: senaryo setinin lab e2e koşuları (`AIS0C_E2E_SCENARIO`) ve kayıtları; sonra T-060. Ardından T-031 (H-7, S-12 ve on-prem gate'inden sonra), T-035 (H-6).
 
 | Görev | Kapsam | Bağımlı olduğu |
 |---|---|---|
@@ -109,6 +109,9 @@ Sıra (2026-10-07):
 | T-058 | Lab senaryo seti (T-78): Kerberoasting, password spraying, WAF (F5 ASM) SQLi/XSS geçti, tarama engellendi, onaylı tarayıcı; log üreticinin yeni türleri, lab kurallarının kaynağı ve eklenti zip'i, e2e'de senaryo seçimi. Dosya: [T-058](tasks/T-058-lab-senaryo-seti.md) | — |
 | T-059 | Triage Gold suite'i (`fixture` modu, T-78'in sekiz senaryosu), kalite senaryolarında saldırı alanlarının isteğe bağlı olması, karar ve seviye doğruluğu metrikleri. Dosya: [T-059](tasks/T-059-triage-gold.md) | T-030 |
 | T-060 | Senaryo setinin lab kayıtları ve replay suite'leri (Investigation, Verification), `vpn-new-country` ve `password-spraying` skill suite'leri. Dosyası kurallar kurulup senaryolar lab'da koşulunca yazılır. | T-055, T-058, kuralların kurulması |
+| T-061 | Lab kurallarının zip'i QRadar'ın içerik export biçiminde (`<custom_rule>`, base64 `rule_data`, CRE test sınıfları, `manifest.txt`); kaynaklar lab'da kurulu kurallarla eşit, kimlikler lab'dakilerle aynı (T-82). Dosya: [T-061](tasks/T-061-lab-kural-zipi.md) | T-058 |
+| T-062 | T-81'in bütçeleri (skill 300.000 token ve 360 s, Investigation 360 s, Verification 150.000, plan 480.000 ve 600 s), v2 prompt'larla k = 5 ölçüm ve kesinleştirme, skill suite'inin gate'i, lab testlerinde çıktı düzeltme sayısı. Dosya: [T-062](tasks/T-062-butceler-v2-olcum.md) | T-055, T-056 |
+| T-063 | Triage prompt v4: tamamen engellenmiş trafik etki göstermez, zararsız bağlam okunmadan yokluk iddiası yok; Gold'un `cited_tools`'u; v3/v4 Gold ve güvenlik suite'leri ölçümü (T-83). Dosya: [T-063](tasks/T-063-triage-prompt-v4.md) | T-059 |
 | T-056 | Son cevabın düzeltme payı: araçlar geri çekilirken bir çıktı düzeltme isteğine de yer kalır (offense 36: Verification'ın `reason`'ı 300 karakteri aştı, düzeltme isteği 120.000'i aştı); Verification ve Investigation prompt v2'de alan sınırları; lab ölçümü. Dosya: [T-056](tasks/T-056-cevap-duzeltme-payi.md) | T-051 |
 | T-031 | Prod shadow dağıtımı: prod compose, LiteLLM prod konfigürasyonu, shadow modu, case, batch ve executor worker'larının compose servisleri (T-33, T-037, T-045), dağıtım notları. Shadow başlamadan model geçiş gate'i on-prem prod modelleriyle koşar ve geçer: dev raporu baseline, on-prem raporu candidate (T-030'un `gate` komutu, T-64) | T-018, T-026, T-030, T-037, T-045, H-7 |
 

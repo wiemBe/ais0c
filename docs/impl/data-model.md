@@ -395,9 +395,12 @@ Kill switch ve benzeri tek noktadan açılıp kapanan bayraklar (T-23).
 | `object_id`, `object_version` | text | |
 | `change` | jsonb | İstenen değişiklik |
 | `requested_by`, `requested_at` | text, timestamptz | |
-| `decided_by`, `decided_at` | text?, timestamptz? | `decided_by` ≠ `requested_by` (veritabanı kısıtı) |
+| `decided_by`, `decided_at` | text?, timestamptz? | `decided_by` ≠ `requested_by` (veritabanı kısıtı). `approved` için `decided_by` zorunludur; geri çekilen ve `stale` olan istekte boştur (T-79). `decided_at` yalnızca karara bağlanmış istekte doludur. |
 | `status` | text | `pending`, `approved`, `rejected` |
-| `reason` | text? | `rejected` için: `rejected_by_admin`, `stale` (nesne istekten sonra değişti), `withdrawn` (isteyen geri çekti) |
+| `reason` | text? | Yalnızca `rejected` için (veritabanı kısıtı): `rejected_by_admin`, `stale` (nesne istekten sonra değişti), `withdrawn` (isteyen geri çekti) |
+| `comment` | text? | İkinci admin'in ret yorumu (T-033) |
+
+Nesne başına en çok bir `pending` istek vardır (kısmi tekil index). `object_version`, nesnenin düzenlenebilir alanlarının hash'idir; sync'in yazdığı alanlar (`qradar_enabled`, `missing_since`) sürüme girmez. Kritik varlık eklemede `object_id` `{kind}:{normalize edilmiş değer}`, sürüm `absent`'tır. Migration `0011`.
 
 Nesne başına en çok bir `pending` kayıt vardır (kısmi tekil index). Migration `0011`, kod T-033.
 
