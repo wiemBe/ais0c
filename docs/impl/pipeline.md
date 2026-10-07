@@ -93,7 +93,7 @@ Sıra:
 Sıra (2026-10-07):
 
 1. Bitti, `main`'de: T-027–T-030, T-032 (kararlar T-65–T-73); T-052, T-053, T-054 (T-74–T-76; T-054'ün gate'i geçmedi); T-033, T-055, T-056, T-058, T-059 (T-79–T-83; Triage'ın güvenlik gate'i T-056'nın koşularında geçti, T-058'in lab kuralları planner tarafından kuruldu).
-2. Bitti, `main`'de (2026-10-07 gece): T-061, T-062 (T-86, T-87). Sürüyor: T-057 (Orchestrator ve Reporting prompt v2), T-063 (Triage prompt v4; ara ölçümde güvenlik gate'i düştü, T-88 eklendi). Verilecek: T-064 (skill kataloğu, ilk parti; GLM 5.3). Çakışma yerleri: T-057 ve T-063 prompt sürümlerini sabitleyen testlerde.
+2. Bitti, `main`'de (2026-10-07 gece): T-061, T-062 (T-86, T-87). T-063 de `main`'de (T-91; güvenlik gate'leri geçti). Sürüyor: T-057 (Orchestrator ve Reporting prompt v2). Verilecek: T-064 (skill kataloğu, ilk parti; GLM 5.3). Çakışma yerleri: T-057 ve T-063 prompt sürümlerini sabitleyen testlerde.
 3. Planner: senaryo setinin lab e2e koşuları (`AIS0C_E2E_SCENARIO`) ve kayıtları; sonra T-060. Ardından T-031 (H-7, S-12 ve on-prem gate'inden sonra), T-035 (H-6).
 
 | Görev | Kapsam | Bağımlı olduğu |
