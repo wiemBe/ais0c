@@ -410,7 +410,8 @@ time.
 - `test_loggen_scenarios.py` — scenario loading/validation and the label file.
 - `test_loggen_lab_scenarios.py` — the T-058 log kinds (wire format, DSM bindings) and the
   scenarios s4-s9 (event counts, labels, the evidence of each decision).
-- `test_lab_rules.py` — the lab rules' sources and the extension zip (`harness/lab/qradar/`).
+- `test_lab_rules.py` — the lab rules' sources, the extension zip (QRadar export format) and its
+  rule XML against the installed rules (`fixtures/lab_rules_reference.xml`; `harness/lab/qradar/`).
 - `test_loggen_lab.py` — `@pytest.mark.lab`; sends to the lab and asserts the
   DSMs parse the events (skipped unless `QRADAR_LAB_URL` and `QRADAR_LAB_TOKEN`
   are set).

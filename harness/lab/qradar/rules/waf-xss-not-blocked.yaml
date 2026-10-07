@@ -14,5 +14,5 @@ conditions:
     value: request_status="alerted"
   - test: threshold
     events: 4
-    window_seconds: 600
+    window_minutes: 10
     same: source_ip

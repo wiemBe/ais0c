@@ -1,10 +1,13 @@
-"""T-058 criterion 3: the lab rules' sources and the extension zip built from them."""
+"""T-058 criterion 3 and T-061: the lab rules' sources and the extension zip built from them."""
 
 from __future__ import annotations
 
+import base64
 import importlib.util
 import json
+import re
 import sys
+import uuid
 import zipfile
 from pathlib import Path
 from types import ModuleType
@@ -14,6 +17,7 @@ import pytest
 import yaml
 
 LAB_DIR = Path(__file__).resolve().parents[1] / "lab" / "qradar"
+REFERENCE = Path(__file__).resolve().parent / "fixtures" / "lab_rules_reference.xml"
 
 
 def _load_builder() -> ModuleType:
@@ -46,10 +50,63 @@ EXPECTED = {
         "source_ip",
     ),
 }
+DCSYNC_UUID = "6b5d5ad0-dd8c-4ff9-b1df-68df3dde66bb"
+TEST_CLASSES = {
+    "DeviceTypeID_Test",
+    "QID_Test",
+    "EventPayload_Test",
+    "Regex_Test",
+    "SrcHost_Test",
+    "functions.MatchCount",
+}
 
 
 def rules_by_scenario() -> dict[str, object]:
     return {rule.scenario: rule for rule in builder.load_rules()}
+
+
+def build(tmp_path: Path) -> Path:
+    return builder.build_zip(tmp_path / "rules.zip", builder.load_rules())
+
+
+def exported_rules(zip_path: Path) -> dict[str, tuple[ET.Element, ET.Element]]:
+    """uuid -> (``<custom_rule>``, the decoded ``<rule>``)."""
+    with zipfile.ZipFile(zip_path) as archive:
+        root = ET.fromstring(archive.read("ais0c-lab-rules.xml"))  # noqa: S314 - built above
+    result = {}
+    for custom in root.findall("custom_rule"):
+        data = base64.b64decode(custom.findtext("rule_data", ""))
+        result[custom.findtext("uuid", "")] = (custom, ET.fromstring(data))  # noqa: S314
+    return result
+
+
+def reference_rules() -> dict[str, ET.Element]:
+    """The installed lab rules, by uuid (the reference is QRadar's own export, decoded)."""
+    text = REFERENCE.read_text(encoding="utf-8")
+    found = re.findall(r"<!-- id \d+ uuid (\S+) -->\n(<rule .*?</rule>)", text, re.S)
+    return {rule_uuid: ET.fromstring(xml) for rule_uuid, xml in found}  # noqa: S314
+
+
+def shape(rule: ET.Element) -> dict[str, object]:
+    """What the rule engine reads: tests in order, negation, every parameter's selection."""
+    tests = [
+        (
+            test.get("name", "").removeprefix("com.q1labs.semsources.cre.tests."),
+            test.get("negate") == "true",
+            [p.findtext("userSelection") for p in test.findall("parameter")],
+        )
+        for test in rule.iter("test")
+    ]
+    actions = rule.find("actions")
+    assert actions is not None
+    return {
+        "tests": tests,
+        "offenseMapping": actions.get("offenseMapping"),
+        "forceOffenseCreation": actions.get("forceOffenseCreation"),
+    }
+
+
+# --- sources ------------------------------------------------------------------------------
 
 
 def test_every_scenario_with_an_offense_has_one_rule_named_and_indexed_as_expected() -> None:
@@ -68,8 +125,7 @@ def test_the_dcsync_rule_keeps_the_conditions_of_pr_t_012() -> None:
         ("log_source_type", "Microsoft Windows Security Event Log"),
         ("qid", 5000849),
         ("payload_contains", "DS-Replication-Get-Changes"),
-        ("username_not_ends_with", "$"),
-        ("username_not_starts_with", "MSOL_"),
+        ("username_not_matches", ["\\$$", "^MSOL_"]),
     ]
 
 
@@ -90,46 +146,71 @@ def test_rules_match_the_log_source_and_text_the_scenarios_emit() -> None:
     assert "Ticket Encryption Type: 0x17" in texts["s4-kerberoasting"]
 
 
-def test_the_zip_holds_a_valid_manifest_and_every_rule(tmp_path: Path) -> None:
-    out = builder.build_zip(tmp_path / "rules.zip", builder.load_rules())
+def threshold(scenario: str) -> dict[str, object]:
+    rule = rules_by_scenario()[scenario]
+    (found,) = [c for c in rule.conditions if c["test"] == "threshold"]  # type: ignore[attr-defined]
+    return found
+
+
+def test_kerberoasting_counts_five_rc4_tickets_of_one_user_in_two_minutes() -> None:
+    counter = threshold("s4-kerberoasting")
+    assert counter["events"] == 5
+    assert counter["window_minutes"] == 2
+    assert counter["same"] == "username"
+    assert "distinct" not in counter
+    assert "distinct_count" not in counter
+
+
+def test_spraying_counts_five_different_usernames_from_one_source_in_five_minutes() -> None:
+    counter = threshold("s5-password-spraying")
+    assert counter["distinct"] == "username"
+    assert counter["distinct_count"] == 5
+    assert counter["same"] == "source_ip"
+    assert counter["window_minutes"] == 5
+    assert "events" not in counter
+
+
+# --- the zip's shape ----------------------------------------------------------------------
+
+
+def test_the_zip_holds_the_export_xml_and_the_manifest(tmp_path: Path) -> None:
+    out = build(tmp_path)
     with zipfile.ZipFile(out) as archive:
-        assert archive.namelist() == ["content.xml", "info.json"]
-        info = json.loads(archive.read("info.json"))
-        root = ET.fromstring(archive.read("content.xml"))  # noqa: S314 - built above
-    assert set(info) == {"name", "version", "description", "rules"}
-    assert info["name"] == "AIS0C LAB rules"
-    names = [rule.get("name", "") for rule in root.iter("rule")]
-    assert names == info["rules"]
-    assert sorted(names) == sorted(name for name, _ in EXPECTED.values())
-    for rule in root.iter("rule"):
+        assert archive.namelist() == ["ais0c-lab-rules.xml", "manifest.txt"]
+        manifest = json.loads(archive.read("manifest.txt"))
+        root = ET.fromstring(archive.read("ais0c-lab-rules.xml"))  # noqa: S314 - built above
+    extension = manifest["doc"]["extension_manifest"]
+    assert manifest["_id"] == "ais0c-lab-rules"
+    assert extension["version"]
+    assert extension["locale"]["en-US"]["extension.name"] == "AIS0C LAB rules"
+    assert root.tag == "content"
+    customs = root.findall("custom_rule")
+    assert len(customs) == len(EXPECTED)
+    for custom in customs:
+        assert custom.findtext("origin") == "USER"
+        assert custom.findtext("rule_type") == "0"
+        for tag in ("rule_data", "uuid", "id", "mod_date", "create_date"):
+            assert custom.findtext(tag)
+
+
+def test_rule_data_is_the_base64_of_a_rule_xml(tmp_path: Path) -> None:
+    rules = exported_rules(build(tmp_path))
+    names = sorted(str(rule.findtext("name")) for _, rule in rules.values())
+    assert names == sorted(name for name, _ in EXPECTED.values())
+    for custom, rule in rules.values():
+        assert rule.tag == "rule"
         assert rule.get("type") == "EVENT"
-        assert rule.get("id")
-        assert rule.find("testDefinitions") is not None
-        assert len(list(rule.iter("test"))) >= 3
-        index = rule.find("responses/offenseIndex")
-        assert index is not None
-        assert index.get("property") in {"username", "sourceip"}
-
-
-def test_offense_index_follows_the_scenarios_natural_key(tmp_path: Path) -> None:
-    out = builder.build_zip(tmp_path / "rules.zip", builder.load_rules())
-    with zipfile.ZipFile(out) as archive:
-        root = ET.fromstring(archive.read("content.xml"))  # noqa: S314 - built above
-    indexed = {
-        rule.get("name"): rule.find("responses/offenseIndex").get("property")  # type: ignore[union-attr]
-        for rule in root.iter("rule")
-    }
-    for name, index_by in EXPECTED.values():
-        assert indexed[name] == ("username" if index_by == "username" else "sourceip")
+        assert rule.get("id") == custom.findtext("id")
+        assert rule.get("overrideid") == rule.get("id")
+        assert rule.get("enabled") == "true"
 
 
 def test_the_build_is_deterministic(tmp_path: Path) -> None:
     first = builder.build_zip(tmp_path / "a.zip", builder.load_rules())
     second = builder.build_zip(tmp_path / "sub" / "b.zip", builder.load_rules())
     assert first.read_bytes() == second.read_bytes()
-    # Rule ids come from the names, so they do not change between builds.
-    assert len({rule.rule_id for rule in builder.load_rules()}) == len(EXPECTED)
-    assert [r.rule_id for r in builder.load_rules()] == [r.rule_id for r in builder.load_rules()]
+    with zipfile.ZipFile(first) as archive:
+        assert {info.date_time for info in archive.infolist()} == {builder.ZIP_TIMESTAMP}
 
 
 def test_the_cli_writes_the_zip(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -139,11 +220,74 @@ def test_the_cli_writes_the_zip(tmp_path: Path, capsys: pytest.CaptureFixture[st
     assert "7 rules" in capsys.readouterr().out
 
 
+# --- the rule XML against the installed rules (criterion 2) ---------------------------------
+
+
+def test_the_reference_holds_the_seven_installed_rules() -> None:
+    assert len(reference_rules()) == 7
+
+
+def test_each_rule_xml_matches_the_installed_rule(tmp_path: Path) -> None:
+    built = exported_rules(build(tmp_path))
+    reference = reference_rules()
+    assert set(built) == set(reference)
+    for rule_uuid, installed in reference.items():
+        _, ours = built[rule_uuid]
+        assert ours.findtext("name") == installed.findtext("name")
+        assert shape(ours) == shape(installed), installed.findtext("name")
+
+
+def test_only_the_expected_test_classes_are_used(tmp_path: Path) -> None:
+    classes = {
+        test.get("name", "").removeprefix("com.q1labs.semsources.cre.tests.")
+        for _, rule in exported_rules(build(tmp_path)).values()
+        for test in rule.iter("test")
+    }
+    assert classes == TEST_CLASSES
+
+
+def test_offense_mapping_follows_the_scenarios_natural_key(tmp_path: Path) -> None:
+    mapping = {"username": "3", "source_ip": "0"}
+    by_name = {
+        str(rule.findtext("name")): rule.find("actions")
+        for _, rule in exported_rules(build(tmp_path)).values()
+    }
+    for name, index_by in EXPECTED.values():
+        actions = by_name[name]
+        assert actions is not None
+        assert actions.get("offenseMapping") == mapping[index_by]
+        assert actions.get("forceOffenseCreation") == "true"
+
+
+# --- identities (criterion 4) -------------------------------------------------------------
+
+
+def test_new_rules_get_a_uuid5_of_their_name_and_dcsync_keeps_the_installed_uuid() -> None:
+    for scenario, (name, _) in EXPECTED.items():
+        rule = rules_by_scenario()[scenario]
+        if scenario == "s2-dcsync":
+            assert rule.rule_uuid == DCSYNC_UUID  # type: ignore[attr-defined]
+        else:
+            expected = uuid.uuid5(uuid.UUID("5d0c1ab0-0000-4000-8000-00000000a150"), name)
+            assert rule.rule_uuid == str(expected)  # type: ignore[attr-defined]
+    assert len({r.rule_uuid for r in builder.load_rules()}) == len(EXPECTED)
+
+
+def test_the_exported_uuids_are_the_installed_ones(tmp_path: Path) -> None:
+    assert set(exported_rules(build(tmp_path))) == set(reference_rules())
+
+
 # --- negative tests: a malformed source is rejected ---------------------------------------
 
 
 def good_rule() -> dict[str, object]:
     return yaml.safe_load((LAB_DIR / "rules" / "kerberoasting.yaml").read_text(encoding="utf-8"))
+
+
+def with_threshold(**counter: object) -> dict[str, object]:
+    base = good_rule()
+    conditions = [c for c in base["conditions"] if c["test"] != "threshold"]  # type: ignore[attr-defined,union-attr]
+    return {**base, "conditions": [*conditions, {"test": "threshold", **counter}]}
 
 
 @pytest.mark.parametrize(
@@ -156,13 +300,62 @@ def good_rule() -> dict[str, object]:
         ({"conditions": [{"test": "payload_regex", "value": "x"}]}, "unknown test"),
         ({"conditions": [{"test": "payload_contains"}]}, "needs"),
         ({"conditions": [{"test": "qid", "value": 1, "extra": 2}]}, "unknown keys"),
+        ({"conditions": [{"test": "log_source_type", "value": "Other DSM"}]}, "log source type"),
+        ({"conditions": [{"test": "username_not_matches", "value": ["("]}]}, "regular expression"),
+        ({"conditions": [{"test": "payload_contains_any", "value": ["a|b"]}]}, "plain words"),
         ({"surprise": True}, "unknown keys"),
+        ({"uuid": "not-a-uuid"}, "uuid"),
         ({"description": " "}, "description"),
     ],
 )
 def test_a_malformed_rule_is_rejected(change: dict[str, object], message: str) -> None:
     with pytest.raises(builder.RuleError, match=message):
         builder.parse_rule({**good_rule(), **change}, "test.yaml")
+
+
+@pytest.mark.parametrize(
+    ("counter", "message"),
+    [
+        ({"events": 5, "window_seconds": 120, "same": "username"}, "minutes"),
+        ({"events": 5, "window_minutes": 1.5, "same": "username"}, "whole number of minutes"),
+        ({"events": 5, "window_minutes": 0, "same": "username"}, "whole number of minutes"),
+        ({"events": 5, "window_minutes": 2, "same": "hostname"}, "same must be"),
+        ({"window_minutes": 2, "same": "username"}, "needs events"),
+        (
+            {"events": 5, "distinct": "username", "window_minutes": 2, "same": "source_ip"},
+            "together",
+        ),
+        (
+            {
+                "events": 10,
+                "distinct": "username",
+                "distinct_count": 5,
+                "window_minutes": 5,
+                "same": "source_ip",
+            },
+            "together",
+        ),
+        ({"distinct": "username", "window_minutes": 5, "same": "source_ip"}, "distinct_count"),
+        (
+            {"events": 5, "distinct_count": 5, "window_minutes": 2, "same": "username"},
+            "needs events",
+        ),
+        (
+            {
+                "distinct": "Service Name",
+                "distinct_count": 5,
+                "window_minutes": 2,
+                "same": "username",
+            },
+            "distinct must be",
+        ),
+    ],
+)
+def test_a_counter_the_rule_engine_cannot_express_is_rejected(
+    counter: dict[str, object], message: str
+) -> None:
+    with pytest.raises(builder.RuleError, match=message):
+        builder.parse_rule(with_threshold(**counter), "test.yaml")
 
 
 def test_duplicate_rule_names_are_rejected(tmp_path: Path) -> None:

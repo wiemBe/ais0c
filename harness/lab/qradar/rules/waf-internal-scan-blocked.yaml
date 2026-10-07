@@ -15,5 +15,5 @@ conditions:
     value: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16]
   - test: threshold
     events: 20
-    window_seconds: 300
+    window_minutes: 5
     same: source_ip
