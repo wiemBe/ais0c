@@ -79,7 +79,7 @@ Test `@pytest.mark.lab` ile işaretlidir. `QRADAR_LAB_URL` ve `QRADAR_LAB_TOKEN`
 | `s5-password-spraying` | Password spraying from one source | kaynak IP `10.50.7.23` | `tp` |
 | `s6-waf-sqli-gecti` | WAF SQL injection not blocked | kaynak IP `198.51.100.23` | `tp`, high |
 | `s7-waf-xss-gecti` | WAF cross-site scripting not blocked | kaynak IP `203.0.113.61` | `tp` veya `suspicious` |
-| `s8-waf-tarama-engellendi` | WAF signature volume from an external source | kaynak IP `192.0.2.88` | `fp` veya low |
+| `s8-waf-tarama-engellendi` | WAF signature volume from an external source | kaynak IP `192.0.2.88` | `tp`, low |
 | `s9-onayli-tarayici` | WAF signature volume from an internal source | kaynak IP `10.30.5.10` | `fp` |
 
 Beklenen karar assert edilmez: ölçümdür. Rapor (`report.json` ve çıktı) `scenario` alanında senaryonun beklenen kararını ve zincirin kararını yan yana yazar. Senaryo seçimi `test_scenario_selection.py` ile (lab'sız) sınanır. `s3-vpn-yeni-ulke` ve `s1-arka-plan` seçilemez: offense açan kuralları yoktur.

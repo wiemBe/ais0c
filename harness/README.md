@@ -324,7 +324,7 @@ chain is expected to reach and why; the e2e test prints it next to the chain's o
 
 `s2-dcsync` (`tp`) and `s3-vpn-yeni-ulke` (unclear) stay in the set; `s3` has no lab rule, so the
 chain test does not select it. `s8` steps are labelled `malicious` (hostile reconnaissance) while
-the expected decision is `fp`/low: the label is about the traffic's origin, the decision about
+the expected decision is `tp`/low: the label is about the traffic's origin, the decision about
 its impact. `s9` is labelled benign throughout.
 
 A lab run sends events at the time it is run, so `s9` cannot show its maintenance window with the

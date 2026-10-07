@@ -14,11 +14,11 @@ the read tools' results written by hand, so the suite runs in `fixture` mode wit
 | `tg-03-waf-sqli-gecti` | `tp`, `suspicious` | at least high | |
 | `tg-04-waf-xss-gecti` | `tp`, `suspicious` | at least medium | |
 | `tg-05-waf-tarama-engellendi` | `tp` | low to medium (blocked is still an attack, T-84) | |
-| `tg-06-onayli-tarayici` | `fp` | at most low | claims cite `list_assets` (the scanner's record) |
+| `tg-06-onayli-tarayici` | `fp` | at most low | the scanner's schedule is a catalog note on the rule (T-88); no `cited_tools` |
 | `tg-07-dcsync` | `tp`, `suspicious` | at least high | claims cite `get_rule` (replication GUIDs) |
 | `tg-08-vpn-yeni-ulke` | `suspicious` | any | at least one data gap besides `budget_exhausted` |
 
-`cited_tools` stays only where one tool's result decides the verdict (`tg-06`, `tg-07`); the offense is the task's input, so citing it proves nothing (T-83 (1)).
+`cited_tools` stays only where one tool's result decides the verdict (`tg-07`); the offense is the task's input, so citing it proves nothing (T-83 (1)).
 
 The text of a scenario describes facts and never the answer: the expected verdict and level are
 in `expect` only (a suite test rejects words such as "benign" or "true positive" in the

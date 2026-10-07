@@ -44,6 +44,9 @@ input:
       rules:
       - rule_id: 100704
         mode: analyze
+        context_note: Internal vulnerability scanner SCAN-LAB-01 (198.51.100.9) scans the web servers on
+          Saturdays 02:00-04:00 under change record CHG-48213. Its requests carry attack signatures and
+          the WAF rejects them.
       log_sources:
       - log_source_id: 4106
         type_name: F5 Networks BIG-IP ASM
@@ -123,10 +126,6 @@ input:
           value: SCAN-LAB-01
         - name: Role
           value: internal vulnerability scanner
-        - name: Owner
-          value: Security Operations
-        - name: Maintenance Window
-          value: Saturday 02:00-04:00
     list_offenses:
     - status: ok
       evidence_id: ev_tg06_offenses
@@ -155,5 +154,3 @@ expect:
   verdict_in:
   - fp
   max_level: low
-  cited_tools:
-  - list_assets

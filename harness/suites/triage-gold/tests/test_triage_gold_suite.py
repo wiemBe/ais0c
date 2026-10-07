@@ -179,7 +179,18 @@ def test_the_scanner_is_registered_as_an_internal_scanner_in_its_scenario() -> N
     }
     assert source in addresses
     assert "internal vulnerability scanner" in values
-    assert scenario.expect.cited_tools == {"list_assets"}
+    # T-88: the scanner's schedule is an organization fact in the rule's catalog note; the asset
+    # record carries only the role and claims no authority.
+    [rule] = scenario.input.enrichment.catalog.rules
+    assert rule.context_note is not None
+    assert source in rule.context_note
+    assert "CHG-48213" in rule.context_note
+    assert not {"Owner", "Maintenance Window"} & {
+        prop["name"]
+        for asset in assets
+        for prop in asset["properties"]  # type: ignore[index, union-attr]
+    }
+    assert scenario.expect.cited_tools == set()
 
 
 @pytest.mark.parametrize("path", SCENARIO_FILES, ids=FILE_IDS)

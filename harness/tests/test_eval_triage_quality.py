@@ -238,14 +238,14 @@ def test_a_budget_exhausted_gap_is_not_the_expected_one() -> None:
 
 
 def test_the_claims_must_cite_the_named_tool() -> None:
-    played = scenario("tg-06-onayli-tarayici")  # cited_tools: list_assets
+    played = scenario("tg-07-dcsync")  # cited_tools: get_rule
     answer: dict[str, JsonValue] = {"claims": [{"text": "The offense.", "evidence_ids": ["ev_1"]}]}
 
     _, evaluation = play(played, answering(played, answer))
 
     assert failed(evaluation) == ["cited_tools"]
     check = next(check for check in evaluation.checks if check.name == "cited_tools")
-    assert "list_assets" in check.detail
+    assert "get_rule" in check.detail
 
 
 def test_the_scripted_answer_meets_every_quality_scenario() -> None:
