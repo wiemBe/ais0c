@@ -337,7 +337,7 @@ async def test_a_lab_decision_is_checked_against_the_source(
     assert {call.intent.tool_id for call in calls} <= ARIEL_TOOLS
     # It ran on its own model and prompt.
     assert row.model_alias == "soc-verifier"
-    assert row.prompt_version == "verification/v1"
+    assert row.prompt_version == "verification/v2"
     # Nothing was written to the offense.
     assert _state(before) == _state(after)
 

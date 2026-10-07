@@ -286,7 +286,7 @@ async def test_closed_dcsync_offense_is_investigated_once(
     assert all(call.intent.run_id == run_id for call in calls)
     assert not any(part in call.intent.tool_id for call in calls for part in FORBIDDEN_TOOL_PARTS)
     assert row.model_alias == "soc-reasoning"
-    assert row.prompt_version == "investigation/v1"
+    assert row.prompt_version == "investigation/v2"
     assert _state(before) == _state(after)
     # A run that reaches its budget completes too (T-048): the report says whether it did.
     assert run.status is RunStatus.COMPLETED, run.error

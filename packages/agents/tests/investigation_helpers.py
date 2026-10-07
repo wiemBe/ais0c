@@ -54,7 +54,7 @@ from .helpers import (
 )
 
 INVESTIGATION_MANIFEST = REPO_ROOT / "config/agents/investigation.yaml"
-INVESTIGATION_PROMPT = "prompts/investigation/v1.md"
+INVESTIGATION_PROMPT = "prompts/investigation/v2.md"
 INVESTIGATION_RUN_ID = "case-4711-investigation-1"
 TOOL_EVIDENCE = "ev_0199a1b2c3d47e8f9a0b1c2d3e4f5a70"
 VALID_AQL = (

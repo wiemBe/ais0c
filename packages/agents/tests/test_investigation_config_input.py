@@ -40,7 +40,7 @@ def test_manifest_has_the_required_values_and_loads_against_the_registry() -> No
     raw = yaml.safe_load(INVESTIGATION_MANIFEST.read_text(encoding="utf-8"))
 
     assert raw["id"] == "investigation"
-    assert raw["version"] == "1.0.0"
+    assert raw["version"] == "1.1.0"
     assert raw["workflow_types"] == ["case"]
     assert raw["model_alias"] == "soc-reasoning"
     assert raw["input_schema"] == "InvestigationTask"
@@ -52,7 +52,7 @@ def test_manifest_has_the_required_values_and_loads_against_the_registry() -> No
         "tool_calls": 24,
         "wall_clock_seconds": 300,
     }
-    assert raw["prompt"] == "prompts/investigation/v1.md"
+    assert raw["prompt"] == "prompts/investigation/v2.md"
     assert raw["shared_rules"] == "prompts/_shared/rules/v2.md"
 
     loaded = load_manifest(INVESTIGATION_MANIFEST, load_model_registry(REPO_ROOT / MODEL_REGISTRY))

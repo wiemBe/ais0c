@@ -1,7 +1,7 @@
 """T-048 criterion 1 (decision T-52), T-051: the run keeps the agent's last answer.
 
-Once the tool call budget is used up, or fewer tokens remain than twice what the next request
-costs at least, the next request offers no function tool and tells the model to answer. A run
+Once the tool call budget is used up, or fewer tokens remain than three times what the next
+request costs at least, the next request offers no function tool and tells the model to answer. A run
 that answers then completes, with a `budget_exhausted` data gap; a model that calls a tool
 anyway ends `budget_exhausted` as before. Agents without tools are not touched.
 
@@ -11,6 +11,9 @@ lost its answer because a tool result made the next request cost more than twice
 while the rule still offered the tools.
 """
 
+from collections.abc import Sequence
+
+import pytest
 from pydantic_ai.messages import (
     ModelMessage,
     ModelRequest,
@@ -21,14 +24,16 @@ from pydantic_ai.messages import (
 from pydantic_ai.models.function import AgentInfo
 from pydantic_ai.usage import RequestUsage, RunUsage, UsageLimits
 
+from ais0c_agents import AgentRun, runner
 from ais0c_agents.runner import (
     FINAL_ANSWER_PROMPT,
+    REQUEST_RESERVE,
     TOKEN_RESERVE_FACTOR,
     TOOL_RESULT_CHARS_PER_TOKEN,
     budget_spent,
 )
 from ais0c_agents.toolset import render_tool_result
-from ais0c_contracts import DataGap, DataGapReason, RunStatus, ToolResult
+from ais0c_contracts import DataGap, DataGapReason, RunStatus, ToolResult, VerificationResult
 
 from .helpers import (
     DOUBTED_CLAIM,
@@ -96,6 +101,18 @@ def while_tools_remain(tool_step: Step, answer_step: Step) -> Step:
     return respond
 
 
+def while_answer_is_new(first: Step, later: Step) -> Step:
+    """`first` the first time the model answers, `later` for every answer after it."""
+    answers = 0
+
+    def respond(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        nonlocal answers
+        answers += 1
+        return (first if answers == 1 else later)(messages, info)
+
+    return respond
+
+
 def tool_return(text: str) -> ModelRequest:
     """The request the model reads a tool result of `text` characters back in."""
     return ModelRequest(parts=[ToolReturnPart(tool_name="get_ariel_search_results", content=text)])
@@ -131,7 +148,7 @@ def budget_gap(source: str) -> DataGap:
 
 
 def test_near_the_token_budget_the_last_request_has_no_tool_and_the_answer_is_kept() -> None:
-    # 10 000 tokens: after two requests of 3 000, 4 000 remain, less than twice the last one.
+    # 14 000 tokens: after two requests of 3 000, 8 000 remain, less than three times the last one.
     script = ScriptedModel(
         costing(3000, call("get_offense", offense_id=4711)),
         costing(3000, call("get_rule", rule_id=100234)),
@@ -141,7 +158,7 @@ def test_near_the_token_budget_the_last_request_has_no_tool_and_the_answer_is_ke
     )
     fake = gateway()
 
-    run = run_triage(build(script, fake, triage_manifest(tokens=10000)))
+    run = run_triage(build(script, fake, triage_manifest(tokens=14000)))
 
     assert run.status is RunStatus.COMPLETED, run.error
     assert (
@@ -271,12 +288,12 @@ def test_a_model_that_calls_a_tool_after_the_token_threshold_ends_budget_exhaust
     )
     fake = gateway()
 
-    run = run_triage(build(script, fake, triage_manifest(tokens=10000)))
+    run = run_triage(build(script, fake, triage_manifest(tokens=14000)))
 
     assert run.status is RunStatus.BUDGET_EXHAUSTED
     assert run.result is None
     assert run.error is not None
-    assert "total_tokens_limit of 10000" in run.error
+    assert "total_tokens_limit of 14000" in run.error
     # The withdrawn tool never reached the gateway.
     assert len(fake.intents) == 2
 
@@ -412,7 +429,7 @@ def test_a_tool_result_bigger_than_the_request_ends_the_run_early_enough_to_answ
     # the same size, and the request after that costs more than the budget, so the run ends
     # `budget_exhausted` with no result. With the result counted, the reserve does not fit, the
     # model answers at once, and the answer is kept with a `budget_exhausted` gap.
-    base = 2000
+    base = 1000
     big = result_tokens(BIG_RESULT)
     budget = 2 * (base + big)
     # The gateway answers the result call with the big set, so the rule reads its real size.
@@ -460,7 +477,7 @@ def test_the_rule_counts_the_tool_result_that_came_after_the_last_request() -> N
     text = "x" * (10_000 * TOOL_RESULT_CHARS_PER_TOKEN)
 
     assert not budget_spent(RunUsage(input_tokens=2300), limits, [last])
-    # 17 700 left, twice the last request is 4 600, twice the next request's floor is 26 600.
+    # 17 700 left, three times the last request is 6 900, three times the next request's floor is 39 900.
     assert budget_spent(RunUsage(input_tokens=2300), limits, [last, tool_return(text)])
     # A result that only a part of the reserve fills leaves the run its tools.
     short = ModelRequest(
@@ -479,16 +496,16 @@ def test_the_rule_reads_the_last_request_and_all_three_budgets() -> None:
         return budget_spent(usage, limits, [response(1), response(last)])
 
     assert not spent(total=0, last=0)
-    assert not spent(total=4000, last=3000)  # 6000 left, twice the last is 6000
-    assert spent(total=4001, last=3000)
+    assert not spent(total=1000, last=3000)  # 9000 left, three times the last is 9000
+    assert spent(total=1001, last=3000)
     assert spent(total=100, last=100, tool_calls=5)
     assert not spent(total=100, last=100, tool_calls=4)
     assert not budget_spent(RunUsage(input_tokens=10**9), UsageLimits(total_tokens_limit=None), [])
     assert not budget_spent(RunUsage(), None, [])
 
-    requests = UsageLimits(request_limit=3)
-    assert not budget_spent(RunUsage(requests=1), requests, [])
-    assert budget_spent(RunUsage(requests=2), requests, [])
+    requests = UsageLimits(request_limit=3)  # the answer and one correction stay
+    assert not budget_spent(RunUsage(requests=0), requests, [])
+    assert budget_spent(RunUsage(requests=1), requests, [])
 
 
 def test_with_one_model_request_left_the_run_returns_a_budget_gap() -> None:
@@ -497,10 +514,148 @@ def test_with_one_model_request_left_the_run_returns_a_budget_gap() -> None:
         answer(triage_output(alias(1))),
     )
 
-    run = run_triage(build(script, gateway(), triage_manifest(max_steps=2)))
+    run = run_triage(build(script, gateway(), triage_manifest(max_steps=3)))
 
     assert run.status is RunStatus.COMPLETED
     assert [bool(tools) for tools in offered_tools(script)] == [True, False]
     assert told_to_answer(script) == [False, True]
     assert run.result is not None
     assert run.result.data_gaps == [budget_gap("triage")]
+
+
+# --- case-36: a correction that crossed the budget (T-056 criterion 1, 2) --------------------------
+
+# The Verification run of QRadar lab offense 36 on 2026-10-07 (main 8d33c73), request by request:
+# each request's input and output tokens, as the Temporal history of `case-36-verification-1`
+# records them in its `agent__verification__model_request` activities' usage. The first nine
+# requests (96 695 tokens) were Ariel search calls; the tenth was `final_result` with a `reason`
+# over 300 characters, and the eleventh was Pydantic AI's correction request. The tenth request
+# was the first the old rule (factor 2) withdrew the tools at: 23 305 tokens were left, less
+# than twice the 13 950 of the ninth request. Its answer needed a correction, and 110 076 plus
+# the correction's 12 901 crossed the 120 000 limit, so the corrected answer was thrown away.
+CASE_36_REQUESTS: tuple[int, ...] = (
+    7424 + 657,
+    8468 + 138,
+    9009 + 160,
+    9503 + 405,
+    10020 + 625,
+    11031 + 131,
+    11567 + 173,
+    12678 + 756,
+    13828 + 122,
+    11126 + 2255,
+    11927 + 974,
+)
+LONG_REASON = "The evidence shows another account. " * 9  # 324 characters, over the limit of 300
+
+
+def case_36_step(costs: Sequence[int]) -> Step:
+    """The recorded run: search calls while the tools are offered, then an answer.
+
+    The first answer carries a `reason` over the length limit and the next one is the model's
+    correction; which request that is depends on where the rule withdraws the tools.
+    """
+    requests = 0
+    answered = False
+
+    def respond(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        nonlocal requests, answered
+        cost = costs[min(requests, len(costs) - 1)]
+        requests += 1
+        if info.function_tools:
+            step = call("get_ariel_search_status", search_id="search-1")
+        else:
+            reason = "The account is a user account." if answered else LONG_REASON
+            answered = True
+            step = answer(
+                verification_output(
+                    alias(1),
+                    agrees=False,
+                    disagreements=[disagreement(DOUBTED_CLAIM, reason)],
+                )
+            )
+        return costing(cost, step)(messages, info)
+
+    return respond
+
+
+def run_case_36() -> tuple[ScriptedModel, AgentRun[VerificationResult]]:
+    manifest = verification_manifest()
+    assert manifest.budgets.tokens == 120000
+    script = ScriptedModel(case_36_step(CASE_36_REQUESTS))
+    task = verification_task().model_copy(
+        update={"task": verification_agent_task(tokens=manifest.budgets.tokens)}
+    )
+    return script, run_verification(
+        build_verification(script, verification_gateway(), manifest), task
+    )
+
+
+def test_case_36_with_the_old_reserve_loses_the_corrected_answer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(runner, "TOKEN_RESERVE_FACTOR", 2)
+
+    script, run = run_case_36()
+
+    assert run.status is RunStatus.BUDGET_EXHAUSTED
+    assert run.result is None
+    assert run.error is not None
+    assert "total_tokens_limit of 120000" in run.error
+    assert len(script.requests) == 11
+    assert [bool(tools) for tools in offered_tools(script)] == [True] * 9 + [False] * 2
+
+
+def test_case_36_keeps_the_answer_with_a_reserve_for_one_correction() -> None:
+    script, run = run_case_36()
+
+    assert run.status is RunStatus.COMPLETED, run.error
+    assert run.result is not None
+    assert [item.reason for item in run.result.disagreements] == ["The account is a user account."]
+    assert run.result.data_gaps == [budget_gap("verification")]
+    # After the eighth request 37 255 tokens were left, less than three times the 13 434 it cost:
+    # the tools go at the ninth request, one request earlier than with the old reserve.
+    assert [bool(tools) for tools in offered_tools(script)] == [True] * 8 + [False] * 2
+    assert told_to_answer(script) == [False] * 8 + [True] * 2
+    # The ninth request answered, the tenth corrected it: two requests fewer than the record.
+    assert len(script.requests) == 10
+    assert run.usage.tokens == sum(CASE_36_REQUESTS[:8]) + CASE_36_REQUESTS[8] + CASE_36_REQUESTS[9]
+    assert run.usage.tokens <= 120000
+    assert TOKEN_RESERVE_FACTOR == 3
+
+
+# --- the request limit keeps the answer and one correction (T-056 criterion 2) ---------------------
+
+
+@pytest.mark.parametrize(
+    ("reserve", "status"),
+    [(1, RunStatus.BUDGET_EXHAUSTED), (REQUEST_RESERVE, RunStatus.COMPLETED)],
+)
+def test_at_the_request_limit_an_answer_that_needs_a_correction_is_corrected(
+    monkeypatch: pytest.MonkeyPatch, reserve: int, status: RunStatus
+) -> None:
+    # `max_steps` 4: a reserve of one (the old rule) offers the tools to the third request, whose
+    # answer is sent back and the correction would be a fifth request. A reserve of two withdraws
+    # them at the third request, so answer and correction are the third and the fourth.
+    monkeypatch.setattr(runner, "REQUEST_RESERVE", reserve)
+    script = ScriptedModel(
+        call("get_offense", offense_id=4711),
+        call("get_rule", rule_id=100234),
+        while_tools_remain(
+            call("get_rule", rule_id=100234),
+            while_answer_is_new(
+                answer(triage_output("ev_9")),  # an alias the run never made: sent back
+                answer(triage_output(alias(1))),
+            ),
+        ),
+    )
+
+    run = run_triage(build(script, gateway(), triage_manifest(max_steps=4)))
+
+    assert run.status is status, run.error
+    if status is RunStatus.COMPLETED:
+        assert run.result is not None
+        assert run.result.data_gaps == [budget_gap("triage")]
+        assert [bool(tools) for tools in offered_tools(script)] == [True, True, False, False]
+    else:
+        assert run.result is None

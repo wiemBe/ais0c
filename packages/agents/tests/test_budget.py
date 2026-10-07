@@ -113,9 +113,11 @@ def test_prompt_states_the_tool_call_budget() -> None:
     assert "Budget: at most 2 tool calls." in (info.instructions or "")
 
 
-def test_prompt_budget_leaves_a_step_for_the_answer() -> None:
+def test_prompt_budget_leaves_two_steps_for_the_answer() -> None:
     task_budget = Budget(tokens=60000, tool_calls=12, seconds=180)
 
-    assert prompt_tool_budget(triage_manifest(), task_budget) == 7  # max_steps 8
+    assert (
+        prompt_tool_budget(triage_manifest(), task_budget) == 6
+    )  # max_steps 8: the answer and one correction are kept back
     assert prompt_tool_budget(triage_manifest(max_steps=20), task_budget) == 12
-    assert prompt_tool_budget(triage_manifest(max_steps=1), task_budget) == 0
+    assert prompt_tool_budget(triage_manifest(max_steps=2), task_budget) == 0

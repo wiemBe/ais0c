@@ -175,8 +175,8 @@ async def test_the_runtime_builds_the_chain_agents(environ: dict[str, str]) -> N
             for agent_id, agent in agents.items()
         } == {
             "orchestrator": ("soc-reasoning", "", "orchestrator/v1", False),
-            "investigation": ("soc-reasoning", "qradar-investigate-read", "investigation/v1", True),
-            "verification": ("soc-verifier", "qradar-verify-read", "verification/v1", False),
+            "investigation": ("soc-reasoning", "qradar-investigate-read", "investigation/v2", True),
+            "verification": ("soc-verifier", "qradar-verify-read", "verification/v2", False),
             "reporting": ("soc-report", "", "reporting/v1", False),
         }
         assert all(

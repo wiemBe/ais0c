@@ -8,8 +8,11 @@ import hashlib
 import re
 import shutil
 from pathlib import Path
+from typing import Any
 
 import pytest
+import yaml
+from pydantic import BaseModel
 
 from ais0c_agents import (
     PromptError,
@@ -20,7 +23,14 @@ from ais0c_agents import (
     render_org_context,
 )
 from ais0c_agents.prompts import prompt_hash
-from ais0c_contracts import CatalogContext, CatalogLogSource, CatalogMode, CatalogRule
+from ais0c_contracts import (
+    CatalogContext,
+    CatalogLogSource,
+    CatalogMode,
+    CatalogRule,
+    InvestigationResult,
+    VerificationResult,
+)
 
 from .helpers import (
     NONCE,
@@ -44,13 +54,17 @@ PROMPTS_DOC = REPO_ROOT / "docs/impl/prompts.md"
 SHARED_RULES_V1 = "prompts/_shared/rules/v1.md"
 TRIAGE_PROMPT_V1 = "prompts/triage/v1.md"
 TRIAGE_PROMPT_V2 = "prompts/triage/v2.md"
+VERIFICATION_PROMPT_V1 = "prompts/verification/v1.md"
+INVESTIGATION_PROMPT_V1 = "prompts/investigation/v1.md"
 # sha256 of prompts/_shared/rules.md, prompts/triage/v1.md and prompts/triage/v2.md before the
-# next version. The rules moved to v1.md unchanged: the prompt hashes of earlier runs depend on
+# next version, and of the verification and investigation v1 (T-056). The rules moved to v1.md unchanged: the prompt hashes of earlier runs depend on
 # these bytes; v1 and v2 stay for the same reason (docs/impl/prompts.md).
 OLD_FILES_SHA256 = {
     SHARED_RULES_V1: "3b42df82c2ee0701f205c5ac4913576a5f6fdbed657c6c864104d1da63c01e10",
     TRIAGE_PROMPT_V1: "6df8fcd93dc3c9dbd280b51747f33c4addd2835f21587f08ebde657d9c85a51f",
     TRIAGE_PROMPT_V2: "1a70f010c4526580445e88063ef2284b035f5e67ef1b7ea1d35d9ea4a8590019",
+    VERIFICATION_PROMPT_V1: "5c4bd44b762dc34a00dfd8bfef64a0784fb3ddd8736c78833510812ac9ca27d5",
+    INVESTIGATION_PROMPT_V1: "46bdd3f33502a3dca4ce309f890c1d17a03e2f83b0c8520ecf1b4bef8fae1fd1",
 }
 
 
@@ -469,3 +483,54 @@ def test_triage_prompt_v3_carries_the_five_rules(rule: str, texts: list[str]) ->
 
     for text in texts:
         assert text in template, f"{rule}: {text!r} is missing"
+
+
+# --- T-056: the length limits the prompts state are the contract's -----------------------------
+
+LIMIT_LINE = re.compile(r"^- `([a-z_\[\]]+(?:\.[a-z_\[\]]+)*)`: at most (\d+) characters", re.M)
+
+
+def schema_limit(schema: dict[str, Any], defs: dict[str, Any], path: str) -> int:
+    """The `maxLength` of the string at `path` (`items[].field`) in a result's JSON schema."""
+    node = schema
+    for name in path.split("."):
+        is_list = name.endswith("[]")
+        node = node["properties"][name.removesuffix("[]")]
+        if is_list:
+            node = node["items"]
+        if "$ref" in node:
+            node = defs[node["$ref"].rsplit("/", 1)[1]]
+        if "anyOf" in node:  # an optional string: the branch that is not null
+            node = next(branch for branch in node["anyOf"] if branch.get("type") != "null")
+    return int(node["maxLength"])
+
+
+@pytest.mark.parametrize(
+    ("path", "model", "lines"),
+    [
+        ("prompts/verification/v2.md", VerificationResult, 3),
+        ("prompts/investigation/v2.md", InvestigationResult, 8),
+    ],
+)
+def test_the_length_limits_in_the_v2_prompts_are_the_contracts(
+    path: str, model: type[BaseModel], lines: int
+) -> None:
+    schema = model.model_json_schema()
+    stated = LIMIT_LINE.findall((REPO_ROOT / path).read_text(encoding="utf-8"))
+
+    assert len(stated) == lines
+    for field, limit in stated:
+        assert schema_limit(schema, schema.get("$defs", {}), field) == int(limit)
+
+
+@pytest.mark.parametrize(
+    ("manifest", "prompt"),
+    [
+        ("config/agents/verification.yaml", "prompts/verification/v2.md"),
+        ("config/agents/investigation.yaml", "prompts/investigation/v2.md"),
+    ],
+)
+def test_the_manifests_select_v2_and_version_1_1_0(manifest: str, prompt: str) -> None:
+    raw = yaml.safe_load((REPO_ROOT / manifest).read_text(encoding="utf-8"))
+
+    assert (raw["version"], raw["prompt"]) == ("1.1.0", prompt)

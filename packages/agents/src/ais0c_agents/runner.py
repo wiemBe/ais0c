@@ -14,10 +14,12 @@ that calls a tool anyway runs into the tool call or token budget and ends `budge
 as before.
 
 What the tools go is decided from what the next request costs at least: the whole conversation
-goes again, plus the tool result that came since. TOKEN_RESERVE_FACTOR holds two of those, for
-the tool call and the answer after it, because the answer must still fit when the limit is
-reached. A tool result bigger than the last request therefore has to end the run's tool calls
-even when the last request's own tokens leave room (decision T-52, T-051).
+goes again, plus the tool result that came since. TOKEN_RESERVE_FACTOR holds three of those, for
+the tool call, the answer after it and one correction of that answer, because the answer must
+still fit when the limit is reached and Pydantic AI sends a schema-invalid answer back (the
+output retry is a request of its own). A tool result bigger than the last request therefore has
+to end the run's tool calls even when the last request's own tokens leave room (decision T-52,
+T-051, T-056). The request limit reserves the same: the answer and one correction.
 
 The wall-clock budget is not enforced here: the Temporal activity and workflow timeouts own it
 (T-012, agent-harness.md §2).
@@ -54,8 +56,12 @@ FINAL_ANSWER_PROMPT: Final = (
     "you already have."
 )
 """What every request without the agent's tools tells the model (decision T-52)."""
-TOKEN_RESERVE_FACTOR: Final = 2
-"""The next request must fit twice over: the tool call, and the answer after it."""
+TOKEN_RESERVE_FACTOR: Final = 3
+"""The next request must fit three times over: the tool call, the answer after it, and one
+correction of that answer (case-36: the answer broke a length limit and the correction request
+crossed the budget)."""
+REQUEST_RESERVE: Final = 2
+"""Model requests kept back when the tools go: the answer and one correction of it."""
 TOOL_RESULT_CHARS_PER_TOKEN: Final = 4
 """Characters per token when a tool result's size in tokens is needed (no tokenizer is here)."""
 UNNAMED_AGENT: Final = "agent"
@@ -86,10 +92,13 @@ def usage_limits(manifest: AgentManifest, budget: Budget) -> UsageLimits:
 def prompt_tool_budget(manifest: AgentManifest, budget: Budget) -> int:
     """The tool call budget the prompt states.
 
-    One model request is left for the final answer, and with sequential tool calls each other
-    request makes at most one call, so the step limit can bind before the tool call limit.
+    REQUEST_RESERVE requests are left for the final answer and its correction, and with
+    sequential tool calls each other request makes at most one call, so the step limit can bind
+    before the tool call limit.
     """
-    return max(0, min(manifest.budgets.tool_calls, budget.tool_calls, manifest.max_steps - 1))
+    return max(
+        0, min(manifest.budgets.tool_calls, budget.tool_calls, manifest.max_steps - REQUEST_RESERVE)
+    )
 
 
 def budget_spent(
@@ -97,7 +106,7 @@ def budget_spent(
 ) -> bool:
     """Whether the run must answer now instead of calling another tool (decision T-52).
 
-    True when only one model request remains, the tool call budget is used up, or when fewer
+    True when no more than REQUEST_RESERVE model requests remain, the tool call budget is used up, or when fewer
     tokens remain than TOKEN_RESERVE_FACTOR times what the next request costs at least (T-051):
     it sends the whole conversation again, so that is the last request's total tokens plus the
     tool results the model has read since. Counting the tool result matters because a result
@@ -107,7 +116,10 @@ def budget_spent(
     """
     if limits is None:
         return False
-    if limits.request_limit is not None and limits.request_limit - usage.requests <= 1:
+    if (
+        limits.request_limit is not None
+        and limits.request_limit - usage.requests <= REQUEST_RESERVE
+    ):
         return True
     if limits.tool_calls_limit is not None and usage.tool_calls >= limits.tool_calls_limit:
         return True

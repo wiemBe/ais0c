@@ -84,7 +84,7 @@ def test_the_manifest_says_what_the_task_file_names() -> None:
     manifest = yaml.safe_load(VERIFICATION_MANIFEST.read_text(encoding="utf-8"))
 
     assert manifest["id"] == "verification"
-    assert manifest["version"] == "1.0.0"
+    assert manifest["version"] == "1.1.0"
     assert manifest["workflow_types"] == ["case"]
     assert manifest["model_alias"] == "soc-verifier"
     assert manifest["input_schema"] == "VerificationTask"
@@ -319,7 +319,7 @@ def test_when_no_claim_survives_the_pre_check_the_model_is_never_called() -> Non
     assert result.usage == run.usage
     assert (run.usage.tokens, run.usage.tool_calls) == (0, 0)
     assert (run.prompt_version, run.prompt_hash) == (
-        "verification/v1",
+        "verification/v2",
         verification_prompt().sha256,
     )
     assert (result.task_id, result.status) == (task.task.task_id, RunStatus.COMPLETED)

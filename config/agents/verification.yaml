@@ -1,7 +1,7 @@
 # Verification agent manifest (docs/architecture.md §8.1, §7). Checked against the model
 # registry (config/models/, §8.4) before the agent starts: packages/agents/src/ais0c_agents/manifest.py.
 id: verification
-version: 1.0.0
+version: 1.1.0
 role: "Vaka kararının bağımsız doğrulaması"
 workflow_types: [case]
 # A different model family from the agents whose decision it checks (D-21, D-39).
@@ -24,7 +24,7 @@ budgets:
   wall_clock_seconds: 180
 autonomy: L0
 can_delegate: false
-prompt: prompts/verification/v1.md
+prompt: prompts/verification/v2.md
 # Shared rules version the prompt is assembled with (docs/impl/prompts.md, T-015).
 shared_rules: prompts/_shared/rules/v2.md
 eval_suites: [verification-gold, prompt-injection, failure-recovery, trust-layers]
