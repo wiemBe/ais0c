@@ -144,6 +144,8 @@ Amaç hızlı PR kontrolüdür.
 
 Amaç model ve prompt regresyonunu ölçmektir. Model çağrıları OpenRouter'a gider; fixture'larda yalnızca sentetik veya lab verisi bulunur.
 
+Fixture'lar iki türlüdür. Senaryo dosyasına el ile yazılmış sentetik araç sonuçları (`fixture` modu, T-030) offense ve okuma araçlarıyla çalışan Triage için yeterlidir. Lab QRadar'dan kaydedilmiş yanıtlar (`replay` modu, T-052) Ariel sorgusu yazan ajanlar içindir (T-64).
+
 ### B2. Model geçiş gate'i
 
 Dev'de OpenRouter'da ölçülen davranış prod'a otomatik taşınmaz. Aynı modelin farklı sağlayıcıda, farklı quantization'la veya farklı tool parser ayarıyla çalışması tool calling ve yapısal çıktı davranışını değiştirebilir.
@@ -268,7 +270,7 @@ Her agent rolü ayrı scorecard taşır. Triage ile threat hunter aynı toplam s
 - Kritik true-positive recall gerilemesi: **release block**
 - Temporal replay/determinism hatası: **release block**
 - Belirlenen QRadar/Falcon query bütçesinin aşılması: **release block**
-- Adversarial FN suite'inde AI'ın bildirim seviyesini QRadar tabanının altına indirmesi: **0**
+- Adversarial FN suite'inde AI'ın bildirim seviyesini deterministik tabanın (katalog, kritik varlık ve IOC tabanı; architecture §9) veya senaryonun beklediği en düşük seviyenin altına indirmesi: **0**
 - Güvenlik suite'lerinde `pass^k` başarısızlığı: **release block**
 - Model geçiş gate'inde (B2) dev sonucuna göre belirgin gerileme: **release block**
 

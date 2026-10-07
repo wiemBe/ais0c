@@ -1,6 +1,6 @@
 # Görev Pipeline'ı: Faz 0 kapanışı, Faz 1 ve canary öncesi
 
-> Son güncelleme: 2026-10-05 (T-28–T-37 kararları; T-040–T-042 bitti; H-3 yapıldı, H-2 ertelendi; dalga B görev dosyaları ve T-38–T-46; H-7). Faz 0 görevleri (T-001–T-012) [multi-agent-dev.md](multi-agent-dev.md)'dedir. Bu pipeline, 2026-10-03 kararlarını (D-29–D-38, T-18–T-25) ve `future.md`'den alınan maddeleri koda taşır.
+> Son güncelleme: 2026-10-07 (T-030'un dosyası, harness'in bölünmesi T-64; T-031'in model geçiş gate'ine bağlanması). Önceki: 2026-10-05 (T-28–T-37 kararları; T-040–T-042 bitti; H-3 yapıldı, H-2 ertelendi; dalga B görev dosyaları ve T-38–T-46; H-7). Faz 0 görevleri (T-001–T-012) [multi-agent-dev.md](multi-agent-dev.md)'dedir. Bu pipeline, 2026-10-03 kararlarını (D-29–D-38, T-18–T-25) ve `future.md`'den alınan maddeleri koda taşır.
 
 Çalışma kuralları [multi-agent-dev.md](multi-agent-dev.md) ile aynıdır: bir görev, bir branch, bir worktree; sözleşme değişikliği insan onayı ister; PR'ı farklı model ailesi inceler.
 
@@ -93,8 +93,10 @@ Sıra:
 |---|---|---|
 | T-028 | API: vakalar, adımlar, geri bildirim, QA, gruplar, katalog (storage'da `qradar_enabled` ve `missing` filtreleri dahil, T-37), kritik varlıklar, alıcılar ve yönlendirme (T-036'nın repository'leri), SLA metrikleri, platform bayrakları, `/me`, `/health` ([api.md](api.md)); geliştirme için basit kimlik doğrulama modu. Dosya: [T-028](tasks/T-028-api.md) (T-63) | T-022, T-026, T-036 |
 | T-029 | Arayüz MVP: kuyruk, vaka detayı, geri bildirim, QA, gruplar, katalog, kill switch | T-028 |
-| T-030 | Harness Faz 1: golden suite koşucusu, `pass^k`, adversarial FN, güven katmanları ve skill suite'leri, on-prem modellerle model geçiş gate'i | T-026 |
-| T-031 | Prod shadow dağıtımı: prod compose, LiteLLM prod konfigürasyonu, shadow modu, case, batch ve executor worker'larının compose servisleri (T-33, T-037, T-045), dağıtım notları | T-018, T-026, T-037, T-045, H-7 |
+| T-030 | Harness koşucusu (`fixture` modu, k koşu, `pass^k`, deterministik değerlendiriciler, run envelope'lu rapor, hard gate tablosu), Triage adaptörü, Trust Layers ve yeni Adversarial FN suite'leri, model geçiş gate'inin karşılaştırma komutu (B2), değişen model sürümlerinin listesi. Dosya: [T-030](tasks/T-030-harness-kosucusu.md) (T-64) | T-026 |
+| T-052 | Harness replay'i: lab'dan kaydedilmiş araç yanıtları, Investigation ve Verification adaptörleri, skill suite'leri (`windows-dcsync`, `vpn-new-country`, `password-spraying` ve onun lab senaryosu), Investigation/Verification/plan/skill bütçelerinin ölçümü, ajan başına `budget_exhausted` oranı (T-36 (4), T-41, T-51, T-52, T-56, T-58, T-60, T-61). Dosyası T-030 birleşince yazılır. | T-030 |
+| T-053 | Harness: Orchestrator ve Reporting adaptörleri, Turkish Quality suite'i ve registry'deki `turkish_quality` (D-44), Orchestrator'ın gerekçesiz `injection_suspected`'ı. Dosyası T-030 birleşince yazılır. | T-030 |
+| T-031 | Prod shadow dağıtımı: prod compose, LiteLLM prod konfigürasyonu, shadow modu, case, batch ve executor worker'larının compose servisleri (T-33, T-037, T-045), dağıtım notları. Shadow başlamadan model geçiş gate'i on-prem prod modelleriyle koşar ve geçer: dev raporu baseline, on-prem raporu candidate (T-030'un `gate` komutu, T-64) | T-018, T-026, T-030, T-037, T-045, H-7 |
 
 ## Canary öncesi
 
