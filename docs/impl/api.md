@@ -24,6 +24,7 @@ Rol sütunu, o işlemi yapabilen en düşük rolü gösterir. `hunter`, `operato
 | GET | `/cases` | operator | Filtreler: `status`, `notify_level`, `verdict`, `source`, `rule_id`, `from`, `to` |
 | GET | `/cases/{case_id}` | operator | Vaka detayı: `CaseReport`, acil event'ler, öneriler, verification sonucu, data gap'ler, yazılan notlar, gönderilen e-postalar |
 | GET | `/cases/{case_id}/steps` | operator | Ajan adımlarının özeti: hangi ajan, hangi araç, karar, süre |
+| GET | `/cases/{case_id}/feedback` | operator | Vakanın geri bildirimleri (T-028) |
 | POST | `/cases/{case_id}/feedback` | operator | Gövde: `OperatorFeedback` |
 
 ### QA kuyruğu
@@ -45,9 +46,11 @@ Rol sütunu, o işlemi yapabilen en düşük rolü gösterir. `hunter`, `operato
 | Metot | Yol | Rol | Açıklama |
 |---|---|---|---|
 | GET | `/catalog/rules` | operator | Filtre: `defined`, `mode`, `qradar_enabled`, `missing` (QRadar'da artık olmayanlar), `q` |
+| GET | `/catalog/rules/{rule_id}` | operator | Tek kural (T-028) |
 | PUT | `/catalog/rules/{rule_id}` | admin | Gövde: `{ mode, min_level?, has_automated_action, context_note?, attack_techniques? }` |
 | POST | `/catalog/rules/{rule_id}/accept-draft` | admin | AI'ın önerdiği açıklamayı onaylar |
 | GET | `/catalog/log-sources` | operator | Filtre: `defined`, `in_scope`, `missing`, `q` |
+| GET | `/catalog/log-sources/{log_source_id}` | operator | Tek log source (T-028) |
 | PUT | `/catalog/log-sources/{log_source_id}` | admin | Gövde: `{ description?, owner?, criticality?, in_scope, context_note? }` |
 | POST | `/catalog/sync` | admin | QRadar'dan senkronu hemen başlatır (`KnowledgeSync`) |
 
@@ -59,7 +62,7 @@ Rol sütunu, o işlemi yapabilen en düşük rolü gösterir. `hunter`, `operato
 | POST | `/critical-assets` | admin | Gövde: `{ kind, value, label, level }` |
 | DELETE | `/critical-assets/{id}` | admin | |
 | GET | `/notification-recipients` | admin | |
-| PUT | `/notification-recipients/{list_name}` | admin | Gövde: `{ emails: [] }`. Yeni bir grup adı grubu oluşturur. İzinli alan adı dışındaki adres reddedilir. |
+| PUT | `/notification-recipients/{list_name}` | admin | Gövde: `{ emails: [] }`. Yeni bir grup adı grubu oluşturur. İzinli alan adı dışındaki adres reddedilir. Bir yönlendirmenin kullandığı grubu boşaltmak 409'dur (`notification_recipients.group_in_use`, T-028). |
 | GET | `/notification-routes` | admin | Uyarı türü × seviye → alıcı grupları (D-41) |
 | PUT | `/notification-routes` | admin | Gövde: `{ routes: [{ kind, level?, list_name }] }`. Tablonun tamamını değiştirir; olmayan bir gruba yönlendirme reddedilir. |
 

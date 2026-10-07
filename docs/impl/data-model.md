@@ -25,6 +25,7 @@ Genel kurallar:
 | `case_id` | text? | |
 | `status` | text | `pending`, `running`, `done`, `skipped`, `grouped` |
 | `pre_priority` | int | Birikme sonrası sıralama için (architecture §9) |
+| `full_analysis_reason` | text? | Gruptaki offense'in neden tam analiz aldığı: `limit`, `exempt`, `novelty`, `sample` (T-62). Grubun aldığı offense'te ve `0009`'dan önceki satırlarda boştur. |
 
 ### `offense_groups`
 
@@ -36,6 +37,22 @@ Genel kurallar:
 | `offense_count` | int | |
 | `status` | text | `open`, `storm`, `closed` |
 | `case_id` | text? | Grup değerlendirmesi vakası |
+
+Grubu `status = closed` yapan, penceresi bittiğinde grup vakasıdır (T-027).
+
+### `offense_group_values`
+
+Grubun görülen değerleri (T-62): yenilik kaçışı ve grubun deterministik özeti buradan okunur. Bir değerin satır sayısı onu taşıyan offense sayısıdır.
+
+| Sütun | Tip | Not |
+|---|---|---|
+| `group_id` | text FK | `offense_groups` |
+| `kind` | text | `source_ip`, `destination_ip`, `username`, `log_source`, `category` |
+| `value` | text | En çok 255 karakter; log source kimliği metin olarak |
+| `offense_id` | bigint FK | `offenses_seen` |
+| `seen_at` | timestamptz | |
+
+Birincil anahtar: (`group_id`, `kind`, `value`, `offense_id`).
 
 ### `cases`
 
