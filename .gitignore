@@ -30,3 +30,6 @@ node_modules/
 
 apps/ui/node_modules
 apps/ui/dist
+
+# pnpm content store created by the UI checks run in a node container
+.pnpm-store/
