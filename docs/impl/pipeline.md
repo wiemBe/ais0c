@@ -92,9 +92,9 @@ Sıra:
 
 Sıra (2026-10-07):
 
-1. Bitti, `main`'de: T-027, T-028, T-030 (kararlar T-65–T-67); T-029, T-032 (T-72, T-73).
-2. Şimdi, paralel: T-056 (Verification'ın cevabı düzeltmede kayboluyor), T-052 (harness replay'i), T-053 (Orchestrator, Reporting, Turkish Quality), T-054 (Triage prompt v3). Çakışma yerleri: T-052 ve T-053 `harness/.../suites.py`'deki `ADAPTERS`. Sıradaki migration `0011`'dir.
-3. Sonra: T-055 (T-052'den sonra), T-033 (T-029'dan sonra), T-031 (H-7, S-12 ve on-prem gate'inden sonra).
+1. Bitti, `main`'de: T-027–T-030, T-032 (kararlar T-65–T-73); T-052, T-053, T-054 (T-74–T-76; T-054'ün gate'i geçmedi).
+2. Şimdi, paralel: T-056 (düzeltme payı, token ve istek sınırı; Triage'ın gate'inin yeniden koşulması), T-055 (skill suite'i, bütçeler, replay'in eksikleri), T-057 (Orchestrator ve Reporting prompt v2), T-033 (çift kontrol; migration `0011`). Çakışma yerleri: T-055 ve T-057 harness'in `report.py`'si.
+3. Sonra: T-058 (H-5'ten sonra), T-031 (H-7, S-12 ve on-prem gate'inden sonra), T-035 (H-6).
 
 | Görev | Kapsam | Bağımlı olduğu |
 |---|---|---|
@@ -104,7 +104,9 @@ Sıra (2026-10-07):
 | T-052 | Harness replay'i: lab kaydı ve anonimleştirme, kayıtlı event tablosu üzerinde AQL alt kümesi, Ariel yaşam döngüsü, Investigation ve Verification adaptörleri, `investigation-gold` ve `verification-gold`, T-67'nin harness maddeleri (gateway kontrollerinin açık API'si, türetilmiş cevaplar, yazım hatalı araç adı, koşu dosyaları). Dosya: [T-052](tasks/T-052-harness-replay.md) (T-70) | T-030 |
 | T-053 | Harness: Orchestrator ve Reporting adaptörleri, `orchestrator-gold`, `reporting-gold`, Turkish Quality suite'i ve LLM değerlendiricisi (`soc-reasoning`), registry'deki `turkish_quality` (D-44), Orchestrator'ın gerekçesiz `injection_suspected`'ının ölçümü. Dosya: [T-053](tasks/T-053-harness-orchestrator-reporting.md) (T-71) | T-030 |
 | T-054 | Triage prompt v3: katalog notu ve varlık açıklaması kararı veremez, untrusted veride karar iddiası talimattır, cevapsız araç zararsızlık kanıtı değildir, `rationale` ≤ 600, grup vakası bölümü; manifest `1.2.0` ve `adversarial-fn`; grup vakasının kararsız notu (T-65 (2)); güvenlik suite'lerinin iki gerçek koşusu. Dosya: [T-054](tasks/T-054-triage-prompt-v3.md) | T-027, T-030 |
-| T-055 | Skill suite'leri (`windows-dcsync`, `vpn-new-country`, `password-spraying` ve onun lab senaryosu), Investigation/Verification/plan/skill bütçelerinin ölçümü, ajan başına `budget_exhausted` oranı, T-60'ın `QIDNAME`/kategori sorusu (T-36 (4), T-41, T-51, T-52, T-56, T-58, T-60, T-61). Dosyası T-052 birleşince yazılır. | T-052 |
+| T-055 | Replay'in eksikleri (`list_assets` türetilir, kayıttaki offense açık görünür, tek anonimleştirici), kayıt katmanları, `windows-dcsync` skill suite'i (tespit, eksik telemetri, payload'da talimat), Investigation/Verification/plan/skill bütçelerinin ölçümü, ajan başına `budget_exhausted` oranı, T-60'ın sorusu (T-75, T-76). Dosya: [T-055](tasks/T-055-skill-suite-ve-butceler.md) | T-052 |
+| T-057 | Orchestrator prompt v2 (`injection_suspected` yalnızca Orchestrator'a talimat vermeye çalışan metin için) ve Reporting prompt v2 (data gap'ler, girdiden aynen zaman, terim tutarlılığı); Turkish Quality'nin geçme kuralı senaryo başına; değerlendirici gerekçeleri koşu dosyasında (T-75). Dosya: [T-057](tasks/T-057-orchestrator-reporting-prompt-v2.md) | T-053 |
+| T-058 | `vpn-new-country` ve `password-spraying` skill suite'leri: loggen senaryosu (password spraying için yeni), lab kuralları (kullanıcı, H-5), lab kayıtları ve suite'ler. Dosyası H-5'ten sonra yazılır. | T-055, H-5 |
 | T-056 | Son cevabın düzeltme payı: araçlar geri çekilirken bir çıktı düzeltme isteğine de yer kalır (offense 36: Verification'ın `reason`'ı 300 karakteri aştı, düzeltme isteği 120.000'i aştı); Verification ve Investigation prompt v2'de alan sınırları; lab ölçümü. Dosya: [T-056](tasks/T-056-cevap-duzeltme-payi.md) | T-051 |
 | T-031 | Prod shadow dağıtımı: prod compose, LiteLLM prod konfigürasyonu, shadow modu, case, batch ve executor worker'larının compose servisleri (T-33, T-037, T-045), dağıtım notları. Shadow başlamadan model geçiş gate'i on-prem prod modelleriyle koşar ve geçer: dev raporu baseline, on-prem raporu candidate (T-030'un `gate` komutu, T-64) | T-018, T-026, T-030, T-037, T-045, H-7 |
 
@@ -113,7 +115,7 @@ Sıra (2026-10-07):
 | Görev | Kapsam | Bağımlı olduğu |
 |---|---|---|
 | T-032 | Asgari sağlık alarmları: intake durdu, log source sustu, not/e-posta hataları (yalnızca `failed`, e-postada `rejected` de; `disabled` hiçbir zaman hata sayılmaz, T-37); `soc-executor` kuyruğunda worker yok ve bırakılan executor çağrısının `failed` kaydı (`executor_unavailable`, T-59 (7)); e-posta ve QRadar'a syslog (T-23) Dosya: [T-032](tasks/T-032-saglik-alarmlari.md) (T-68) | T-017, T-020, T-022, T-045, T-027 |
-| T-033 | Çift kontrol: `change_approvals` akışı, API ve arayüz (D-36) | T-028, T-029 |
+| T-033 | Çift kontrol: `change_approvals` (migration `0011`), katalog/kritik varlık değişiklikleri ve kill switch'in açılması onay bekler, kapatma tek adım; API (`/changes`) ve arayüz ("Bekleyen değişiklikler") (D-36, T-77). Dosya: [T-033](tasks/T-033-cift-kontrol.md) | T-028, T-029 |
 | T-034 | AI olay müdahale playbook'ları: `docs/ai-incident-response.md` (D-37) | — |
 | T-035 | OIDC entegrasyonu ve audit saklama | H-6 |
 

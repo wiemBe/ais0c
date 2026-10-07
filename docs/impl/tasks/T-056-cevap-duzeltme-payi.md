@@ -12,9 +12,9 @@ Zincirin lab e2e'sinde (2026-10-07, offense 36, `main` `8d33c73`) Verification y
 
 10. istekteki cevap şemadan geçmedi: `disagreements[0].reason` 300 karakteri aştı (`string_too_long`). Pydantic AI düzeltme istedi ve o istek bütçeyi aştı. Bu, T-051 PR'ının açık soru 1'de öngördüğü durumdur (T-61): çıktı yeniden denemesi rezervde yok. Triage'da aynı hatanın karşılığı `rationale`'in 600 karakteri aşmasıdır (T-030, T-054).
 
-Sonuçsuz Verification her vakada `verifier_conflict` QA'sı açar ve zincirin kontrolünü boşa çıkarır. Düzeltme iki yerden yapılır:
+Sonuçsuz Verification her vakada `verifier_conflict` QA'sı açar ve zincirin kontrolünü boşa çıkarır. Aynı mekanizma istek sınırında da çalışır: T-054'ün harness koşularında Triage koşularının çoğu `request_limit`'e (8) takıldı, çünkü düzeltme istekleri araç turlarını yedi (T-74). Düzeltme iki yerden yapılır:
 
-1. **Rezerv:** araçlar geri çekilirken bir düzeltme isteğine de yer kalır.
+1. **Rezerv:** araçlar geri çekilirken bir düzeltme isteğine de yer kalır; hem token bütçesinde hem istek sınırında (`max_steps`).
 2. **Prompt:** Verification ve Investigation prompt'ları çıktı alanlarının sınırlarını açıkça söyler, böylece düzeltme isteği seyrekleşir.
 
 ## Okunacaklar
@@ -36,6 +36,7 @@ Sonuçsuz Verification her vakada `verifier_conflict` QA'sı açar ve zincirin k
 - `prompts/verification/` ve `prompts/investigation/` (yalnızca yeni `v2.md`; `v1.md` değişmez)
 - `config/agents/verification.yaml`, `config/agents/investigation.yaml`: `version`, `prompt`
 - `tests/e2e/test_lab_verification.py`, `tests/e2e/test_lab_investigation.py`: yalnızca ölçüm
+- `harness/`: yalnızca koşu için (kriter 5); senaryolar ve beklentiler değişmez
 
 Bu dosyaların dışında hiçbir dosya değiştirilmez. Triage'ın prompt'u T-054'tedir; ortak kurallar değişmez.
 
@@ -52,8 +53,11 @@ Her madde en az bir testle gösterilir.
    - Test: kriter 1'in senaryosu sonuçla ve `budget_exhausted` data gap'iyle tamamlanır.
    - T-048, T-049 ve T-051'in `test_final_answer.py` testleri geçer. Bir test yeni payla anlamını yitiriyorsa nedeniyle güncellenir.
    - Bu payın bedeli de ölçülür: T-051'in case-34 senaryosunda ve kriter 1'de araçların kaçıncı istekte geri çekildiği PR'a yazılır.
+   - **İstek sınırı (T-56'nın üçüncü koşulu):** araçlar, iki istek hakkı (cevap ve bir düzeltme) kaldığında geri çekilir; bugün bir hak kaldığında çekiliyor. Test: `max_steps` sınırında, ilk cevabı şemadan geçmeyen bir koşu düzeltmeyle tamamlanır.
 3. **Prompt'lar.** `prompts/verification/v2.md` ve `prompts/investigation/v2.md`: çıktının serbest metin alanlarının karakter sınırları (sözleşmedeki değerler) ve kısa yazma talimatı. Sınırlar prompt'a elle yazılırsa bir test sözleşmedeki değerlerle aynı olduklarını doğrular. Manifest'ler v2'yi seçer, sürümler `1.1.0` olur (T-31). `test_prompts.py`'nin eski sürüm hash'leri listesine v1'ler girer.
 4. **Lab ölçümü (planner'ın verdiği kapalı offense: `QRADAR_LAB_OFFENSE_ID=30`).** `tests/e2e/test_lab_verification.py` en az üç kez, `tests/e2e/test_lab_investigation.py` en az iki kez koşulur. PR'a her koşunun durumu, token'ı, araçların geri çekilip çekilmediği ve çıktı düzeltme sayısı yazılır. Test offense açmaz, kapatmaz, not yazmaz.
+
+5. **Triage'ın güvenlik suite'leri (T-74).** Bu değişiklikten ve T-052'nin türetilmiş cevaplarından sonra T-030'un komutu iki kez koşulur (`--suite trust-layers --suite adversarial-fn --k 5 --concurrency 8`). Raporlar `../ais0c-prs/T-056-reports/`'a, özet tablo PR'a (T-054'ün tablosu gibi: tamamlanan koşu, `budget_exhausted`, gate'te düşen senaryolar) yazılır. Aynı gün `main`'in önceki hâliyle (bu görevin değişikliği olmadan) bir koşu daha alınır, böylece sağlayıcı sapması ayrılır. Hedef gate'in geçmesidir; geçmezse neden koşu dosyalarından alıntıyla yazılır, prompt değiştirilmez.
 
 ## Kapsam dışı
 
@@ -63,8 +67,8 @@ Her madde en az bir testle gösterilir.
 
 ## Bağımlılıklar
 
-- `main` `8d33c73` veya sonrası
-- T-054 ile paralel yürür; T-054 `packages/agents`'ta yalnızca Triage'a dokunur. T-052 ve T-053 ile çakışmaz.
+- `main` `7ee1511` veya sonrası (T-052, T-053, T-054 dahil)
+- T-052, T-053 ve T-054 `main`'dedir (2026-10-07 akşam). T-055 ve T-057 ile paralel yürür; T-057 Orchestrator ve Reporting prompt'larına, T-055 harness'e dokunur.
 
 ## Notlar
 

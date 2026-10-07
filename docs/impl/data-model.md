@@ -391,12 +391,15 @@ Kill switch ve benzeri tek noktadan açılıp kapanan bayraklar (T-23).
 | Sütun | Tip | Not |
 |---|---|---|
 | `id` | uuid PK | |
-| `object_type` | text | `catalog_rule`, `catalog_log_source`, `critical_asset`, `skill`, `policy`, `hunt_pack` |
+| `object_type` | text | `catalog_rule`, `catalog_log_source`, `critical_asset`, `platform_flag` (yalnızca kill switch'in açılması, T-77), `skill`, `policy`, `hunt_pack` |
 | `object_id`, `object_version` | text | |
 | `change` | jsonb | İstenen değişiklik |
 | `requested_by`, `requested_at` | text, timestamptz | |
 | `decided_by`, `decided_at` | text?, timestamptz? | `decided_by` ≠ `requested_by` (veritabanı kısıtı) |
 | `status` | text | `pending`, `approved`, `rejected` |
+| `reason` | text? | `rejected` için: `rejected_by_admin`, `stale` (nesne istekten sonra değişti), `withdrawn` (isteyen geri çekti) |
+
+Nesne başına en çok bir `pending` kayıt vardır (kısmi tekil index). Migration `0011`, kod T-033.
 
 ## Kullanıcılar ve audit
 
