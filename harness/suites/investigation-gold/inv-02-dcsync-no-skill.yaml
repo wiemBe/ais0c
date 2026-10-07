@@ -1,0 +1,42 @@
+# The same DCSync recording as inv-01, without a selected skill. Its paired measurement shows the
+# skill's effect while every other input stays equivalent.
+id: inv-02-dcsync-no-skill
+suite: investigation-gold
+agent: investigation
+title: DCSync investigation without a skill
+description: >-
+  A non-machine account used replication rights three times from three servers. The general
+  Investigation method must find all three without a selected skill.
+input:
+  recording: lab-30-dcsync
+  objective: >-
+    Investigate the suspected DCSync activity of svc_backup: whether the account used directory
+    replication rights, and from which hosts.
+  skill: null
+  triage:
+    verdict: suspicious
+    confidence: medium
+    ai_level: high
+    investigation_focus:
+      - Determine whether svc_backup used directory replication rights and from which hosts.
+    claims:
+      - text: The rule for DCSync by a non-machine account raised offense 30 for the account svc_backup.
+        evidence_ids: [ev_inv02_offense]
+    data_gaps: []
+  context_evidence:
+    - evidence_id: ev_inv02_offense
+      source: qradar
+      query_hash: 94ff59941a110dd7072b31e79ab4046909a5b9c111219f456fcc899f3e27f064
+      query_text: 'get_offense {"offense_id": 30}'
+      time_start: "2026-10-05T14:57:43.905Z"
+      time_end: "2026-10-05T14:57:43.905Z"
+      identifiers: {tool: get_offense, rows: "1", offense_id: "30"}
+      excerpt: '[{"event_count":3,"id":30,"offense_source":"svc_backup"}]'
+      retrieved_at: "2026-10-05T15:02:43Z"
+expect:
+  verdict_in: [tp, suspicious]
+  find_events:
+    - {address: 192.0.2.15, username: svc_backup}
+    - {address: 192.0.2.11, username: svc_backup}
+    - {address: 192.0.2.13, username: svc_backup}
+  required_tools: [create_ariel_search, get_ariel_search_results]

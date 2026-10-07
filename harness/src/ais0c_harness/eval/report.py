@@ -144,6 +144,7 @@ class ScenarioReport(_Model):
     injection_suspected: int
     tokens: Spread | None
     seconds: Spread | None
+    requests: Spread | None
     tool_calls: Spread | None
     output_retries: int
     tool_retries: int
@@ -183,6 +184,10 @@ class AgentReport(_Model):
     model_release: ModelRelease
     toolset_profile: str
     toolset_sha256: str
+    runs: int
+    budget_exhausted_runs: int
+    budget_exhausted_rate: float
+    """Runs ending exhausted or returning a budget_exhausted gap, over runs that started."""
 
 
 class HardGate(_Model):
@@ -300,6 +305,7 @@ def scenario_report(
         ),
         tokens=Spread.of([run.metrics.tokens for run in ran]),
         seconds=Spread.of([run.metrics.seconds for run in ran]),
+        requests=Spread.of([run.metrics.requests for run in ran]),
         tool_calls=Spread.of([run.metrics.tool_calls for run in ran]),
         output_retries=sum(run.metrics.output_retries for run in runs),
         tool_retries=sum(run.metrics.tool_retries for run in runs),
@@ -457,7 +463,9 @@ def render_markdown(report: Report) -> str:
         lines.append(
             f"- Agent: {agent.agent_id} {agent.agent_version}, prompt {agent.prompt_version} "
             f"({agent.prompt_hash[:12]}), model {agent.model_alias} = "
-            f"{agent.model_release.artifact}"
+            f"{agent.model_release.artifact}; budget exhausted "
+            f"{agent.budget_exhausted_rate:.0%} "
+            f"({agent.budget_exhausted_runs}/{agent.runs})"
         )
     lines += ["", "## Hard gates", "", "| Gate | Value | Threshold | Result |", "|---|---|---|---|"]
     for gate in report.hard_gates:
@@ -482,8 +490,9 @@ def render_markdown(report: Report) -> str:
         "## Scenarios",
         "",
         "| Scenario | Status | Pass rate | Results | Injection | Tokens med/max "
-        "| Seconds med/max | Retries out/tool | Unsupported/unknown tool | Scores | Failed checks |",
-        "|---|---|---|---|---|---|---|---|---|---|",
+        "| Requests med/max | Tools med/max | Seconds med/max | Retries out/tool "
+        "| Unsupported/unknown tool | Scores | Failed checks |",
+        "|---|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     for scenario in report.scenarios:
         results = "; ".join(
@@ -495,7 +504,9 @@ def render_markdown(report: Report) -> str:
         lines.append(
             f"| {scenario.scenario_id} | {scenario.status} | {scenario.pass_rate:.0%} "
             f"| {results or '-'} | {scenario.injection_suspected}/{scenario.k} "
-            f"| {_spread(scenario.tokens, '{:,.0f}')} | {_spread(scenario.seconds, '{:.1f}')} "
+            f"| {_spread(scenario.tokens, '{:,.0f}')} | {_spread(scenario.requests, '{:.0f}')} "
+            f"| {_spread(scenario.tool_calls, '{:.0f}')} "
+            f"| {_spread(scenario.seconds, '{:.1f}')} "
             f"| {scenario.output_retries}/{scenario.tool_retries} "
             f"| {scenario.replay_unsupported}/{scenario.unknown_tool_name} "
             f"| {scores or '-'} | {failed or '-'} |"

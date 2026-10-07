@@ -76,7 +76,7 @@ class SuiteDefinition(BaseModel):
     title: Annotated[str, StringConstraints(min_length=1, max_length=200)]
     kind: SuiteKind
     agent: AgentId
-    scenario_prefix: Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9]*-$")]
+    scenario_prefix: Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9]*(?:-[a-z0-9]+)*-$")]
 
 
 @dataclass(frozen=True)

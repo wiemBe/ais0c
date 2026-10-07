@@ -32,7 +32,7 @@ from typing import Final, Literal
 
 from pydantic_ai.models import Model
 
-from ais0c_contracts import Budget
+from ais0c_contracts import RunStatus
 from ais0c_harness.eval.adapter import AgentAdapter, Attempt, EvaluatorIdentity
 from ais0c_harness.eval.config import AgentConfig, load_agent_config, sha256_file
 from ais0c_harness.eval.evaluate import Evaluation, RunMetrics
@@ -191,8 +191,8 @@ async def run_job(
     job: Job, *, adapter: AgentAdapter, model: Model, options: RunOptions
 ) -> JobResult:
     """One run: an attempt, a retry after an infrastructure failure, and the evaluation."""
-    time_limit = options.wall_clock_seconds or adapter.wall_clock_seconds
     scenario = job.scenario.scenario
+    time_limit = options.wall_clock_seconds or float(adapter.budget_for(scenario).seconds)
     attempts: list[Attempt] = []
     try:
         attempts.append(
@@ -323,7 +323,7 @@ def record_of(result: JobResult, *, adapter: AgentAdapter, k: int, git: GitState
     return RunRecord(
         envelope=envelope(
             job,
-            config=adapter.config,
+            adapter=adapter,
             run_id=job.run_id if final is None else final.run_id,
             k=k,
             started_at=result.attempts[0].started_at if result.attempts else None,
@@ -357,7 +357,7 @@ def record_of(result: JobResult, *, adapter: AgentAdapter, k: int, git: GitState
 def envelope(
     job: Job,
     *,
-    config: AgentConfig,
+    adapter: AgentAdapter,
     run_id: str,
     k: int,
     started_at: datetime | None,
@@ -365,7 +365,10 @@ def envelope(
     git: GitState,
     evaluator: EvaluatorIdentity | None = None,
 ) -> RunEnvelope:
+    config = adapter.config
     manifest = config.manifest
+    selected_skill = adapter.skill_for(job.scenario.scenario)
+    budget = adapter.budget_for(job.scenario.scenario)
     return RunEnvelope(
         run_id=run_id,
         suite_id=job.suite.id,
@@ -382,17 +385,16 @@ def envelope(
         toolset_profile=config.toolset_profile_name,
         toolset_sha256=config.toolset_sha256,
         execution_mode=job.scenario.scenario.execution_mode(),
-        budget=Budget(
-            tokens=manifest.budgets.tokens,
-            tool_calls=manifest.budgets.tool_calls,
-            seconds=manifest.budgets.wall_clock_seconds,
-        ),
+        budget=budget,
         k=k,
         run_number=job.number,
         started_at=started_at,
         ended_at=ended_at,
         git_commit=git.commit,
         git_dirty=git.dirty,
+        skill_id=None if selected_skill is None else selected_skill.skill_id,
+        skill_version=None if selected_skill is None else selected_skill.version,
+        skill_hash=None if selected_skill is None else selected_skill.content_hash,
         evaluator_id=None if evaluator is None else evaluator.id,
         evaluator_version=None if evaluator is None else evaluator.version,
         evaluator_prompt_sha256=None if evaluator is None else evaluator.prompt_sha256,
@@ -443,7 +445,7 @@ def build_report(
         created_at=datetime.now(UTC),
         settings=settings,
         git=git,
-        agents=[agent_report(adapter.config) for adapter in adapters.values()],
+        agents=[agent_report(adapter.config, records) for adapter in adapters.values()],
         suites=suite_reports,
         scenarios=scenarios,
         runs=list(records),
@@ -453,8 +455,17 @@ def build_report(
     )
 
 
-def agent_report(config: AgentConfig) -> AgentReport:
+def agent_report(config: AgentConfig, records: Sequence[RunRecord]) -> AgentReport:
     manifest = config.manifest
+    ran = [
+        record
+        for record in records
+        if record.envelope.agent_id == manifest.id and record.outcome != "not_run"
+    ]
+    exhausted = sum(
+        record.status is RunStatus.BUDGET_EXHAUSTED or record.metrics.budget_exhausted_gaps > 0
+        for record in ran
+    )
     return AgentReport(
         agent_id=manifest.id,
         agent_version=manifest.version,
@@ -465,6 +476,9 @@ def agent_report(config: AgentConfig) -> AgentReport:
         model_release=config.model_release,
         toolset_profile=config.toolset_profile_name,
         toolset_sha256=config.toolset_sha256,
+        runs=len(ran),
+        budget_exhausted_runs=exhausted,
+        budget_exhausted_rate=exhausted / len(ran) if ran else 0.0,
     )
 
 

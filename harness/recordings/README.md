@@ -1,7 +1,8 @@
 # Recordings
 
-Closed lab offenses recorded for the harness's `replay` mode (task T-052, decision T-70). Each
-directory is one recording; its format, the `record` command and the anonymization are in
+Lab offenses recorded for the harness's `replay` mode (task T-052, decision T-70). Each closed
+source offense is normalized to an open analysis view in the recording. Each directory is one
+recording; its format, the `record` command and the anonymization are in
 [harness/README.md](../README.md#replay-recorded-lab-offenses).
 
 | Recording | Offense | What it holds |

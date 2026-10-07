@@ -88,6 +88,10 @@ def investigation_answer(
         else sorted(item.value for item in expect.verdict_in)[0]
     )
     start = recording.offense.start_time.isoformat()
+    gap_reason = next(
+        iter(sorted(reason.value for reason in expect.data_gap_reason_in)),
+        None,
+    )
     events: list[JsonValue] = [
         {
             "rank": rank,
@@ -105,27 +109,49 @@ def investigation_answer(
         }
         for rank, event in enumerate(expect.find_events, start=1)
     ]
+    if gap_reason is not None:
+        events = []
     return {
         "verdict": verdict,
         "confidence": "medium",
         "ai_level": "high",
-        "timeline": [
+        "timeline": []
+        if gap_reason is not None
+        else [
             {
                 "time": start,
                 "description": "The replication requests.",
                 "evidence_ids": [RESULTS_ALIAS],
             }
         ],
-        "hypotheses": [{"text": "The account is abused for DCSync.", "status": "supported"}],
+        "hypotheses": [
+            {
+                "text": "Required replication telemetry is absent."
+                if gap_reason is not None
+                else "The account is abused for DCSync.",
+                "status": "open" if gap_reason is not None else "supported",
+            }
+        ],
         "urgent_event_candidates": events,
-        "claims": [
+        "claims": []
+        if gap_reason is not None
+        else [
             {
                 "text": "The account's events are in the recorded window.",
                 "evidence_ids": [RESULTS_ALIAS],
             }
         ],
-        "data_gaps": [],
-        "injection_suspected": False,
+        "data_gaps": []
+        if gap_reason is None
+        else [
+            {
+                "source": "qradar",
+                "period_start": recording.manifest.window.start.isoformat(),
+                "period_end": recording.manifest.window.end.isoformat(),
+                "reason": gap_reason,
+            }
+        ],
+        "injection_suspected": bool(expect.injection_suspected),
     }
 
 

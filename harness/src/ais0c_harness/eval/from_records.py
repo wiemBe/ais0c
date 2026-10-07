@@ -12,10 +12,10 @@ tool results' masked JSON), times from the runs' windows, the rest from the tria
 claims. Every value the database cannot hold becomes a `TODO(author)` note at the top of the
 file; the notes are the author's checklist before the scenario joins its suite.
 
-Addresses are anonymized as T-052/T-70 do it: every IPv4 outside the RFC 5737 documentation
-ranges maps deterministically to a `198.51.100.x` address (then `192.0.2.x`, then
-`203.0.113.x` on an octet collision) and every other IPv6 to `2001:db8::n`, the same input
-address always to the same output. Lab DNS-shaped names map to `example.com` names; the lab's
+Addresses are anonymized by `replay/anonymize.py`, the same implementation recordings use:
+every IPv4 outside the RFC 5737 documentation ranges maps deterministically into those ranges
+and every other IPv6 to `2001:db8::/32`, the same input address always to the same output. Lab
+DNS-shaped names map to `example.com` names; the lab's
 synthetic account and host names (svc_backup, DC-LAB-01) stay, as the task allows. The
 anonymizer sees the whole scenario dict, claims and excerpts included, so a claim that quotes
 an address is anonymized with it. An anonymized text may still hold a shorthand such as
@@ -26,7 +26,6 @@ The draft is a starting point: an author reviews the TODO notes, writes the `exp
 the title, and only then does the file load as part of its suite.
 """
 
-import ipaddress
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -35,7 +34,6 @@ from pathlib import Path
 from typing import Any, Final
 
 import yaml
-from pydantic import JsonValue
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -51,6 +49,8 @@ from ais0c_contracts import (
     TriageResult,
     UrgentEvent,
 )
+from ais0c_harness.replay.anonymize import Anonymizer
+from ais0c_harness.replay.anonymize import addresses as found_addresses
 from ais0c_storage.models import (
     AgentRunRow,
     CaseRow,
@@ -60,76 +60,10 @@ from ais0c_storage.models import (
     ToolCallRow,
 )
 
-ALLOWED_V4_PREFIXES: Final[tuple[str, ...]] = ("192.0.2.", "198.51.100.", "203.0.113.")
-"""The RFC 5737 documentation ranges an address may keep."""
-V4_POOLS: Final[tuple[str, ...]] = ("198.51.100.", "192.0.2.", "203.0.113.")
-"""The documentation prefixes an anonymized address is mapped to, in order."""
-DOCUMENTATION_V6: Final = ipaddress.IPv6Network("2001:db8::/32")
-IPv4: Final = re.compile(r"(?<![\w.])(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})(?![\w.])")
-# Anything made of hex digits and at least two colons; `ipaddress` decides whether it
-# is an address, so a clock time (20:14:18) stays.
-IPv6: Final = re.compile(r"(?<![\w:.])(?=[0-9A-Fa-f]*:[0-9A-Fa-f]*:)[0-9A-Fa-f:]{3,}(?![\w:.])")
-LAB_DOMAIN: Final = re.compile(
-    r"(?<![\w.-])([a-z0-9](?:[a-z0-9-]*[a-z0-9])?)\.((?:bank|lab|local|internal|test)\.example"
-    r"|example\.(?:com|org|net))(?![\w.-])",
-    re.IGNORECASE,
-)
 TODO_PREFIX: Final = "TODO(author): "
 MAX_NOTES: Final = 40
 MAX_EXCERPT: Final = 500
 """The contract's EvidenceRef excerpt limit; the DB row may hold more."""
-
-
-def anonymize_text(text: str, mapping: dict[str, str]) -> str:
-    """`text` with its addresses and lab domains replaced, deterministically.
-
-    `mapping` collects what was replaced, so a suite's scenarios stay consistent with each
-    other and the same input address always maps to the same output.
-    """
-
-    def address(match: re.Match[str]) -> str:
-        found = match.group(0)
-        if found in mapping:
-            return mapping[found]
-        if ":" in found:
-            try:
-                parsed = ipaddress.IPv6Address(found)
-            except ValueError:
-                return found
-            if parsed in DOCUMENTATION_V6:
-                return found
-            replacement = f"2001:db8::{len(mapping) + 1:x}"
-        elif any(found.startswith(prefix) for prefix in ALLOWED_V4_PREFIXES):
-            return found
-        else:
-            replacement = _fresh_v4(found.rsplit(".", 1)[-1], mapping)
-        mapping[found] = replacement
-        return replacement
-
-    def domain(match: re.Match[str]) -> str:
-        return mapping.setdefault(match.group(0), f"{match.group(1)}.example.com")
-
-    return IPv4.sub(address, IPv6.sub(address, LAB_DOMAIN.sub(domain, text)))
-
-
-def _fresh_v4(host: str, mapping: dict[str, str]) -> str:
-    taken = set(mapping.values())
-    for prefix in V4_POOLS:
-        candidate = f"{prefix}{host}"
-        if candidate not in taken:
-            return candidate
-    return f"198.51.100.{1 + len(mapping) % 254}"
-
-
-def anonymize(value: JsonValue, mapping: dict[str, str]) -> JsonValue:
-    """Every string of a JSON value, at any depth, through `anonymize_text`."""
-    if isinstance(value, str):
-        return anonymize_text(value, mapping)
-    if isinstance(value, list):
-        return [anonymize(item, mapping) for item in value]
-    if isinstance(value, dict):
-        return {key: anonymize(item, mapping) for key, item in value.items()}
-    return value
 
 
 # --- what one chain holds ---------------------------------------------------------------------
@@ -231,7 +165,13 @@ def offense_of(chain: ChainRecord, notes: list[str]) -> OffenseSnapshot:
     start, start_note = _offense_start(chain)
     if start_note:
         notes.append(start_note)
-    addresses = list(dict.fromkeys(IPv4.findall(f"{claims}\n{excerpts}")))
+    addresses = list(
+        dict.fromkeys(
+            str(address)
+            for address in found_addresses(f"{claims}\n{excerpts}")
+            if "." in str(address)
+        )
+    )
     if not addresses:
         notes.append("the offense's addresses: none found in the claims or excerpts; fill them in.")
     users = list(
@@ -511,13 +451,18 @@ async def build_scenario(
             chain, suite=suite, scenario_id=scenario_id, agent=agent, notes=notes
         )
         scenario["input"]["enrichment"] = enrichment.model_dump(mode="json")
-    mapping: dict[str, str] = {}
-    data = anonymize(scenario, mapping)
+    anonymizer = Anonymizer(replace_lab_domains=True)
+    anonymizer.collect_all(scenario)
+    anonymizer.freeze()
+    data = anonymizer.value(scenario)
+    if not isinstance(data, dict):  # pragma: no cover - scenario is constructed as a mapping
+        raise TypeError("the scenario draft is not a mapping")
+    mapping = anonymizer.replacements
     # The draft must load as its suite's scenario before it is rendered.
     from ais0c_harness.eval.suites import adapter_type
 
     adapter_type(agent).scenario_type.model_validate(data)
-    text = render(scenario, run_id=run_id, mapping=mapping, notes=notes)
+    text = render(data, run_id=run_id, mapping=mapping, notes=notes)
     return text, f"{len(notes)} TODO notes, {len(mapping)} values anonymized"
 
 
@@ -526,10 +471,10 @@ def render(
 ) -> str:
     """The YAML with the provenance and the TODO notes as header comments.
 
-    `scenario` is written as it was built; `mapping` says what the written file anonymized.
+    `scenario` is already anonymized; `mapping` says what the written file anonymized.
     """
     body = yaml.safe_dump(
-        anonymize(scenario, dict(mapping)),
+        scenario,
         sort_keys=False,
         allow_unicode=True,
         width=100,

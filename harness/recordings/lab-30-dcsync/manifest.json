@@ -1,7 +1,8 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "recording_id": "lab-30-dcsync",
   "offense_id": 30,
+  "offense_view": "open",
   "window": {
     "start": "2026-10-05T13:57:43.905000Z",
     "end": "2026-10-05T15:57:43.905000Z"
@@ -46,8 +47,8 @@
     },
     {
       "name": "tools.json",
-      "sha256": "8ed858581070005d26fd5deb288b524646b67bae4e2a73df3a49db6aa82166d8",
-      "size": 5100
+      "sha256": "25efdec464de6183beb50b39e8fd3723ecb48ccc09aa5bca88790f3c2b0e2d2b",
+      "size": 5079
     },
     {
       "name": "events.jsonl.gz",

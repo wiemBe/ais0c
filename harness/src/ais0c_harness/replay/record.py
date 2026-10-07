@@ -12,6 +12,12 @@ queries with the lab's answers. The table leaves out the log source types in `ex
 default QRadar's own "Health Metrics", 98% of the lab's events and of no use to an analysis).
 Everything is anonymized (anonymize.py) before it is written.
 
+The lab offense may already be closed when it is recorded. A recording is an analysis input, so
+`build_recording` normalizes the recorded `get_offense` row to the view the agent would have seen
+while it was open: `status=OPEN`, `inactive=false`, and the three closing fields null. The compact
+`OffenseSnapshot` contract has no closing fields; the manifest marks both representations as the
+open view.
+
 `LabReader` is what the recorder needs of the lab; `GatewayReader` is the live one. `build_recording`
 takes what a reader returned and writes the recording, so the rest is tested without a lab.
 """
@@ -319,10 +325,11 @@ def build_recording(
     survives anonymization or the replay engine disagrees with the lab on an audit query.
     """
     anonymizer = Anonymizer(domains=domains, hosts=hosts)
+    raw_calls = _open_offense_calls(raw.calls)
     documents: list[JsonValue] = [
         raw.offense.model_dump(mode="json"),
         raw.enrichment.model_dump(mode="json"),
-        *(call.model_dump(mode="json") for call in raw.calls),
+        *(call.model_dump(mode="json") for call in raw_calls),
         *raw.events,
         *(audit.model_dump(mode="json") for audit in raw.audits),
     ]
@@ -336,7 +343,7 @@ def build_recording(
     )
     calls = [
         RecordedCall.model_validate(anonymizer.value(call.model_dump(mode="json")))
-        for call in raw.calls
+        for call in raw_calls
     ]
     events = [_event(anonymizer.value(row)) for row in raw.events]
     audits = [
@@ -380,6 +387,32 @@ def build_recording(
     except RecordingError as error:  # pragma: no cover - the writer and the reader agree
         raise RecordError(f"the written recording does not read back: {error}") from None
     return manifest
+
+
+def _open_offense_calls(calls: Sequence[RecordedCall]) -> list[RecordedCall]:
+    """Copy calls, making every successful `get_offense` row an open-offense view."""
+    normalized: list[RecordedCall] = []
+    for call in calls:
+        if call.tool_id != "get_offense" or call.result.status is not ToolStatus.OK:
+            normalized.append(call)
+            continue
+        rows: list[dict[str, JsonValue]] = []
+        for source in call.result.data:
+            row = dict(source)
+            row.update(
+                {
+                    "status": "OPEN",
+                    "inactive": False,
+                    "close_time": None,
+                    "closing_user": None,
+                    "closing_reason_id": None,
+                }
+            )
+            rows.append(row)
+        normalized.append(
+            call.model_copy(update={"result": call.result.model_copy(update={"data": rows})})
+        )
+    return normalized
 
 
 def _event(row: JsonValue) -> RecordedEvent:

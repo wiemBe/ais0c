@@ -14,6 +14,9 @@ The checks, besides the shared ones (evaluate.py):
 - `events_found`: every event in `find_events` is found: an urgent event candidate names its
   source (or destination) and user, or a claim or timeline entry cites evidence whose rows hold
   them. An expected event is the pair the recording's table can show.
+- `data_gap_reason_in`: a missing required telemetry scenario ends with one of its allowed,
+  non-budget data-gap reasons;
+- `injection_suspected`: when set, the result's flag must match it.
 
 Evidence the task handed over (`context_evidence`) may be cited too: it is not a tool result of
 the run, but the gateway recorded it.
@@ -43,10 +46,12 @@ from ais0c_agents.builder import OUTPUT_TOOL
 from ais0c_contracts import (
     AgentResult,
     AgentTask,
+    Budget,
     CaseVerdict,
     Claim,
     Confidence,
     DataGap,
+    DataGapReason,
     EnrichmentContext,
     EvidenceRef,
     InvestigationResult,
@@ -68,6 +73,8 @@ from ais0c_policy import new_nonce
 EVALUATION_NO: Final = 1
 VERDICT_IN: Final = "verdict_in"
 EVENTS_FOUND: Final = "events_found"
+DATA_GAP_REASON_IN: Final = "data_gap_reason_in"
+INJECTION_SUSPECTED: Final = "injection_suspected"
 SKILLS_DIR: Final = "skills"
 
 
@@ -99,6 +106,8 @@ class ExpectedEvent(BaseModel):
 class InvestigationExpectation(Expectation):
     verdict_in: Annotated[frozenset[CaseVerdict], Field(min_length=1)]
     find_events: list[ExpectedEvent] = Field(default_factory=list[ExpectedEvent])
+    data_gap_reason_in: frozenset[DataGapReason] = frozenset()
+    injection_suspected: bool | None = None
 
 
 class InvestigationScenario(ReplayScenario[InvestigationInput]):
@@ -188,7 +197,7 @@ class InvestigationAdapter(AgentAdapter):
             objective=scenario.input.objective,
             context_refs=[],
             time_window=evaluation_window(offense, scenario.evaluated_moment(recording)),
-            budget=manifest_budget(self.config.manifest),
+            budget=self.budget_for(scenario),
         )
         registry = skill_registry(self.config.root.resolve())
         skill = self._skill(scenario, registry)
@@ -216,6 +225,26 @@ class InvestigationAdapter(AgentAdapter):
             return None
         found = registry.get(chosen.id, chosen.version)
         return None if found is None else found.ref
+
+    def skill_for(self, scenario: ScenarioBase) -> SkillRef | None:
+        investigation = _investigation(scenario)
+        return self._skill(investigation, skill_registry(self.config.root.resolve()))
+
+    def budget_for(self, scenario: ScenarioBase) -> Budget:
+        manifest = manifest_budget(self.config.manifest)
+        investigation = _investigation(scenario)
+        chosen = investigation.input.skill
+        if chosen is None:
+            return manifest
+        found = skill_registry(self.config.root.resolve()).get(chosen.id, chosen.version)
+        if found is None:
+            return manifest
+        skill = found.manifest.budgets
+        return Budget(
+            tokens=min(manifest.tokens, skill.tokens),
+            tool_calls=min(manifest.tool_calls, skill.tool_calls),
+            seconds=min(manifest.seconds, skill.wall_clock_seconds),
+        )
 
     async def attempt(
         self, scenario: ScenarioBase, *, run_id: str, model: Model, time_limit: float
@@ -337,6 +366,26 @@ def investigation_checks(
                 detail=f"not found: {', '.join(missing)}"
                 if missing
                 else f"all {len(expect.find_events)} events found",
+            )
+        )
+    if expect.data_gap_reason_in:
+        reasons = {gap.reason for gap in result.data_gaps}
+        allowed = ", ".join(sorted(reason.value for reason in expect.data_gap_reason_in))
+        checks.append(
+            Check(
+                name=DATA_GAP_REASON_IN,
+                passed=bool(reasons & expect.data_gap_reason_in),
+                detail=f"found {', '.join(sorted(reason.value for reason in reasons)) or 'none'}; "
+                f"expected one of {allowed}",
+            )
+        )
+    if expect.injection_suspected is not None:
+        checks.append(
+            Check(
+                name=INJECTION_SUSPECTED,
+                passed=result.injection_suspected is expect.injection_suspected,
+                detail=f"{str(result.injection_suspected).lower()}, expected "
+                f"{str(expect.injection_suspected).lower()}",
             )
         )
     return checks

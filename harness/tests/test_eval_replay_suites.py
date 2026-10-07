@@ -46,6 +46,7 @@ from .eval_helpers import REGISTRY, REPO_ROOT, SUITES, gateway_profile_of
 INVESTIGATION = "investigation-gold"
 VERIFICATION = "verification-gold"
 INV_01 = "inv-01-dcsync"
+INV_02 = "inv-02-dcsync-no-skill"
 VER_01 = "ver-01-refutable-ip"
 VER_02 = "ver-02-all-correct"
 RECORDING = "lab-30-dcsync"
@@ -81,7 +82,7 @@ def scripted_factory(
         assert isinstance(played, InvestigationScenario | VerificationScenario)
         return scripted_replay_model(
             played,
-            recording_of(REPO_ROOT.resolve(), played.input.recording),
+            played.recorded(REPO_ROOT),
             answer=(answers or {}).get(played.id),
         )
 
@@ -128,7 +129,7 @@ def failed(run: EvalRun, scenario_id: str) -> set[str]:
 def test_the_gold_suites_are_quality_suites_with_the_planned_scenarios() -> None:
     suites = {suite.id: suite for suite in load_suites(REPO_ROOT, [INVESTIGATION, VERIFICATION])}
 
-    assert [item.id for item in suites[INVESTIGATION].scenarios] == [INV_01]
+    assert [item.id for item in suites[INVESTIGATION].scenarios] == [INV_01, INV_02]
     assert [item.id for item in suites[VERIFICATION].scenarios] == [VER_01, VER_02]
     assert {suite.kind for suite in suites.values()} == {"quality"}
     assert [suites[INVESTIGATION].agent, suites[VERIFICATION].agent] == [
@@ -143,7 +144,7 @@ def test_every_gold_scenario_passes_with_a_scripted_model_k_2() -> None:
 
     assert report.settings.execution_mode == "replay"
     assert {suite.id: (suite.passes, suite.runs) for suite in report.suites} == {
-        INVESTIGATION: (2, 2),
+        INVESTIGATION: (4, 4),
         VERIFICATION: (4, 4),
     }
     for record in report.runs:
@@ -165,6 +166,48 @@ def test_a_scenarios_version_covers_the_recording_it_names() -> None:
     assert only.version == hashlib.sha256(own + manifest).hexdigest()
 
 
+def test_a_scenario_overlay_adds_and_removes_events_without_changing_the_recording() -> None:
+    base = investigation()
+    stored = recording_of(REPO_ROOT.resolve(), RECORDING)
+    added = stored.events[0].model_copy(
+        update={
+            "sourceip": "198.51.100.77",
+            "destinationip": "198.51.100.77",
+            "payload": "synthetic overlay event",
+        }
+    )
+    data = base.model_dump(mode="json")
+    data["input"]["overlay"] = {
+        "remove_events": [{"qid": 5000849, "username": "svc_backup"}],
+        "add_events": [added.model_dump(mode="json")],
+    }
+    played = InvestigationScenario.model_validate(data)
+
+    layered = played.recorded(REPO_ROOT)
+
+    assert len(stored.events) == 15270
+    assert (
+        sum(event.qid == 5000849 and event.username == "svc_backup" for event in stored.events) == 3
+    )
+    assert (
+        sum(event.qid == 5000849 and event.username == "svc_backup" for event in layered.events)
+        == 0
+    )
+    assert any(event.sourceip == "198.51.100.77" for event in layered.events)
+
+
+def test_an_overlay_event_with_a_non_documentation_address_is_rejected() -> None:
+    base = investigation()
+    stored = recording_of(REPO_ROOT.resolve(), RECORDING)
+    added = stored.events[0].model_copy(update={"sourceip": "10.0.0.7"})
+    data = base.model_dump(mode="json")
+    data["input"]["overlay"] = {"add_events": [added.model_dump(mode="json")]}
+    played = InvestigationScenario.model_validate(data)
+
+    with pytest.raises(ValueError, match="outside the documentation ranges"):
+        played.recorded(REPO_ROOT)
+
+
 def test_the_manifests_list_the_gold_suites_and_releases_names_them() -> None:
     for manifest, suite in (("investigation", INVESTIGATION), ("verification", VERIFICATION)):
         data = yaml.safe_load((REPO_ROOT / f"config/agents/{manifest}.yaml").read_text())
@@ -176,13 +219,16 @@ def test_the_manifests_list_the_gold_suites_and_releases_names_them() -> None:
     assert INVESTIGATION in next(
         user.suites for user in agents["soc-reasoning"] if user.agent_id == "investigation"
     )
+    assert "skill-windows-dcsync" in next(
+        user.suites for user in agents["soc-reasoning"] if user.agent_id == "investigation"
+    )
 
 
 # --- each check fails when its fact is wrong ----------------------------------------------------
 
 
 def test_an_fp_verdict_fails_the_investigation() -> None:
-    result = play([INVESTIGATION], answers=only(INV_01, verdict="fp"))
+    result = play([INVESTIGATION], answers=only(INV_01, verdict="fp"), scenario_ids=[INV_01])
 
     assert failed(result, INV_01) == {"verdict_in"}
     assert result.report.suites[0].passes == 0
@@ -406,10 +452,8 @@ def test_the_investigation_task_is_the_workers() -> None:
         stored.offense,
         played.evaluated_moment(stored),  # type: ignore[attr-defined]
     )
-    assert (task.task.budget.tokens, task.task.budget.tool_calls) == (
-        found.config.manifest.budgets.tokens,
-        found.config.manifest.budgets.tool_calls,
-    )
+    assert task.task.budget == found.budget_for(played)
+    assert (task.task.budget.tokens, task.task.budget.tool_calls) == (250000, 24)
     assert task.skill is not None
     assert task.skill.ref.skill_id == "windows-dcsync"
     assert [claim.text for claim in task.triage.claims] == [

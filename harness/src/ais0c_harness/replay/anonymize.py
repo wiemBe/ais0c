@@ -1,4 +1,4 @@
-"""Anonymization of a recording (T-052 criterion 2, decision T-70).
+"""Anonymization shared by recordings and scenario drafts (T-055 criterion 3).
 
 What a lab recording holds goes through `Anonymizer` before anything is written:
 
@@ -13,9 +13,12 @@ What a lab recording holds goes through `Anonymizer` before anything is written:
   letter case (`DC-LAB-01.bank.example` becomes `host-01.corp.example.com`). A domain's
   distinguished-name form (`DC=bank,DC=example`) is replaced as well.
 
-The mapping table lives in the object and is never written. `foreign_addresses` is the check the
-repository test and the recorder's last step use: the addresses of a text that are not documentation
-addresses.
+Scenario drafts additionally replace DNS-shaped lab suffixes (``bank.example``, ``lab.example``,
+``local.example``, ``internal.example`` and ``test.example``) with ``example.com`` while keeping
+the leading host label. The mapping table lives in the object. Recordings never write it; the
+scenario-draft command exposes it only in its provenance comments. `foreign_addresses` is the
+check the repository test and the recorder's last step use: the addresses of a text that are not
+documentation addresses.
 """
 
 import ipaddress
@@ -39,6 +42,11 @@ _IPV4: Final = re.compile(r"(?<!\d)(?:\d{1,3}\.){3}\d{1,3}(?!\d)")
 _IPV6: Final = re.compile(r"(?<![0-9A-Za-z:])[0-9A-Fa-f:]{2,}(?:\.\d{1,3}){0,3}(?![0-9A-Za-z:])")
 _NAME_EDGE_BEFORE: Final = r"(?<![A-Za-z0-9-])"
 _NAME_EDGE_AFTER: Final = r"(?![A-Za-z0-9-])"
+_LAB_DOMAIN: Final = re.compile(
+    r"(?<![\w.-])([a-z0-9](?:[a-z0-9-]*[a-z0-9])?)\."
+    r"((?:bank|lab|local|internal|test)\.example|example\.(?:com|org|net))(?![\w.-])",
+    re.IGNORECASE,
+)
 
 
 class AnonymizationError(ValueError):
@@ -101,8 +109,18 @@ def strings(value: JsonValue) -> Iterable[str]:
 class Anonymizer:
     """Collects the addresses of everything a recording holds, then replaces them."""
 
-    def __init__(self, *, domains: Sequence[str] = (), hosts: Sequence[str] = ()) -> None:
-        """`domains` and `hosts` are the lab's own names, as they appear in the data."""
+    def __init__(
+        self,
+        *,
+        domains: Sequence[str] = (),
+        hosts: Sequence[str] = (),
+        replace_lab_domains: bool = False,
+    ) -> None:
+        """`domains` and `hosts` are the lab's own names, as they appear in the data.
+
+        `replace_lab_domains` is for scenario drafts whose database record does not carry the
+        lab's configured domain list. It recognizes only the synthetic suffixes documented above.
+        """
         self._domains = [domain.lower() for domain in domains]
         self._hosts = {
             host.lower(): HOST_FORMAT.format(number) for number, host in enumerate(hosts, 1)
@@ -111,6 +129,7 @@ class Anonymizer:
         self._seen6: set[ipaddress.IPv6Address] = set()
         self._mapping: dict[str, str] = {}
         self._frozen = False
+        self._replace_lab_domains = replace_lab_domains
 
     def collect(self, text: str) -> None:
         """Note the addresses in `text`; no replacement is possible until `freeze`."""
@@ -201,12 +220,25 @@ class Anonymizer:
                 value,
                 flags=re.I,
             )
+        if self._replace_lab_domains:
+            value = _LAB_DOMAIN.sub(self._lab_domain, value)
         return value
+
+    def _lab_domain(self, match: re.Match[str]) -> str:
+        found = match.group(0)
+        replacement = f"{match.group(1)}.example.com"
+        self._mapping.setdefault(found, replacement)
+        return replacement
 
     @property
     def mapping_size(self) -> int:
         """How many addresses were mapped; the table itself is not exposed."""
         return len(self._mapping)
+
+    @property
+    def replacements(self) -> dict[str, str]:
+        """A copy of the replacements, for scenario-draft provenance only."""
+        return {old: new for old, new in self._mapping.items() if old != new}
 
 
 def anonymized(

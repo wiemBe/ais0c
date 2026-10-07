@@ -60,6 +60,7 @@ def test_a_recording_reads_back_through_its_models(tmp_path: Path) -> None:
 
     assert recording.manifest.recording_id == "synthetic-77"
     assert recording.manifest.offense_id == 77
+    assert (recording.manifest.schema_version, recording.manifest.offense_view) == (2, "open")
     assert recording.manifest.events == len(recording.events) == 6
     assert recording.offense.offense_source == "svc_backup"
     assert [call.tool_id for call in recording.calls] == ["get_offense", "get_rule"]
@@ -70,6 +71,19 @@ def test_a_recording_reads_back_through_its_models(tmp_path: Path) -> None:
         "events.jsonl.gz",
         "audits.json",
     }
+
+
+def test_a_closed_get_offense_result_is_written_as_the_open_view(tmp_path: Path) -> None:
+    recording = write_synthetic(tmp_path / "open-77")
+    [row] = recording.calls[0].result.data
+
+    assert row["status"] == "OPEN"
+    assert row["inactive"] is False
+    assert tuple(row[field] for field in ("close_time", "closing_user", "closing_reason_id")) == (
+        None,
+        None,
+        None,
+    )
 
 
 def test_a_recording_is_reproducible(tmp_path: Path) -> None:

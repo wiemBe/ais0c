@@ -331,7 +331,7 @@ def test_the_evaluator_version_and_prompt_hash_reach_the_run_envelope() -> None:
 
     sealed = envelope(
         job,
-        config=config(),
+        adapter=adapter,
         run_id=job.run_id,
         k=1,
         started_at=None,

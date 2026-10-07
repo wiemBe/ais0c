@@ -11,10 +11,9 @@ import yaml
 from ais0c_harness.eval.cli import Dependencies, main
 from ais0c_harness.eval.from_records import (
     TODO_PREFIX,
-    anonymize,
-    anonymize_text,
     render,
 )
+from ais0c_harness.replay.anonymize import Anonymizer
 
 from .eval_helpers import REPO_ROOT, SUITES
 
@@ -61,9 +60,11 @@ def test_the_scan_finds_a_real_looking_address() -> None:
 
 
 def test_an_address_outside_the_documentation_ranges_is_mapped_into_them() -> None:
-    mapping: dict[str, str] = {}
-
-    text = anonymize_text("10.20.30.40 talked to 192.168.1.5 and 198.51.100.9", mapping)
+    source = "10.20.30.40 talked to 192.168.1.5 and 198.51.100.9"
+    anonymizer = Anonymizer(replace_lab_domains=True)
+    anonymizer.collect(source)
+    anonymizer.freeze()
+    text = anonymizer.text(source)
 
     assert addresses_outside_documentation(text) == []
     assert text.endswith("198.51.100.9")
@@ -72,26 +73,39 @@ def test_an_address_outside_the_documentation_ranges_is_mapped_into_them() -> No
 
 
 def test_the_same_address_always_maps_to_the_same_one() -> None:
-    mapping: dict[str, str] = {}
-
-    first = anonymize_text("10.20.30.40", mapping)
-    second = anonymize_text("seen 10.20.30.40 again, then 10.20.30.41", mapping)
-    third = anonymize_text("10.20.30.40", {})
+    source = "seen 10.20.30.40 again, then 10.20.30.41"
+    anonymizer = Anonymizer()
+    anonymizer.collect(source)
+    anonymizer.freeze()
+    first = anonymizer.text("10.20.30.40")
+    second = anonymizer.text(source)
+    again = Anonymizer()
+    again.collect(source)
+    again.freeze()
+    third = again.text("10.20.30.40")
 
     assert second.split()[1] == first
     assert third == first
-    assert len(set(mapping.values())) == 2
+    assert len(set(anonymizer.replacements.values())) == 2
 
 
 def test_an_ipv6_address_maps_into_the_documentation_range() -> None:
-    text = anonymize_text("peer fd00:1234:5678::9 and fe80::1", {})
+    source = "peer fd00:1234:5678::9 and fe80::1"
+    anonymizer = Anonymizer()
+    anonymizer.collect(source)
+    anonymizer.freeze()
+    text = anonymizer.text(source)
 
     assert addresses_outside_documentation(text) == []
     assert text.count("2001:db8::") == 2
 
 
 def test_a_lab_domain_maps_to_example_com_and_a_clock_time_stays() -> None:
-    text = anonymize_text("dc01.bank.example at 20:14:18 on host.lab.example", {})
+    source = "dc01.bank.example at 20:14:18 on host.lab.example"
+    anonymizer = Anonymizer(replace_lab_domains=True)
+    anonymizer.collect(source)
+    anonymizer.freeze()
+    text = anonymizer.text(source)
 
     assert text == "dc01.example.com at 20:14:18 on host.example.com"
 
@@ -99,13 +113,19 @@ def test_a_lab_domain_maps_to_example_com_and_a_clock_time_stays() -> None:
 def test_a_timestamp_and_a_year_stay_as_they_are() -> None:
     text = "retrieved 2026-10-07T10:54:20.497913+00:00 and 2026-10-06 20:14:18, offense 35"
 
-    assert anonymize_text(text, {}) == text
+    anonymizer = Anonymizer(replace_lab_domains=True)
+    anonymizer.collect(text)
+    anonymizer.freeze()
+    assert anonymizer.text(text) == text
 
 
 def test_anonymize_reaches_every_string_at_any_depth() -> None:
     value = {"a": ["x 10.0.0.1"], "b": {"c": "10.0.0.2", "n": 7}, "t": True}
 
-    result = anonymize(value, {})
+    anonymizer = Anonymizer()
+    anonymizer.collect_all(value)
+    anonymizer.freeze()
+    result = anonymizer.value(value)
 
     assert addresses_outside_documentation(str(result)) == []
     assert isinstance(result, dict)
@@ -117,7 +137,7 @@ def test_a_draft_names_its_provenance_and_its_todo_notes() -> None:
     mapping = {"10.0.0.1": "198.51.100.1"}
 
     text = render(
-        {"id": "x", "input": {"source": "10.0.0.1"}},
+        {"id": "x", "input": {"source": "198.51.100.1"}},
         run_id="case-35-reporting-1",
         mapping=mapping,
         notes=["offense start: guessed"],

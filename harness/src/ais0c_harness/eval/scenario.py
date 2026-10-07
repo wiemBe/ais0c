@@ -19,7 +19,7 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue, StringConstraints
 
 ExecutionMode = Literal["fixture", "replay"]
 
-SCENARIO_ID_PATTERN: Final = r"^[a-z][a-z0-9]*-[0-9]{2}-[a-z0-9]+(?:-[a-z0-9]+)*$"
+SCENARIO_ID_PATTERN: Final = r"^[a-z][a-z0-9]*(?:-[a-z0-9]+)*-[0-9]{2}-[a-z0-9]+(?:-[a-z0-9]+)*$"
 # The run IDs (`harness-<id>-<n>-retry`) must stay within the contract's 200 characters.
 SCENARIO_ID_MAX_LENGTH: Final = 100
 

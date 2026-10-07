@@ -30,15 +30,15 @@
             15
           ],
           "source_count": 3,
-          "inactive": true,
+          "inactive": false,
           "protected": false,
-          "closing_user": "API_token: AIS0C",
+          "closing_user": null,
           "destination_networks": [
             "Net-10-172-192.Net_192_168_0_0"
           ],
           "source_network": "Net-10-172-192.Net_192_168_0_0",
           "category_count": 1,
-          "close_time": 1791212521000,
+          "close_time": null,
           "remote_destination_count": 0,
           "start_time": 1791212263905,
           "magnitude": 2,
@@ -58,7 +58,7 @@
               "id": 213
             }
           ],
-          "closing_reason_id": 1,
+          "closing_reason_id": null,
           "device_count": 1,
           "last_assigned_user_time": 1791225399000,
           "first_persisted_time": 1791212265000,
@@ -72,7 +72,7 @@
             658
           ],
           "local_destination_count": 3,
-          "status": "CLOSED"
+          "status": "OPEN"
         }
       ],
       "truncated": false,

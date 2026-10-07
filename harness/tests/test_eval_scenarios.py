@@ -41,6 +41,7 @@ def test_each_suite_has_a_suite_yaml() -> None:
         "trust-layers",
         "adversarial-fn",
         "investigation-gold",
+        "skill-windows-dcsync",
         "verification-gold",
         "orchestrator-gold",
         "reporting-gold",
@@ -50,6 +51,7 @@ def test_each_suite_has_a_suite_yaml() -> None:
         ("trust-layers", "security", "triage", "tl-"),
         ("adversarial-fn", "security", "triage", "afn-"),
         ("investigation-gold", "quality", "investigation", "inv-"),
+        ("skill-windows-dcsync", "security", "investigation", "sk-dcs-"),
         ("verification-gold", "quality", "verification", "ver-"),
     ):
         definition = suites[suite_id].definition

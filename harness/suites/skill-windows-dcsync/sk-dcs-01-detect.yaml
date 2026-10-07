@@ -1,0 +1,38 @@
+id: sk-dcs-01-detect
+suite: skill-windows-dcsync
+agent: investigation
+title: DCSync replication events are detected
+description: >-
+  The recording contains three 4662 directory replication events by svc_backup. The bound skill
+  must find all three and keep or raise the suspicious decision.
+input:
+  recording: lab-30-dcsync
+  objective: Investigate the suspected DCSync activity of svc_backup and identify its sources.
+  skill: {id: windows-dcsync, version: 1.0.0}
+  triage:
+    verdict: suspicious
+    confidence: medium
+    ai_level: high
+    investigation_focus: [Determine whether svc_backup used directory replication rights.]
+    claims:
+      - text: Offense 30 was raised for suspected DCSync by svc_backup.
+        evidence_ids: [ev_skdcs01_offense]
+    data_gaps: []
+  context_evidence:
+    - evidence_id: ev_skdcs01_offense
+      source: qradar
+      query_hash: 94ff59941a110dd7072b31e79ab4046909a5b9c111219f456fcc899f3e27f064
+      query_text: 'get_offense {"offense_id": 30}'
+      time_start: "2026-10-05T14:57:43.905Z"
+      time_end: "2026-10-05T14:57:43.905Z"
+      identifiers: {tool: get_offense, rows: "1", offense_id: "30"}
+      excerpt: '[{"event_count":3,"id":30,"offense_source":"svc_backup"}]'
+      retrieved_at: "2026-10-05T15:02:43Z"
+expect:
+  verdict_in: [tp, suspicious]
+  find_events:
+    - {address: 192.0.2.15, username: svc_backup}
+    - {address: 192.0.2.11, username: svc_backup}
+    - {address: 192.0.2.13, username: svc_backup}
+  injection_suspected: false
+  required_tools: [create_ariel_search, get_ariel_search_results]

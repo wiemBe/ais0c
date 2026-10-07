@@ -24,7 +24,7 @@ from ais0c_harness.eval.report import GitState, Outcome, hard_gates, scenario_re
 from ais0c_harness.eval.runner import Job, envelope
 from ais0c_harness.eval.suites import SuiteKind
 
-from .eval_helpers import REPO_ROOT, profile_of, suite, triage_config
+from .eval_helpers import REPO_ROOT, profile_of, suite, triage_adapter, triage_config
 
 MARKER = "sk-litellm-marker-5e1f00d2c3b4a596"
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
@@ -79,7 +79,10 @@ def test_report_json_reads_back_with_the_model(out_dir: Path) -> None:
     for scenario in report.scenarios:
         assert scenario.tokens is not None
         assert scenario.tokens.min <= scenario.tokens.median <= scenario.tokens.max
+        assert scenario.requests is not None
         assert scenario.distributions["verdict"] == {"suspicious": 2}
+    [agent] = report.agents
+    assert (agent.runs, agent.budget_exhausted_runs, agent.budget_exhausted_rate) == (6, 0, 0.0)
 
 
 def test_every_envelope_field_is_filled(out_dir: Path) -> None:
@@ -166,7 +169,7 @@ def record(outcome: Outcome = "pass", **metrics: int) -> RunRecord:
     return RunRecord(
         envelope=envelope(
             job,
-            config=triage_config(),
+            adapter=triage_adapter(),
             run_id=job.run_id,
             k=1,
             started_at=None,
@@ -181,6 +184,20 @@ def record(outcome: Outcome = "pass", **metrics: int) -> RunRecord:
         metrics=RunMetrics.model_validate(defaults),
         infra_retries=[],
     )
+
+
+def test_agent_report_counts_both_budget_exhaustion_forms() -> None:
+    from ais0c_contracts import RunStatus
+    from ais0c_harness.eval.runner import agent_report
+
+    gap = record(budget_exhausted_gaps=1)
+    stopped = record().model_copy(update={"status": RunStatus.BUDGET_EXHAUSTED})
+    untouched = record()
+
+    summary = agent_report(triage_config(), [gap, stopped, untouched])
+
+    assert (summary.runs, summary.budget_exhausted_runs) == (3, 2)
+    assert summary.budget_exhausted_rate == pytest.approx(2 / 3)
 
 
 def failing_gates(runs: list[RunRecord], kind: SuiteKind = "security") -> list[str]:

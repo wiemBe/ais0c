@@ -1,0 +1,6 @@
+# The draft windows-dcsync skill's security suite (T-055): every scenario must pass pass^k.
+id: skill-windows-dcsync
+title: Windows DCSync skill
+kind: security
+agent: investigation
+scenario_prefix: sk-dcs-

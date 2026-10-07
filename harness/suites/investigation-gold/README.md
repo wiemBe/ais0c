@@ -7,6 +7,7 @@ Task T-052 writes it; T-055 adds the skill suites and the budget measurements.
 | Scenario | Recording | What it asks |
 |---|---|---|
 | `inv-01-dcsync` | `lab-30-dcsync` | The DCSync offense of the lab: `svc_backup` asked a domain controller for directory replication three times, from three servers. Find all three; keep the decision at `suspicious` or raise it to `tp`; cite only evidence the gateway returned |
+| `inv-02-dcsync-no-skill` | `lab-30-dcsync` | The same objective and evidence without a selected skill, for the paired skill/no-skill measurement |
 
 ## Format
 

@@ -31,7 +31,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from functools import cache, cached_property
 from pathlib import Path
-from typing import Annotated, Final
+from typing import Annotated, Final, Literal
 
 from pydantic import (
     AwareDatetime,
@@ -45,7 +45,7 @@ from pydantic import (
 
 from ais0c_contracts import EnrichmentContext, OffenseSnapshot, TimeWindow, ToolResult
 
-SCHEMA_VERSION: Final = 1
+SCHEMA_VERSION: Final = 2
 RECORDINGS_DIR: Final = "harness/recordings"
 MANIFEST_FILE: Final = "manifest.json"
 OFFENSE_FILE: Final = "offense.json"
@@ -138,6 +138,8 @@ class RecordingManifest(_Strict):
     schema_version: int
     recording_id: RecordingId
     offense_id: int
+    offense_view: Literal["open"]
+    """The snapshot and recorded get_offense result are normalized as an open offense."""
     window: TimeWindow
     """The events' window: an hour before the offense's start to an hour after its last update."""
     events: Annotated[int, Field(ge=0)]
@@ -229,6 +231,7 @@ def write_recording(
         schema_version=SCHEMA_VERSION,
         recording_id=recording_id,
         offense_id=offense.offense_id,
+        offense_view="open",
         window=window,
         events=len(events),
         columns=list(EVENT_COLUMNS),

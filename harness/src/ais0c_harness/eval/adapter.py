@@ -28,7 +28,7 @@ from pydantic_ai.models.wrapper import WrapperModel
 from pydantic_ai.settings import ModelSettings
 
 from ais0c_agents import AgentRun
-from ais0c_contracts import AgentResult, RunStatus
+from ais0c_contracts import AgentResult, Budget, RunStatus, SkillRef
 from ais0c_harness.eval.config import AgentConfig
 from ais0c_harness.eval.evaluate import Evaluation
 from ais0c_harness.eval.fixture_gateway import GatewayExchange
@@ -132,6 +132,19 @@ class AgentAdapter(ABC):
     @property
     def wall_clock_seconds(self) -> float:
         return float(self.config.manifest.budgets.wall_clock_seconds)
+
+    def budget_for(self, scenario: ScenarioBase) -> Budget:
+        """The effective budget of `scenario`; adapters may narrow it (a skill does)."""
+        budgets = self.config.manifest.budgets
+        return Budget(
+            tokens=budgets.tokens,
+            tool_calls=budgets.tool_calls,
+            seconds=budgets.wall_clock_seconds,
+        )
+
+    def skill_for(self, scenario: ScenarioBase) -> SkillRef | None:
+        """The selected skill recorded in the envelope; none for agents without one."""
+        return None
 
     def evaluator(self) -> EvaluatorIdentity | None:
         """The LLM evaluator this adapter's runs add to the agent's own model, if any."""
