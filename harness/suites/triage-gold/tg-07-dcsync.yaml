@@ -1,0 +1,145 @@
+# Triage Gold suite (docs/agent-harness.md §6), scenario 7: DCSync credential access (T1003.006), the lab's hardest case.
+#
+# A quality scenario: no attack, no injected text. The offense, the rule and the asset
+# record carry the fields that separate the harmless background from the attack; the
+# expected verdict and level are in `expect` only (T-059, decision T-78). The tools it
+# scripts: get_offense, get_rule, list_assets, list_offenses; the derived tools are
+# answered from the offense (T-67 (3)).
+#
+# Everything here is synthetic: RFC 5737 addresses, the T-008 lab names, made-up IDs.
+id: tg-07-dcsync
+suite: triage-gold
+agent: triage
+title: A non-machine account requests directory replication from a domain controller
+description: An administrative account that is not a domain controller used the directory replication
+  rights on DC-LAB-01 three times within seconds. QRadar shows the events as generic audit events.
+input:
+  offense:
+    offense_id: 9307
+    description: 'AIS0C LAB - DCSync by a non-machine account: audit events on DC-LAB-01 for bkupadmin'
+    offense_type: Username
+    offense_source: bkupadmin
+    rule_ids:
+    - 100705
+    rule_names:
+    - AIS0C LAB - DCSync by a non-machine account
+    categories:
+    - Object Access
+    magnitude: 6
+    start_time: '2026-10-05T03:12:00Z'
+    last_updated_time: '2026-10-05T03:14:00Z'
+    event_count: 3
+    log_source_ids:
+    - 4101
+    source_ips: []
+    destination_ips:
+    - 192.0.2.10
+    usernames:
+    - bkupadmin
+  enrichment:
+    catalog:
+      rules:
+      - rule_id: 100705
+        mode: analyze
+      log_sources:
+      - log_source_id: 4101
+        type_name: Microsoft Windows Security Event Log
+        description: Domain controller DC-LAB-01, Windows security events
+        criticality: high
+    critical_asset_hits: []
+    ioc_hits: []
+    entity_resolutions: []
+    floor_level: null
+  knowledge: []
+  tool_results:
+    get_offense:
+    - status: ok
+      evidence_id: ev_tg07_offense
+      truncated: false
+      coverage:
+        complete: true
+        gaps: []
+      data:
+      - id: 9307
+        description: 'AIS0C LAB - DCSync by a non-machine account: audit events on DC-LAB-01 for bkupadmin'
+        offense_type: 3
+        offense_source: bkupadmin
+        event_count: 3
+        source_count: 0
+        local_destination_count: 1
+        username_count: 1
+        magnitude: 6
+        status: OPEN
+        start_time: 1791169920000
+        last_updated_time: 1791170040000
+        categories:
+        - Object Access
+        rules:
+        - id: 100705
+          type: CRE_RULE
+        log_sources:
+        - id: 4101
+          name: DC-LAB-01
+          type_name: Microsoft Windows Security Event Log
+    get_rule:
+    - status: ok
+      evidence_id: ev_tg07_rule
+      truncated: false
+      coverage:
+        complete: true
+        gaps: []
+      data:
+      - id: 100705
+        name: AIS0C LAB - DCSync by a non-machine account
+        type: EVENT
+        enabled: true
+        origin: USER
+        notes: Event 4662 (An operation was performed on an object) with the properties 1131f6aa-9c07-11d1-f79f-00c04fc2dcd2
+          (DS-Replication-Get-Changes) or 1131f6ad-9c07-11d1-f79f-00c04fc2dcd2 (DS-Replication-Get-Changes-All)
+          by an account that is not a domain controller machine account and not the MSOL_ synchronisation
+          account. QRadar maps the event to the generic QID 5000849; the properties are in the payload.
+          Offense indexed by username.
+    list_assets:
+    - status: ok
+      evidence_id: ev_tg07_assets
+      truncated: false
+      coverage:
+        complete: true
+        gaps: []
+      data:
+      - id: 10
+        interfaces:
+        - ip_addresses:
+          - value: 192.0.2.10
+            type: IPV4
+        hostnames:
+        - name: DC-LAB-01
+          type: NETBIOS
+        properties:
+        - name: Unified Name
+          value: DC-LAB-01
+        - name: Role
+          value: domain controller
+    list_offenses:
+    - status: ok
+      evidence_id: ev_tg07_offenses
+      truncated: false
+      coverage:
+        complete: true
+        gaps: []
+      data:
+      - id: 9307
+        status: OPEN
+        offense_source: bkupadmin
+        magnitude: 6
+        start_time: 1791169920000
+        rules:
+        - id: 100705
+expect:
+  floor_level: null
+  verdict_in:
+  - tp
+  - suspicious
+  min_level: high
+  cited_tools:
+  - get_rule

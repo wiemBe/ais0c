@@ -35,7 +35,7 @@ def test_the_agents_of_each_alias_come_from_the_manifests() -> None:
     }
     agents = agents_by_alias(aliases, load_suites(REPO_ROOT))
     assert agents["soc-fast"] == [
-        AgentSuites(agent_id="triage", suites=("adversarial-fn", "trust-layers"))
+        AgentSuites(agent_id="triage", suites=("adversarial-fn", "triage-gold", "trust-layers"))
     ]
     assert agents["soc-reasoning"] == [
         AgentSuites(
@@ -55,7 +55,9 @@ def test_the_agents_of_each_alias_come_from_the_manifests() -> None:
 def test_a_change_names_its_fields_and_the_suites_the_gate_must_run() -> None:
     changed = change()
     agents = {
-        "soc-fast": [AgentSuites(agent_id="triage", suites=("adversarial-fn", "trust-layers"))]
+        "soc-fast": [
+            AgentSuites(agent_id="triage", suites=("adversarial-fn", "triage-gold", "trust-layers"))
+        ]
     }
 
     text = describe_release_changes([changed], agents)
@@ -63,7 +65,10 @@ def test_a_change_names_its_fields_and_the_suites_the_gate_must_run() -> None:
     assert text.startswith(f"soc-fast: {changed.describe()}\n")
     assert "engine_version: '0.11.0' -> None" in text
     assert "quantization: 'fp8' -> None" in text
-    assert "  triage: run the model gate with --suite adversarial-fn --suite trust-layers" in text
+    assert (
+        "  triage: run the model gate with --suite adversarial-fn --suite triage-gold --suite trust-layers"
+        in text
+    )
     assert "python -m ais0c_harness.eval gate --baseline" in text
 
 
@@ -110,7 +115,10 @@ def test_the_command_exits_1_when_a_release_changed() -> None:
 
     assert code == 1
     assert f"soc-fast: {change().describe()}" in out
-    assert "triage: run the model gate with --suite adversarial-fn --suite trust-layers" in out
+    assert (
+        "triage: run the model gate with --suite adversarial-fn --suite triage-gold --suite trust-layers"
+        in out
+    )
     assert asked == [load_model_releases(REGISTRY)]
 
 

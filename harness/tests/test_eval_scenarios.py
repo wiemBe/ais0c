@@ -40,6 +40,7 @@ def test_each_suite_has_a_suite_yaml() -> None:
     assert set(suites) == {
         "trust-layers",
         "adversarial-fn",
+        "triage-gold",
         "investigation-gold",
         "skill-windows-dcsync",
         "verification-gold",
@@ -50,6 +51,7 @@ def test_each_suite_has_a_suite_yaml() -> None:
     for suite_id, kind, agent, prefix in (
         ("trust-layers", "security", "triage", "tl-"),
         ("adversarial-fn", "security", "triage", "afn-"),
+        ("triage-gold", "quality", "triage", "tg-"),
         ("investigation-gold", "quality", "investigation", "inv-"),
         ("skill-windows-dcsync", "security", "investigation", "sk-dcs-"),
         ("verification-gold", "quality", "verification", "ver-"),

@@ -1,0 +1,150 @@
+# Triage Gold suite (docs/agent-harness.md §6), scenario 1: Kerberoasting (T1558.003) against service accounts.
+#
+# A quality scenario: no attack, no injected text. The offense, the rule and the asset
+# record carry the fields that separate the harmless background from the attack; the
+# expected verdict and level are in `expect` only (T-059, decision T-78). The tools it
+# scripts: get_offense, get_rule, list_assets, list_offenses; the derived tools are
+# answered from the offense (T-67 (3)).
+#
+# Everything here is synthetic: RFC 5737 addresses, the T-008 lab names, made-up IDs.
+id: tg-01-kerberoasting
+suite: triage-gold
+agent: triage
+title: One user account requests RC4 service tickets for many services
+description: A help desk account asked the domain controller for Kerberos service tickets for 14 different
+  services within five minutes. The tickets were issued with the RC4 encryption type.
+input:
+  offense:
+    offense_id: 9301
+    description: 'AIS0C LAB - Kerberoasting: Kerberos service tickets for 14 distinct ServiceName values
+      with TicketEncryptionType 0x17 by one account in 5 minutes'
+    offense_type: Username
+    offense_source: helpdesk1
+    rule_ids:
+    - 100701
+    rule_names:
+    - 'AIS0C LAB - Kerberoasting: RC4 service tickets for many services by one account'
+    categories:
+    - Misc Login Succeeded
+    magnitude: 6
+    start_time: '2026-10-05T09:20:00Z'
+    last_updated_time: '2026-10-05T09:24:00Z'
+    event_count: 41
+    log_source_ids:
+    - 4101
+    source_ips:
+    - 198.51.100.77
+    destination_ips:
+    - 192.0.2.10
+    usernames:
+    - helpdesk1
+  enrichment:
+    catalog:
+      rules:
+      - rule_id: 100701
+        mode: analyze
+        context_note: Service accounts of the domain use AES only; an RC4 service ticket is unusual.
+      log_sources:
+      - log_source_id: 4101
+        type_name: Microsoft Windows Security Event Log
+        description: Domain controller DC-LAB-01, Windows security events
+        criticality: high
+    critical_asset_hits: []
+    ioc_hits: []
+    entity_resolutions: []
+    floor_level: null
+  knowledge: []
+  tool_results:
+    get_offense:
+    - status: ok
+      evidence_id: ev_tg01_offense
+      truncated: false
+      coverage:
+        complete: true
+        gaps: []
+      data:
+      - id: 9301
+        description: 'AIS0C LAB - Kerberoasting: Kerberos service tickets for 14 distinct ServiceName
+          values with TicketEncryptionType 0x17 by one account in 5 minutes'
+        offense_type: 3
+        offense_source: helpdesk1
+        event_count: 41
+        source_count: 1
+        local_destination_count: 1
+        username_count: 1
+        magnitude: 6
+        status: OPEN
+        start_time: 1791192000000
+        last_updated_time: 1791192240000
+        categories:
+        - Misc Login Succeeded
+        rules:
+        - id: 100701
+          type: CRE_RULE
+        log_sources:
+        - id: 4101
+          name: DC-LAB-01
+          type_name: Microsoft Windows Security Event Log
+    get_rule:
+    - status: ok
+      evidence_id: ev_tg01_rule
+      truncated: false
+      coverage:
+        complete: true
+        gaps: []
+      data:
+      - id: 100701
+        name: 'AIS0C LAB - Kerberoasting: RC4 service tickets for many services by one account'
+        type: EVENT
+        enabled: true
+        origin: USER
+        notes: Event 4769 (A Kerberos service ticket was requested) with TicketEncryptionType 0x17 (RC4-HMAC)
+          and Status 0x0 for at least 10 distinct ServiceName values by one account within 10 minutes.
+          ServiceName krbtgt and machine accounts (names ending in $) are not counted. Offense indexed
+          by username.
+    list_assets:
+    - status: ok
+      evidence_id: ev_tg01_assets
+      truncated: false
+      coverage:
+        complete: true
+        gaps: []
+      data:
+      - id: 77
+        interfaces:
+        - ip_addresses:
+          - value: 198.51.100.77
+            type: IPV4
+        hostnames:
+        - name: WS-LAB-07
+          type: NETBIOS
+        properties:
+        - name: Unified Name
+          value: WS-LAB-07
+        - name: Role
+          value: workstation
+        - name: Last User
+          value: helpdesk1
+    list_offenses:
+    - status: ok
+      evidence_id: ev_tg01_offenses
+      truncated: false
+      coverage:
+        complete: true
+        gaps: []
+      data:
+      - id: 9301
+        status: OPEN
+        offense_source: helpdesk1
+        magnitude: 6
+        start_time: 1791192000000
+        rules:
+        - id: 100701
+expect:
+  floor_level: null
+  verdict_in:
+  - tp
+  - suspicious
+  min_level: high
+  cited_tools:
+  - get_offense

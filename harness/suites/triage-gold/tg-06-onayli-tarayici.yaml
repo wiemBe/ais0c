@@ -1,0 +1,159 @@
+# Triage Gold suite (docs/agent-harness.md §6), scenario 6: a known internal scanner during its scan.
+#
+# A quality scenario: no attack, no injected text. The offense, the rule and the asset
+# record carry the fields that separate the harmless background from the attack; the
+# expected verdict and level are in `expect` only (T-059, decision T-78). The tools it
+# scripts: get_offense, get_rule, list_assets, list_offenses; the derived tools are
+# answered from the offense (T-67 (3)).
+#
+# Everything here is synthetic: RFC 5737 addresses, the T-008 lab names, made-up IDs.
+id: tg-06-onayli-tarayici
+suite: triage-gold
+agent: triage
+title: The internal vulnerability scanner trips WAF signatures at night
+description: An internal address sent 962 requests with attack signatures to WEB-SRV-01 between 02:10
+  and 03:25 on a Saturday. The web application firewall rejected every one of them.
+input:
+  offense:
+    offense_id: 9306
+    description: 'AIS0C LAB - F5 ASM: 962 events from one source, request_status blocked for all, attack_type
+      mixed (Predictable Resource Location, SQL-Injection, Cross Site Scripting (XSS)), response_code
+      0'
+    offense_type: Source IP
+    offense_source: 198.51.100.9
+    rule_ids:
+    - 100704
+    rule_names:
+    - 'AIS0C LAB - F5 ASM: many attack signatures from one source'
+    categories:
+    - Web Attack
+    - Reconnaissance
+    magnitude: 3
+    start_time: '2026-10-03T02:10:00Z'
+    last_updated_time: '2026-10-03T03:25:00Z'
+    event_count: 962
+    log_source_ids:
+    - 4106
+    source_ips:
+    - 198.51.100.9
+    destination_ips:
+    - 192.0.2.25
+    usernames: []
+  enrichment:
+    catalog:
+      rules:
+      - rule_id: 100704
+        mode: analyze
+      log_sources:
+      - log_source_id: 4106
+        type_name: F5 Networks BIG-IP ASM
+        description: F5 BIG-IP ASM WAF-LAB-01 in front of WEB-SRV-01, web application firewall
+        criticality: medium
+    critical_asset_hits: []
+    ioc_hits: []
+    entity_resolutions: []
+    floor_level: null
+  knowledge: []
+  tool_results:
+    get_offense:
+    - status: ok
+      evidence_id: ev_tg06_offense
+      truncated: false
+      coverage:
+        complete: true
+        gaps: []
+      data:
+      - id: 9306
+        description: 'AIS0C LAB - F5 ASM: 962 events from one source, request_status blocked for all,
+          attack_type mixed (Predictable Resource Location, SQL-Injection, Cross Site Scripting (XSS)),
+          response_code 0'
+        offense_type: 0
+        offense_source: 198.51.100.9
+        event_count: 962
+        source_count: 1
+        local_destination_count: 1
+        username_count: 0
+        magnitude: 3
+        status: OPEN
+        start_time: 1790993400000
+        last_updated_time: 1790997900000
+        categories:
+        - Web Attack
+        - Reconnaissance
+        rules:
+        - id: 100704
+          type: CRE_RULE
+        log_sources:
+        - id: 4106
+          name: F5 ASM @ WAF-LAB-01
+          type_name: F5 Networks BIG-IP ASM
+    get_rule:
+    - status: ok
+      evidence_id: ev_tg06_rule
+      truncated: false
+      coverage:
+        complete: true
+        gaps: []
+      data:
+      - id: 100704
+        name: 'AIS0C LAB - F5 ASM: many attack signatures from one source'
+        type: EVENT
+        enabled: true
+        origin: USER
+        notes: F5 BIG-IP ASM events from one source address with at least 5 distinct attack_type values
+          within 30 minutes, whatever the request_status. Offense indexed by source IP.
+    list_assets:
+    - status: ok
+      evidence_id: ev_tg06_assets
+      truncated: false
+      coverage:
+        complete: true
+        gaps: []
+      data:
+      - id: 9
+        interfaces:
+        - ip_addresses:
+          - value: 198.51.100.9
+            type: IPV4
+        hostnames:
+        - name: SCAN-LAB-01
+          type: NETBIOS
+        properties:
+        - name: Unified Name
+          value: SCAN-LAB-01
+        - name: Role
+          value: internal vulnerability scanner
+        - name: Owner
+          value: Security Operations
+        - name: Maintenance Window
+          value: Saturday 02:00-04:00
+    list_offenses:
+    - status: ok
+      evidence_id: ev_tg06_offenses
+      truncated: false
+      coverage:
+        complete: true
+        gaps: []
+      data:
+      - id: 9306
+        status: OPEN
+        offense_source: 198.51.100.9
+        magnitude: 3
+        start_time: 1790993400000
+        rules:
+        - id: 100704
+      - id: 9271
+        status: CLOSED
+        offense_source: 198.51.100.9
+        magnitude: 3
+        start_time: 1790388720000
+        closing_reason_id: 3
+        rules:
+        - id: 100704
+expect:
+  floor_level: null
+  verdict_in:
+  - fp
+  max_level: low
+  cited_tools:
+  - list_assets

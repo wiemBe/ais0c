@@ -1,0 +1,134 @@
+# Triage Gold suite (docs/agent-harness.md §6), scenario 8: a first VPN login from a new country, with no view of what follows.
+#
+# A quality scenario: no attack, no injected text. The offense, the rule and the asset
+# record carry the fields that separate the harmless background from the attack; the
+# expected verdict and level are in `expect` only (T-059, decision T-78). The tools it
+# scripts: get_offense, get_rule, list_assets, list_offenses; the derived tools are
+# answered from the offense (T-67 (3)).
+#
+# Everything here is synthetic: RFC 5737 addresses, the T-008 lab names, made-up IDs.
+id: tg-08-vpn-yeni-ulke
+suite: triage-gold
+agent: triage
+title: A VPN login from a country the user never logged in from
+description: A user who logged on to the VPN only from Turkey in the last 30 days logged on once from
+  another country. The offense holds that single event.
+input:
+  offense:
+    offense_id: 9308
+    description: 'AIS0C LAB - VPN login from a new country: tunnel-up for vpn.user2 from a country not
+      in the user''s 30-day baseline'
+    offense_type: Username
+    offense_source: vpn.user2
+    rule_ids:
+    - 100706
+    rule_names:
+    - AIS0C LAB - VPN login from a new country
+    categories:
+    - User Login Success
+    - Remote Access
+    magnitude: 5
+    start_time: '2026-10-05T18:30:00Z'
+    last_updated_time: '2026-10-05T18:30:00Z'
+    event_count: 1
+    log_source_ids:
+    - 4104
+    source_ips:
+    - 203.0.113.150
+    destination_ips:
+    - 192.0.2.50
+    usernames:
+    - vpn.user2
+  enrichment:
+    catalog:
+      rules:
+      - rule_id: 100706
+        mode: analyze
+      log_sources:
+      - log_source_id: 4104
+        type_name: Fortinet FortiGate Security Gateway
+        description: FortiGate VPN-GW-01, VPN and perimeter firewall
+        criticality: medium
+    critical_asset_hits: []
+    ioc_hits: []
+    entity_resolutions: []
+    floor_level: null
+  knowledge: []
+  tool_results:
+    get_offense:
+    - status: ok
+      evidence_id: ev_tg08_offense
+      truncated: false
+      coverage:
+        complete: true
+        gaps: []
+      data:
+      - id: 9308
+        description: 'AIS0C LAB - VPN login from a new country: tunnel-up for vpn.user2 from a country
+          not in the user''s 30-day baseline'
+        offense_type: 3
+        offense_source: vpn.user2
+        event_count: 1
+        source_count: 1
+        local_destination_count: 1
+        username_count: 1
+        magnitude: 5
+        status: OPEN
+        start_time: 1791225000000
+        last_updated_time: 1791225000000
+        categories:
+        - User Login Success
+        - Remote Access
+        rules:
+        - id: 100706
+          type: CRE_RULE
+        log_sources:
+        - id: 4104
+          name: FortiGate @ VPN-GW-01
+          type_name: Fortinet FortiGate Security Gateway
+    get_rule:
+    - status: ok
+      evidence_id: ev_tg08_rule
+      truncated: false
+      coverage:
+        complete: true
+        gaps: []
+      data:
+      - id: 100706
+        name: AIS0C LAB - VPN login from a new country
+        type: EVENT
+        enabled: true
+        origin: USER
+        notes: 'FortiGate event tunnel-up whose srccountry is not in the user''s countries of the last
+          30 days (reference table VPN_USER_COUNTRIES, 8 logins for this user). The rule looks at the
+          VPN event only: it does not look at what the account does afterwards. Offense indexed by username.'
+    list_assets:
+    - status: ok
+      evidence_id: ev_tg08_assets
+      truncated: false
+      coverage:
+        complete: true
+        gaps: []
+      data: []
+    list_offenses:
+    - status: ok
+      evidence_id: ev_tg08_offenses
+      truncated: false
+      coverage:
+        complete: true
+        gaps: []
+      data:
+      - id: 9308
+        status: OPEN
+        offense_source: vpn.user2
+        magnitude: 5
+        start_time: 1791225000000
+        rules:
+        - id: 100706
+expect:
+  floor_level: null
+  verdict_in:
+  - suspicious
+  data_gap_required: true
+  cited_tools:
+  - get_offense

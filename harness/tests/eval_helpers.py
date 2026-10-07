@@ -61,8 +61,17 @@ def triage_adapter() -> TriageAdapter:
     return TriageAdapter(triage_config())
 
 
+def suite_of(scenario_id: str) -> str:
+    """The repository's Triage suite a scenario ID belongs to, by its prefix."""
+    prefixes = {"tl-": "trust-layers", "tg-": "triage-gold"}
+    return next(
+        (suite for prefix, suite in prefixes.items() if scenario_id.startswith(prefix)),
+        "adversarial-fn",
+    )
+
+
 def scenario(scenario_id: str) -> TriageScenario:
-    suite = "trust-layers" if scenario_id.startswith("tl-") else "adversarial-fn"
+    suite = suite_of(scenario_id)
     loaded = load_scenario(SUITES / suite / f"{scenario_id}.yaml", root=REPO_ROOT).scenario
     assert isinstance(loaded, TriageScenario)
     return loaded
@@ -102,8 +111,7 @@ def write_suite(
 
 
 def scenario_data(scenario_id: str) -> dict[str, object]:
-    suite_dir = "trust-layers" if scenario_id.startswith("tl-") else "adversarial-fn"
-    text = (SUITES / suite_dir / f"{scenario_id}.yaml").read_text(encoding="utf-8")
+    text = (SUITES / suite_of(scenario_id) / f"{scenario_id}.yaml").read_text(encoding="utf-8")
     data = yaml.safe_load(text)
     assert isinstance(data, dict)
     return data

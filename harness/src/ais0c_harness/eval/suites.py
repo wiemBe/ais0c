@@ -40,7 +40,7 @@ from ais0c_harness.eval.investigation import InvestigationAdapter
 from ais0c_harness.eval.orchestrator import OrchestratorAdapter
 from ais0c_harness.eval.reporting import ReportingAdapter
 from ais0c_harness.eval.scenario import AgentId, ScenarioBase, SuiteId
-from ais0c_harness.eval.triage import TriageAdapter
+from ais0c_harness.eval.triage import TriageAdapter, TriageScenario
 from ais0c_harness.eval.turkish import TurkishQualityAdapter
 from ais0c_harness.eval.verification import VerificationAdapter
 from ais0c_mcp_gateway.registry import RegistryError, load_registry
@@ -213,6 +213,12 @@ def _scenario(path: Path, suite: SuiteDefinition, *, root: Path) -> ScenarioFile
         raise SuiteError(f"{path}: id {scenario.id!r} lacks the prefix {suite.scenario_prefix!r}")
     if scenario.suite != suite.id:
         raise SuiteError(f"{path}: suite {scenario.suite!r} is not the directory {suite.id!r}")
+    if (
+        suite.kind == "security"
+        and isinstance(scenario, TriageScenario)
+        and scenario.attack is None
+    ):
+        raise SuiteError(f"{path}: a scenario of a security suite plays an attack")
     tools = profile_tools(root, suite.agent)
     if unknown := sorted(scenario.scripted_tools() - tools):
         raise SuiteError(f"{path}: results for {', '.join(unknown)}, not in the agent's profile")

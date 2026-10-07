@@ -1,0 +1,134 @@
+# Triage Gold suite (docs/agent-harness.md §6), scenario 3: a web application attack the WAF let through.
+#
+# A quality scenario: no attack, no injected text. The offense, the rule and the asset
+# record carry the fields that separate the harmless background from the attack; the
+# expected verdict and level are in `expect` only (T-059, decision T-78). The tools it
+# scripts: get_offense, get_rule, list_assets, list_offenses; the derived tools are
+# answered from the offense (T-67 (3)).
+#
+# Everything here is synthetic: RFC 5737 addresses, the T-008 lab names, made-up IDs.
+id: tg-03-waf-sqli-gecti
+suite: triage-gold
+agent: triage
+title: SQL injection signatures from one external address, requests not blocked
+description: The web application firewall in front of WEB-SRV-01 matched SQL injection attack signatures
+  in requests from one external address for 25 minutes. The firewall only alerted.
+input:
+  offense:
+    offense_id: 9303
+    description: 'AIS0C LAB - F5 ASM: attack signature matched, request_status alerted, attack_type SQL-Injection,
+      violations VIOL_ATTACK_SIGNATURE, response_code 200'
+    offense_type: Source IP
+    offense_source: 203.0.113.80
+    rule_ids:
+    - 100703
+    rule_names:
+    - 'AIS0C LAB - F5 ASM: web attack not blocked'
+    categories:
+    - Web Attack
+    - SQL Injection
+    magnitude: 7
+    start_time: '2026-10-05T13:10:00Z'
+    last_updated_time: '2026-10-05T13:35:00Z'
+    event_count: 212
+    log_source_ids:
+    - 4106
+    source_ips:
+    - 203.0.113.80
+    destination_ips:
+    - 192.0.2.25
+    usernames: []
+  enrichment:
+    catalog:
+      rules:
+      - rule_id: 100703
+        mode: analyze
+      log_sources:
+      - log_source_id: 4106
+        type_name: F5 Networks BIG-IP ASM
+        description: F5 BIG-IP ASM WAF-LAB-01 in front of WEB-SRV-01, web application firewall
+        criticality: medium
+    critical_asset_hits: []
+    ioc_hits: []
+    entity_resolutions: []
+    floor_level: null
+  knowledge: []
+  tool_results:
+    get_offense:
+    - status: ok
+      evidence_id: ev_tg03_offense
+      truncated: false
+      coverage:
+        complete: true
+        gaps: []
+      data:
+      - id: 9303
+        description: 'AIS0C LAB - F5 ASM: attack signature matched, request_status alerted, attack_type
+          SQL-Injection, violations VIOL_ATTACK_SIGNATURE, response_code 200'
+        offense_type: 0
+        offense_source: 203.0.113.80
+        event_count: 212
+        source_count: 1
+        local_destination_count: 1
+        username_count: 0
+        magnitude: 7
+        status: OPEN
+        start_time: 1791205800000
+        last_updated_time: 1791207300000
+        categories:
+        - Web Attack
+        - SQL Injection
+        rules:
+        - id: 100703
+          type: CRE_RULE
+        log_sources:
+        - id: 4106
+          name: F5 ASM @ WAF-LAB-01
+          type_name: F5 Networks BIG-IP ASM
+    get_rule:
+    - status: ok
+      evidence_id: ev_tg03_rule
+      truncated: false
+      coverage:
+        complete: true
+        gaps: []
+      data:
+      - id: 100703
+        name: 'AIS0C LAB - F5 ASM: web attack not blocked'
+        type: EVENT
+        enabled: true
+        origin: USER
+        notes: F5 BIG-IP ASM event with an attack_type and request_status alerted (the request reached
+          the server) from one source address, at least 10 times within 30 minutes. Offense indexed by
+          source IP.
+    list_assets:
+    - status: ok
+      evidence_id: ev_tg03_assets
+      truncated: false
+      coverage:
+        complete: true
+        gaps: []
+      data: []
+    list_offenses:
+    - status: ok
+      evidence_id: ev_tg03_offenses
+      truncated: false
+      coverage:
+        complete: true
+        gaps: []
+      data:
+      - id: 9303
+        status: OPEN
+        offense_source: 203.0.113.80
+        magnitude: 7
+        start_time: 1791205800000
+        rules:
+        - id: 100703
+expect:
+  floor_level: null
+  verdict_in:
+  - tp
+  - suspicious
+  min_level: high
+  cited_tools:
+  - get_offense

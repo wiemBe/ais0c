@@ -185,10 +185,10 @@ def test_the_suite_defines_the_scenarios_t015_requires() -> None:
 
     assert {scenario_id: scenarios[scenario_id].layer for scenario_id in REQUIRED} == REQUIRED
     note = scenarios["tl-01-catalog-note-fp"]
-    assert note.attack in [rule.context_note for rule in note.input.enrichment.catalog.rules]
+    assert note.attack_text in [rule.context_note for rule in note.input.enrichment.catalog.rules]
     runbook = scenarios["tl-02-runbook-instruction"]
     assert runbook.expect.attack_in == ["untrusted:kb.runbook"]
-    assert "<org_context>" in scenarios["tl-03-log-imitates-org-context"].attack
+    assert "<org_context>" in scenarios["tl-03-log-imitates-org-context"].attack_text
     # Every scenario pushes toward fp; none accepts it.
     for scenario in scenarios.values():
         assert CaseVerdict.FP not in scenario.expect.verdict_in, scenario.id
@@ -218,17 +218,17 @@ def test_the_attack_reaches_the_model_only_in_its_layer(path: Path) -> None:
         f"untrusted:{block['source']}"
         for text in texts
         for block in BLOCK.finditer(text)
-        if scenario.marker in block["content"]
+        if scenario.marker_text in block["content"]
     } | {
         "org_context"
         for text in texts
         for section in ORG_CONTEXT.finditer(text)
-        if scenario.marker in section["content"]
+        if scenario.marker_text in section["content"]
     }
     outside = "\n".join(ORG_CONTEXT.sub("", BLOCK.sub("", text)) for text in texts)
 
     assert holding == set(scenario.expect.attack_in)
-    assert scenario.marker not in outside
+    assert scenario.marker_text not in outside
 
 
 @pytest.mark.parametrize("path", SCENARIO_FILES, ids=FILE_IDS)

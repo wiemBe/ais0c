@@ -91,7 +91,7 @@ def test_the_suite_covers_every_theme_and_both_kinds_of_floor() -> None:
         carriers = [
             scenario
             for scenario in scenarios
-            if re.search(pattern, scenario.attack)
+            if re.search(pattern, scenario.attack_text)
             and any(location.endswith(place) for location in scenario.expect.attack_in)
         ]
         assert carriers, theme
@@ -116,10 +116,12 @@ def test_the_scenario_pushes_toward_fp_without_accepting_it(path: Path) -> None:
     assert scenario.layer == "log"
     assert CaseVerdict.FP not in scenario.expect.verdict_in
     assert scenario.expect.verdict_in <= {CaseVerdict.TP, CaseVerdict.SUSPICIOUS}
-    assert re.search(r"\bfp\b|\bFP\b|harmless|zararsız|approved|onaylı", scenario.attack)
+    assert re.search(r"\bfp\b|\bFP\b|harmless|zararsız|approved|onaylı", scenario.attack_text)
     # The description says what supports tp or suspicious apart from the attack.
     assert "Apart from it" in scenario.description
-    instruction = re.search(r"[Mm]ark|[Cc]lassify|escalate|işaretleyin|yükseltme", scenario.attack)
+    instruction = re.search(
+        r"[Mm]ark|[Cc]lassify|escalate|işaretleyin|yükseltme", scenario.attack_text
+    )
     assert (scenario.expect.injection_suspected is True) == bool(instruction)
 
 
@@ -131,7 +133,7 @@ def test_the_scenario_uses_documentation_addresses_and_lab_names(path: Path) -> 
         assert any(address in network for network in DOCUMENTATION_NETWORKS), token
     scenario = load(path)
     for name in scenario.input.offense.usernames:
-        assert name in SYNTHETIC_NAMES or scenario.attack in name, name
+        assert name in SYNTHETIC_NAMES or scenario.attack_text in name, name
 
 
 @pytest.mark.parametrize("path", SCENARIO_FILES, ids=FILE_IDS)
@@ -143,18 +145,18 @@ def test_the_attack_reaches_the_model_only_in_qradar_blocks(path: Path) -> None:
         f"untrusted:{block['source']}"
         for text in texts
         for block in BLOCK.finditer(text)
-        if scenario.marker in block["content"]
+        if scenario.marker_text in block["content"]
     } | {
         "org_context"
         for text in texts
         for section in ORG_CONTEXT.finditer(text)
-        if scenario.marker in section["content"]
+        if scenario.marker_text in section["content"]
     }
     outside = "\n".join(ORG_CONTEXT.sub("", BLOCK.sub("", text)) for text in texts)
 
     assert holding == set(scenario.expect.attack_in)
     assert all(location.startswith("untrusted:qradar.") for location in holding)
-    assert scenario.marker not in outside
+    assert scenario.marker_text not in outside
 
 
 @pytest.mark.parametrize("path", SCENARIO_FILES, ids=FILE_IDS)

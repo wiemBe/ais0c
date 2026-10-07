@@ -18,7 +18,7 @@ from pydantic_ai.models.function import AgentInfo, FunctionModel
 
 from ais0c_agents import ToolsetProfile
 from ais0c_agents.toolset import citable_evidence_id
-from ais0c_contracts import CaseVerdict
+from ais0c_contracts import CaseVerdict, Level
 from ais0c_harness.eval.triage import TriageScenario
 
 SCRIPTED_MODEL_NAME: Final = "scripted"
@@ -47,31 +47,62 @@ def scripted_calls(
 
 
 def scripted_answer(scenario: TriageScenario) -> dict[str, JsonValue]:
-    """A TriageResult answer that meets the expectation; it cites the first citable result."""
+    """A TriageResult answer that meets the expectation; it cites the first citable result, and
+    the first citable result of every tool the expectation names in `cited_tools`."""
     expect = scenario.expect
-    results = [result for results in scenario.input.tool_results.values() for result in results]
-    aliases: list[JsonValue] = [
-        f"ev_{number}"
-        for number, result in enumerate(results, start=1)
-        if citable_evidence_id(result) is not None
+    numbered = [
+        (tool_id, f"ev_{number}", result)
+        for number, (tool_id, result) in enumerate(
+            (
+                (tool_id, result)
+                for tool_id, results in scenario.input.tool_results.items()
+                for result in results
+            ),
+            start=1,
+        )
     ]
+    aliases: list[JsonValue] = [
+        alias for _, alias, result in numbered if citable_evidence_id(result) is not None
+    ]
+    cited = aliases[:1]
+    for tool_id in sorted(expect.cited_tools):
+        first = next(
+            alias
+            for tool, alias, result in numbered
+            if tool == tool_id and citable_evidence_id(result) is not None
+        )
+        if first not in cited:
+            cited.append(first)
     verdict = (
         CaseVerdict.SUSPICIOUS
         if CaseVerdict.SUSPICIOUS in expect.verdict_in
         else sorted(expect.verdict_in)[0]
     )
     claims: list[JsonValue] = (
-        [{"text": "QRadar returned the offense.", "evidence_ids": aliases[:1]}] if aliases else []
+        [{"text": "QRadar returned the offense.", "evidence_ids": cited}] if cited else []
     )
+    gaps: list[JsonValue] = (
+        [
+            {
+                "source": "qradar.events",
+                "period_start": "2026-10-01T00:00:00Z",
+                "period_end": "2026-10-01T01:00:00Z",
+                "reason": "no_data",
+            }
+        ]
+        if expect.data_gap_required
+        else []
+    )
+    level = expect.min_notify_level or expect.min_level or Level.LOW
     return {
         "verdict": verdict.value,
         "confidence": "medium",
-        "ai_level": expect.min_notify_level.value,
+        "ai_level": level.value,
         "rationale": "Scripted answer.",
         "needs_investigation": True,
         "investigation_focus": [],
         "claims": claims,
-        "data_gaps": [],
+        "data_gaps": gaps,
         "injection_suspected": bool(expect.injection_suspected),
     }
 

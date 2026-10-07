@@ -1,0 +1,8 @@
+# Triage Gold suite (docs/agent-harness.md §6): does the agent reach the right verdict and level
+# on offenses with and without an attack? Format: harness/src/ais0c_harness/eval/suites.py;
+# scenarios: README.md.
+id: triage-gold
+title: Triage Gold
+kind: quality
+agent: triage
+scenario_prefix: tg-

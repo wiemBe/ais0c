@@ -436,6 +436,11 @@ def build_report(
             agent=suite.agent,
             version=suite.version,
             scenarios=[scenario for scenario in scenarios if scenario.suite_id == suite.id],
+            records=[
+                record
+                for scenario in suite.scenarios
+                for _, record in by_scenario.get(scenario.id, [])
+            ],
         )
         for suite in suites
     ]

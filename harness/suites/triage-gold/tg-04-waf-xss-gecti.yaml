@@ -1,0 +1,134 @@
+# Triage Gold suite (docs/agent-harness.md §6), scenario 4: a smaller web attack the WAF let through.
+#
+# A quality scenario: no attack, no injected text. The offense, the rule and the asset
+# record carry the fields that separate the harmless background from the attack; the
+# expected verdict and level are in `expect` only (T-059, decision T-78). The tools it
+# scripts: get_offense, get_rule, list_assets, list_offenses; the derived tools are
+# answered from the offense (T-67 (3)).
+#
+# Everything here is synthetic: RFC 5737 addresses, the T-008 lab names, made-up IDs.
+id: tg-04-waf-xss-gecti
+suite: triage-gold
+agent: triage
+title: Cross-site scripting signatures from one external address, requests not blocked
+description: The web application firewall matched cross-site scripting signatures in 18 requests from
+  one external address to the search page of WEB-SRV-01. The firewall only alerted.
+input:
+  offense:
+    offense_id: 9304
+    description: 'AIS0C LAB - F5 ASM: attack signature matched, request_status alerted, attack_type Cross
+      Site Scripting (XSS), violations VIOL_ATTACK_SIGNATURE, uri /search, response_code 200'
+    offense_type: Source IP
+    offense_source: 203.0.113.96
+    rule_ids:
+    - 100703
+    rule_names:
+    - 'AIS0C LAB - F5 ASM: web attack not blocked'
+    categories:
+    - Web Attack
+    - Cross Site Scripting
+    magnitude: 4
+    start_time: '2026-10-05T14:02:00Z'
+    last_updated_time: '2026-10-05T14:09:00Z'
+    event_count: 18
+    log_source_ids:
+    - 4106
+    source_ips:
+    - 203.0.113.96
+    destination_ips:
+    - 192.0.2.25
+    usernames: []
+  enrichment:
+    catalog:
+      rules:
+      - rule_id: 100703
+        mode: analyze
+      log_sources:
+      - log_source_id: 4106
+        type_name: F5 Networks BIG-IP ASM
+        description: F5 BIG-IP ASM WAF-LAB-01 in front of WEB-SRV-01, web application firewall
+        criticality: medium
+    critical_asset_hits: []
+    ioc_hits: []
+    entity_resolutions: []
+    floor_level: null
+  knowledge: []
+  tool_results:
+    get_offense:
+    - status: ok
+      evidence_id: ev_tg04_offense
+      truncated: false
+      coverage:
+        complete: true
+        gaps: []
+      data:
+      - id: 9304
+        description: 'AIS0C LAB - F5 ASM: attack signature matched, request_status alerted, attack_type
+          Cross Site Scripting (XSS), violations VIOL_ATTACK_SIGNATURE, uri /search, response_code 200'
+        offense_type: 0
+        offense_source: 203.0.113.96
+        event_count: 18
+        source_count: 1
+        local_destination_count: 1
+        username_count: 0
+        magnitude: 4
+        status: OPEN
+        start_time: 1791208920000
+        last_updated_time: 1791209340000
+        categories:
+        - Web Attack
+        - Cross Site Scripting
+        rules:
+        - id: 100703
+          type: CRE_RULE
+        log_sources:
+        - id: 4106
+          name: F5 ASM @ WAF-LAB-01
+          type_name: F5 Networks BIG-IP ASM
+    get_rule:
+    - status: ok
+      evidence_id: ev_tg04_rule
+      truncated: false
+      coverage:
+        complete: true
+        gaps: []
+      data:
+      - id: 100703
+        name: 'AIS0C LAB - F5 ASM: web attack not blocked'
+        type: EVENT
+        enabled: true
+        origin: USER
+        notes: F5 BIG-IP ASM event with an attack_type and request_status alerted (the request reached
+          the server) from one source address, at least 10 times within 30 minutes. Offense indexed by
+          source IP.
+    list_assets:
+    - status: ok
+      evidence_id: ev_tg04_assets
+      truncated: false
+      coverage:
+        complete: true
+        gaps: []
+      data: []
+    list_offenses:
+    - status: ok
+      evidence_id: ev_tg04_offenses
+      truncated: false
+      coverage:
+        complete: true
+        gaps: []
+      data:
+      - id: 9304
+        status: OPEN
+        offense_source: 203.0.113.96
+        magnitude: 4
+        start_time: 1791208920000
+        rules:
+        - id: 100703
+expect:
+  floor_level: null
+  verdict_in:
+  - tp
+  - suspicious
+  min_level: medium
+  cited_tools:
+  - get_offense

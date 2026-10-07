@@ -160,6 +160,24 @@ class ScenarioReport(_Model):
     """Tool calls of the k runs by a name no gateway profile has."""
 
 
+class QualityRate(_Model):
+    """How often a check held in the runs that have it."""
+
+    passed: int
+    runs: int
+    rate: float
+
+
+QUALITY_METRICS: Final = {
+    "decision_accuracy": "verdict_in",
+    "level_accuracy": "level_range",
+    "data_gap_rate": "data_gap",
+}
+"""The quality metrics of a quality suite (T-059 criterion 3) and the check each one counts:
+the verdict is one the scenario allows, the level lies in the scenario's range, the result names
+the data gap the scenario expects."""
+
+
 class SuiteReport(_Model):
     id: str
     title: str
@@ -172,6 +190,9 @@ class SuiteReport(_Model):
     pass_rate: float
     passing_scenarios: int
     """Scenarios that pass pass^k."""
+    quality: dict[str, QualityRate] = {}
+    """A quality suite's metrics (QUALITY_METRICS) over the runs that have a result and the
+    check; a metric no run has is left out. `pass^k` is not used for them."""
 
 
 class AgentReport(_Model):
@@ -343,7 +364,9 @@ def suite_report(
     agent: str,
     version: str,
     scenarios: Sequence[ScenarioReport],
+    records: Sequence[RunRecord] = (),
 ) -> SuiteReport:
+    """`records` are the suite's run records; a quality suite's metrics come from their checks."""
     passes = sum(scenario.passes for scenario in scenarios)
     runs = sum(scenario.k for scenario in scenarios)
     return SuiteReport(
@@ -357,7 +380,18 @@ def suite_report(
         runs=runs,
         pass_rate=passes / runs if runs else 0.0,
         passing_scenarios=sum(scenario.pass_k for scenario in scenarios),
+        quality=quality_rates(records) if kind == "quality" else {},
     )
+
+
+def quality_rates(runs: Sequence[RunRecord]) -> dict[str, QualityRate]:
+    rates: dict[str, QualityRate] = {}
+    for metric, check_name in QUALITY_METRICS.items():
+        checks = [check for run in runs for check in run.checks if check.name == check_name]
+        if checks:
+            held = sum(check.passed for check in checks)
+            rates[metric] = QualityRate(passed=held, runs=len(checks), rate=held / len(checks))
+    return rates
 
 
 def hard_gates(scenarios: Sequence[ScenarioReport], runs: Sequence[RunRecord]) -> list[HardGate]:
@@ -485,6 +519,14 @@ def render_markdown(report: Report) -> str:
             f"| {suite.id} | {suite.kind} | {suite.passing_scenarios}/{len(suite.scenarios)} "
             f"| {suite.pass_rate:.0%} ({suite.passes}/{suite.runs}) |"
         )
+    for suite in report.suites:
+        if suite.quality:
+            lines += ["", f"## Quality: {suite.id}", "", "| Metric | Held | Runs | Rate |"]
+            lines.append("|---|---|---|---|")
+            lines += [
+                f"| {name} | {rate.passed} | {rate.runs} | {rate.rate:.0%} |"
+                for name, rate in suite.quality.items()
+            ]
     lines += [
         "",
         "## Scenarios",
