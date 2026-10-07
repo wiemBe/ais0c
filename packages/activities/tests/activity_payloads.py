@@ -30,6 +30,7 @@ def offense(
     destination_ips: Sequence[str] = ("198.51.100.15",),
     usernames: Sequence[str] = (),
     log_source_ids: Sequence[int] = (112,),
+    categories: Sequence[str] = ("Firewall Permit",),
 ) -> OffenseSnapshot:
     return OffenseSnapshot(
         offense_id=offense_id,
@@ -38,7 +39,7 @@ def offense(
         offense_source=offense_source,
         rule_ids=list(rule_ids),
         rule_names=["FW: excessive accepts"],
-        categories=["Firewall Permit"],
+        categories=list(categories),
         magnitude=4,
         start_time=start,
         last_updated_time=start if updated is None else updated,

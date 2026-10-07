@@ -87,7 +87,7 @@ from ais0c_workflows.names import (
     SEND_EMAIL,
     WRITE_OFFENSE_NOTE,
 )
-from ais0c_workflows.notify import CaseAlertRequest, NoteRequest
+from ais0c_workflows.notify import EmailRequest, NoteRequest
 
 WAIT_SECONDS = 15
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -207,7 +207,8 @@ def _evidence(evidence_id: str, intent: ToolIntent) -> EvidenceRef:
 
 # Gets the run ID (TriageWorkflow's ID), the request's step in the run and its activity attempt.
 type ModelHook = Callable[[str, int, int], Awaitable[None]]
-_OFFENSE_ID = re.compile(r"QRadar offense (\d+)")
+# An offense case's objective names its offense; a group case's the offense its snapshot shows.
+_OFFENSE_ID = re.compile(r"(?:QRadar offense|snapshot is offense) (\d+)")
 
 
 class TriageModel:
@@ -611,7 +612,7 @@ class ExecutorStub:
 
     def __init__(self) -> None:
         self.notes: list[NoteRequest] = []
-        self.emails: list[CaseAlertRequest] = []
+        self.emails: list[EmailRequest] = []
 
     def activities(self) -> list[Callable[..., object]]:
         return [self.write_offense_note, self.send_email]
@@ -622,7 +623,7 @@ class ExecutorStub:
         return {"result": "written"}
 
     @activity.defn(name=SEND_EMAIL)
-    async def send_email(self, request: CaseAlertRequest) -> dict[str, object]:
+    async def send_email(self, request: EmailRequest) -> dict[str, object]:
         self.emails.append(request)
         return {"result": "sent"}
 

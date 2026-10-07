@@ -1,10 +1,11 @@
 """The Triage agent (architecture §7, §9): the first decision on one QRadar offense.
 
 Input is a TriageTask: the AgentTask, the offense snapshot, the deterministic enrichment and
-external knowledge. Each part reaches the model in its trust layer (architecture §22, T-20):
+external knowledge; in a group case also the group's summary, with the snapshot of one of its
+offenses (T-027). Each part reaches the model in its trust layer (architecture §22, T-20):
 the Analysis Catalog entries and critical asset hits as organization facts in <org_context>;
-the snapshot, the entity resolutions, the IOC hits and other knowledge only inside the
-`untrusted_*` wrapper. The floor level is policy, which code applies, so the model never sees
+the snapshot, the group summary, the entity resolutions, the IOC hits and other knowledge only
+inside the `untrusted_*` wrapper. The floor level is policy, which code applies, so the model never sees
 it. None of the context is evidence: claims must cite what the agent's own tool calls returned.
 The model returns a TriageOutput, and the run adds the task ID, status and usage to make the
 TriageResult.
@@ -22,6 +23,7 @@ from pydantic_ai.models import Model
 
 from ais0c_agents.builder import AgentSpec, check_agent_config, create_agent
 from ais0c_agents.gateway import GatewayClient
+from ais0c_agents.group import GROUP_SUMMARY_SOURCE, GroupSummary
 from ais0c_agents.manifest import AgentManifest
 from ais0c_agents.prompts import (
     KnowledgeItem,
@@ -79,6 +81,9 @@ class TriageTask(BaseModel):
     knowledge: Annotated[list[KnowledgeItem], Field(max_length=MAX_KNOWLEDGE_ITEMS)] = []
     """External knowledge about the offense: ATT&CK, CTI, runbooks, past cases. Empty until
     the knowledge plane supplies it (Faz 3); the enrichment's IOC hits come on their own."""
+    group_summary: GroupSummary | None = None
+    """Set in a group case: the summary of the group's offenses, of which `offense` is one
+    (T-027). It follows the snapshot in its own untrusted block."""
 
 
 # What the model returns: a TriageResult without task_id, status and usage, which the run fills
@@ -132,9 +137,7 @@ class TriageAgent:
                 "org_context": render_org_context(
                     enrichment.catalog, critical_assets=enrichment.critical_asset_hits
                 ),
-                "offense_snapshot": wrap_json_lines(
-                    [task.offense.model_dump(mode="json")], source=OFFENSE_SOURCE, nonce=nonce
-                ),
+                "offense_snapshot": _offense_snapshot(task, nonce=nonce),
                 "entity_resolutions": (
                     wrap_json_lines(resolutions, source=ENTITY_RESOLUTION_SOURCE, nonce=nonce)
                     if resolutions
@@ -192,6 +195,19 @@ class TriageAgent:
             finalize=finalize,
             clock=clock,
         )
+
+
+def _offense_snapshot(task: TriageTask, *, nonce: str) -> str:
+    """The offense's untrusted block; in a group case the group summary's block after it."""
+    snapshot = wrap_json_lines(
+        [task.offense.model_dump(mode="json")], source=OFFENSE_SOURCE, nonce=nonce
+    )
+    if task.group_summary is None:
+        return snapshot
+    summary = wrap_json_lines(
+        [task.group_summary.model_dump(mode="json")], source=GROUP_SUMMARY_SOURCE, nonce=nonce
+    )
+    return f"{snapshot}\n\n{summary}"
 
 
 def build_triage_agent(

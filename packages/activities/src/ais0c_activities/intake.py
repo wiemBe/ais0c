@@ -2,12 +2,19 @@
 
 The workflow pages through changed offenses and hands each page to `admit_offenses`, which
 records every offense once and applies the Analysis Catalog filter, the grouping decision and
-the pre-priority. `next_pending_offenses` picks the pending offenses that fit under the
-concurrent case limit and `start_case` starts their case workflows.
+the pre-priority. An offense that joins a group records the values it carries in the group
+(`offense_group_values`): the group's seen values, from which the next decisions find a log
+source or category new to the group and the group's case counts its summary (T-027).
+`wake_group_cases` starts or wakes the case of every storm group that took an offense of the
+page. `next_pending_offenses` picks the pending offenses that fit under the concurrent case
+limit and `start_case` starts their case workflows.
 
 An update is checked against the catalog again (D-31): an open case whose rules are all `skip`
-now is not told about it, so its decision stays; a skipped offense one of whose rules is
-`analyze` now is admitted for analysis like a new one, and its case starts with the others.
+now is not told about it, so its decision stays; a pending or grouped offense whose rules are
+all `skip` now becomes `skipped` (T-30 (3)); a skipped offense one of whose rules is `analyze`
+now is admitted for analysis like a new one, and its case starts with the others. A pending
+offense is checked once more before its case starts, because the catalog may change without
+the offense.
 """
 
 from collections.abc import Callable, Sequence
@@ -30,6 +37,7 @@ from ais0c_activities.enrichment import (
     catalog_floor,
     catalog_mode,
 )
+from ais0c_activities.group_values import novelty_values, offense_values, unseen
 from ais0c_activities.grouping import (
     RATE_WINDOW,
     GroupingDecision,
@@ -44,17 +52,22 @@ from ais0c_activities.names import (
     CASE_WORKFLOW,
     FETCH_OFFENSE_CHANGES,
     FIND_CLOSED_OFFENSES,
+    GROUP_CASE_WORKFLOW,
+    GROUP_UPDATED,
     NEXT_PENDING_OFFENSES,
     START_CASE,
+    WAKE_GROUP_CASES,
     case_workflow_id,
+    group_case_id,
 )
 from ais0c_activities.offense_source import OffenseSource
 from ais0c_activities.priority import pre_priority
 from ais0c_activities.settings import CaseSettings
 from ais0c_contracts import CatalogMode, EnrichmentContext, OffenseSnapshot
-from ais0c_storage.enums import CaseStatus, GroupStatus, OffenseStatus
-from ais0c_storage.models import CaseRow, OffenseSeenRow
+from ais0c_storage.enums import CaseStatus, FullAnalysisReason, GroupStatus, OffenseStatus
+from ais0c_storage.models import CaseRow, OffenseGroupRow, OffenseSeenRow
 from ais0c_storage.repositories import (
+    add_group_values,
     add_offense_seen,
     count_offenses,
     create_offense_group,
@@ -63,6 +76,8 @@ from ais0c_storage.repositories import (
     get_offense_seen,
     increment_offense_group,
     list_pending_offenses,
+    seen_group_values,
+    set_full_analysis_reason,
     to_catalog_rule,
     update_offense_group,
     update_offense_seen,
@@ -72,6 +87,11 @@ from ais0c_storage.repositories import (
 FULL_ANALYSIS_STATUSES: Final = frozenset(
     {OffenseStatus.PENDING, OffenseStatus.RUNNING, OffenseStatus.DONE}
 )
+# The full analyses the hourly limit counts: within it, exempt, and those recorded before the
+# reason existed (T-027). Novelty escapes and the sample have counters of their own.
+LIMIT_REASONS: Final = frozenset({None, FullAnalysisReason.LIMIT, FullAnalysisReason.EXEMPT})
+# Offenses whose rules the catalog may now skip before their analysis (T-30 (3)).
+NOT_STARTED_STATUSES: Final = frozenset({OffenseStatus.PENDING, OffenseStatus.GROUPED})
 
 
 @dataclass(frozen=True)
@@ -160,8 +180,10 @@ class IntakeActivities:
             if mode is not recorded_mode:
                 await update_offense_seen(session, offense.offense_id, catalog_mode=mode)
             return mode is CatalogMode.ANALYZE
+        if status in NOT_STARTED_STATUSES and changed:
+            await _skip_if_catalog_skips(session, offense.offense_id, offense.rule_ids)
         if status is OffenseStatus.SKIPPED and changed:
-            await self._readmit(session, offense, now)
+            await self._readmit(session, offense, now, previous_group=seen.group_id)
         return False
 
     async def _admit_new(
@@ -188,18 +210,25 @@ class IntakeActivities:
             priority=analysis.priority,
             status=analysis.status,
             group_id=analysis.grouping.group_id,
+            reason=analysis.grouping.reason,
         )
         if inserted:
-            await _join_group(session, analysis.grouping, now)
+            await _join_group(session, analysis.grouping, offense, now)
 
     async def _readmit(
-        self, session: AsyncSession, offense: OffenseSnapshot, now: datetime
+        self,
+        session: AsyncSession,
+        offense: OffenseSnapshot,
+        now: datetime,
+        *,
+        previous_group: str | None,
     ) -> None:
         """Admit a skipped offense for analysis when one of its rules is analyzed now.
 
         It goes through grouping like a new offense, so a rule taken off `skip` cannot start a
         storm of cases. It also counts as first seen now, because the hourly group limit counts
-        offenses by that time (T-30).
+        offenses by that time (T-30). Back in the group it was in before, it is not counted
+        again.
         """
         enrichment = await build_enrichment(session, offense, ioc_matcher=self._ioc_matcher)
         if catalog_mode(offense.rule_ids, enrichment.catalog.rules) is CatalogMode.SKIP:
@@ -214,7 +243,14 @@ class IntakeActivities:
             status=analysis.status,
             group_id=analysis.grouping.group_id,
         )
-        await _join_group(session, analysis.grouping, now)
+        await set_full_analysis_reason(session, offense.offense_id, analysis.grouping.reason)
+        await _join_group(
+            session,
+            analysis.grouping,
+            offense,
+            now,
+            counted=analysis.grouping.group_id == previous_group,
+        )
 
     async def _analysis(
         self,
@@ -226,13 +262,20 @@ class IntakeActivities:
         floor = catalog_floor(enrichment.catalog.rules)
         asset_hit = bool(enrichment.critical_asset_hits)
         ioc_hit = bool(enrichment.ioc_hits)
+        group = await self._group_state(session, rule_set_hash(offense.rule_ids), now)
+        novel = False
+        if group is not None:
+            wanted = novelty_values(offense)
+            novel = bool(unseen(wanted, await seen_group_values(session, group.group_id, wanted)))
         grouping = decide_grouping(
+            offense_id=offense.offense_id,
             rule_ids=offense.rule_ids,
             at=now,
-            group=await self._group_state(session, rule_set_hash(offense.rule_ids), now),
+            group=group,
             critical_asset_hit=asset_hit,
             ioc_hit=ioc_hit,
             catalog_floor=floor,
+            novel=novel,
             full_analyses_per_hour=self._settings.group_full_analyses_per_hour,
         )
         return _Analysis(
@@ -248,18 +291,24 @@ class IntakeActivities:
         group = await find_offense_group(session, rule_set_hash=key, at=now)
         if group is None:
             return None
-        recent = await count_offenses(
-            session,
-            statuses=FULL_ANALYSIS_STATUSES,
-            group_id=group.group_id,
-            first_seen_since=now - RATE_WINDOW,
-        )
+
+        async def last_hour(reasons: frozenset[FullAnalysisReason | None]) -> int:
+            return await count_offenses(
+                session,
+                statuses=FULL_ANALYSIS_STATUSES,
+                group_id=group.group_id,
+                first_seen_since=now - RATE_WINDOW,
+                full_analysis_reasons=reasons,
+            )
+
         return GroupState(
             group_id=group.group_id,
             rule_set_hash=group.rule_set_hash,
             window_end=group.window_end,
             status=group.status,
-            full_analyses_last_hour=recent,
+            full_analyses_last_hour=await last_hour(LIMIT_REASONS),
+            novelty_escapes_last_hour=await last_hour(frozenset({FullAnalysisReason.NOVELTY})),
+            sampled_last_hour=await last_hour(frozenset({FullAnalysisReason.SAMPLE})) > 0,
         )
 
     @activity.defn(name=FIND_CLOSED_OFFENSES)
@@ -283,9 +332,10 @@ class IntakeActivities:
 
         Only as many as fit under the concurrent case limit. A case counts while it evaluates:
         from its start until it records a decision or misses its SLA. Cases that wait for
-        updates of a decided offense do not count.
+        updates of a decided offense do not count. A pending offense whose rules are all `skip`
+        now becomes `skipped` and does not start (T-30 (3)).
         """
-        async with self._sessions() as session:
+        async with self._sessions.begin() as session:
             evaluating = await session.scalar(
                 select(func.count())
                 .select_from(OffenseSeenRow)
@@ -299,8 +349,11 @@ class IntakeActivities:
             room = self._settings.max_concurrent_cases - (evaluating or 0)
             if room <= 0:
                 return []
-            pending = await list_pending_offenses(session, limit=room)
-        return [row.offense_id for row in pending]
+            chosen: list[int] = []
+            for row in await list_pending_offenses(session, limit=room):
+                if not await _skip_if_catalog_skips(session, row.offense_id, row.rule_ids):
+                    chosen.append(row.offense_id)
+        return chosen
 
 
 async def _catalog_mode(session: AsyncSession, rule_ids: Sequence[int]) -> CatalogMode:
@@ -309,8 +362,28 @@ async def _catalog_mode(session: AsyncSession, rule_ids: Sequence[int]) -> Catal
     return catalog_mode(rule_ids, rules)
 
 
-async def _join_group(session: AsyncSession, grouping: GroupingDecision, now: datetime) -> None:
-    """Count an admitted offense in its group, opening the group or marking a storm."""
+async def _skip_if_catalog_skips(
+    session: AsyncSession, offense_id: int, rule_ids: Sequence[int]
+) -> bool:
+    """Record the offense as `skipped` when the catalog skips all its rules now; True if so."""
+    if await _catalog_mode(session, rule_ids) is not CatalogMode.SKIP:
+        return False
+    await update_offense_seen(
+        session, offense_id, status=OffenseStatus.SKIPPED, catalog_mode=CatalogMode.SKIP
+    )
+    return True
+
+
+async def _join_group(
+    session: AsyncSession,
+    grouping: GroupingDecision,
+    offense: OffenseSnapshot,
+    now: datetime,
+    *,
+    counted: bool = False,
+) -> None:
+    """Count an admitted offense in its group, opening the group or marking a storm, and record
+    the values it carries there. `counted`: the offense is in the group's count already."""
     storm = grouping.outcome is GroupingOutcome.START_GROUP_EVALUATION
     if grouping.new_group:
         await create_offense_group(
@@ -322,11 +395,16 @@ async def _join_group(session: AsyncSession, grouping: GroupingDecision, now: da
             offense_count=1,
             status=GroupStatus.STORM if storm else GroupStatus.OPEN,
         )
-        return
-    await increment_offense_group(session, grouping.group_id, window_end=grouping.window_end)
-    if storm:
-        # Evaluating the group itself is not part of T-010; only the state changes.
+    elif counted:
+        await update_offense_group(session, grouping.group_id, window_end=grouping.window_end)
+    else:
+        await increment_offense_group(session, grouping.group_id, window_end=grouping.window_end)
+    if storm and not grouping.new_group:
+        # The group's case starts when the intake wakes it (`wake_group_cases`).
         await update_offense_group(session, grouping.group_id, status=GroupStatus.STORM)
+    await add_group_values(
+        session, grouping.group_id, offense.offense_id, offense_values(offense), seen_at=now
+    )
 
 
 async def _record(
@@ -338,6 +416,7 @@ async def _record(
     priority: int,
     status: OffenseStatus,
     group_id: str | None,
+    reason: FullAnalysisReason | None = None,
 ) -> bool:
     """Add the offense to `offenses_seen`; `first_seen_at` is the intake time."""
     return await add_offense_seen(
@@ -351,6 +430,7 @@ async def _record(
         pre_priority=priority,
         status=status,
         group_id=group_id,
+        full_analysis_reason=reason,
     )
 
 
@@ -389,3 +469,47 @@ class CaseLauncher:
                     session, offense_id, status=OffenseStatus.RUNNING, case_id=case_id
                 )
         return started
+
+    @activity.defn(name=WAKE_GROUP_CASES)
+    async def wake_group_cases(self, offense_ids: list[int]) -> list[str]:
+        """Start or wake the case of every storm group that took one of these offenses;
+        returns the groups whose case got the signal, in ID order.
+
+        One signal-with-start per group: the first offense a storm takes starts its case
+        workflow, `group-<group_id>`, and a later one wakes it (`group_updated`), so it writes
+        the group's note on the new offenses and checks whether the group is due for another
+        evaluation. The ID is never reused: a group whose case has ended is closed and takes no
+        offense, so it is only logged.
+        """
+        async with self._sessions() as session:
+            groups = list(
+                await session.scalars(
+                    select(OffenseSeenRow.group_id)
+                    .join(OffenseGroupRow, OffenseGroupRow.group_id == OffenseSeenRow.group_id)
+                    .where(
+                        OffenseSeenRow.offense_id.in_(offense_ids),
+                        OffenseSeenRow.status == OffenseStatus.GROUPED,
+                        OffenseGroupRow.status == GroupStatus.STORM,
+                    )
+                    .distinct()
+                    .order_by(OffenseSeenRow.group_id)
+                )
+            )
+        woken: list[str] = []
+        for group_id in groups:
+            if group_id is None:  # pragma: no cover - the join needs a group
+                continue
+            try:
+                await self._client.start_workflow(
+                    GROUP_CASE_WORKFLOW,
+                    group_id,
+                    id=group_case_id(group_id),
+                    task_queue=CASE_TASK_QUEUE,
+                    id_reuse_policy=WorkflowIDReusePolicy.REJECT_DUPLICATE,
+                    start_signal=GROUP_UPDATED,
+                )
+            except WorkflowAlreadyStartedError:
+                activity.logger.warning("group case of %s has ended; not woken", group_id)
+                continue
+            woken.append(group_id)
+        return woken

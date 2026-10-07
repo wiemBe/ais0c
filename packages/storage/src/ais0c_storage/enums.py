@@ -25,6 +25,37 @@ class GroupStatus(StrEnum):
     CLOSED = "closed"
 
 
+class FullAnalysisReason(StrEnum):
+    """`offenses_seen.full_analysis_reason`: why an offense of a group got a full analysis
+    (architecture §9; T-14, T-22, T-62). Not in data-model.md (T-027). Empty for an offense the
+    group took, a skipped one and one recorded before the column existed.
+
+    The hourly limit counts `limit` and `exempt`; `novelty` and `sample` have counters of their
+    own, so they do not use up the limit.
+    """
+
+    # Within the group's hourly full analysis limit.
+    LIMIT = "limit"
+    # A critical asset (a privileged user included), an IOC or a high catalog floor: never
+    # grouped, without a limit.
+    EXEMPT = "exempt"
+    # A log source or offense category the group had not seen, within its own hourly limit.
+    NOVELTY = "novelty"
+    # The group's hourly sample.
+    SAMPLE = "sample"
+
+
+class GroupValueKind(StrEnum):
+    """`offense_group_values.kind`: the values a group keeps of its offenses (T-46, T-62).
+    Not in data-model.md (T-027)."""
+
+    SOURCE_IP = "source_ip"
+    DESTINATION_IP = "destination_ip"
+    USERNAME = "username"
+    LOG_SOURCE = "log_source"
+    CATEGORY = "category"
+
+
 class CaseStatus(StrEnum):
     """`cases.status`."""
 

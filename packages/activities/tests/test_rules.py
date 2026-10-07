@@ -204,6 +204,8 @@ def test_settings_default_to_the_architecture_values() -> None:
     assert settings == CaseSettings(case_url_base=BASE)
     assert settings.case_url("case-101") == f"{BASE}/case-101"
     assert settings.group_full_analyses_per_hour == 5
+    # T-62.
+    assert settings.group_settle == timedelta(minutes=10)
     assert (settings.sla_high, settings.sla_low) == (timedelta(minutes=10), timedelta(minutes=60))
     assert settings.max_concurrent_cases == 10
     # D-31 and T-014.
@@ -217,6 +219,7 @@ def test_settings_come_from_the_environment() -> None:
             "AIS0C_CASE_URL_BASE": "https://soc.example.com/cases",
             "AIS0C_MAX_CONCURRENT_CASES": "3",
             "AIS0C_GROUP_FULL_ANALYSES_PER_HOUR": " 8 ",
+            "AIS0C_GROUP_SETTLE_MINUTES": "15",
             "AIS0C_SLA_HIGH_MINUTES": "5",
             "AIS0C_SLA_LOW_MINUTES": "30",
             "AIS0C_REEVALUATION_MINUTES": "45",
@@ -228,6 +231,7 @@ def test_settings_come_from_the_environment() -> None:
         case_url_base="https://soc.example.com/cases",
         max_concurrent_cases=3,
         group_full_analyses_per_hour=8,
+        group_settle=timedelta(minutes=15),
         sla_high=timedelta(minutes=5),
         sla_low=timedelta(minutes=30),
         reevaluation_interval=timedelta(minutes=45),
@@ -241,6 +245,7 @@ def test_settings_come_from_the_environment() -> None:
     [
         "AIS0C_MAX_CONCURRENT_CASES",
         "AIS0C_GROUP_FULL_ANALYSES_PER_HOUR",
+        "AIS0C_GROUP_SETTLE_MINUTES",
         "AIS0C_SLA_HIGH_MINUTES",
         "AIS0C_SLA_LOW_MINUTES",
         "AIS0C_REEVALUATION_MINUTES",
@@ -255,6 +260,8 @@ def test_invalid_settings_are_rejected(name: str, value: str) -> None:
 def test_settings_reject_impossible_values() -> None:
     with pytest.raises(ValueError, match="max_concurrent_cases"):
         CaseSettings(case_url_base=BASE, max_concurrent_cases=0)
+    with pytest.raises(ValueError, match="group_settle"):
+        CaseSettings(case_url_base=BASE, group_settle=timedelta(0))
     with pytest.raises(ValueError, match="SLA"):
         CaseSettings(case_url_base=BASE, sla_high=timedelta(0))
     with pytest.raises(ValueError, match="re-evaluation interval"):

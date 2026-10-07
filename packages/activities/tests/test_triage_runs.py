@@ -17,10 +17,15 @@ from ais0c_activities import (
     SessionFactory,
     TriageRunActivities,
     TriageRuntime,
+    group_objective,
     load_model_releases,
 )
 from ais0c_agents import (
     FakeGatewayClient,
+    GroupRule,
+    GroupSummary,
+    GroupValueCount,
+    GroupValues,
     ToolsetProfile,
     ToolSpec,
     load_agent_prompt,
@@ -116,6 +121,44 @@ def test_the_task_carries_the_manifests_budget_and_the_offenses_window() -> None
     assert task.objective == "Triage QRadar offense 7 (evaluation 1)."
     assert task.time_window == TimeWindow(start=NOW - timedelta(hours=2), end=NOW)
     assert (task.budget.tokens, task.budget.tool_calls, task.budget.seconds) == (150000, 12, 420)
+
+
+def group_summary() -> GroupSummary:
+    nothing = GroupValues(distinct=0, top=[])
+    return GroupSummary(
+        offense_count=48,
+        first_seen_at=NOW - timedelta(minutes=20),
+        last_seen_at=NOW - timedelta(minutes=10),
+        example_offense_id=7,
+        rules=[GroupRule(rule_id=100201, name="Rule 100201")],
+        source_ips=GroupValues(distinct=46, top=[GroupValueCount(value="203.0.113.7", offenses=3)]),
+        destination_ips=nothing,
+        usernames=nothing,
+        log_sources=nothing,
+        categories=nothing,
+    )
+
+
+async def test_a_group_case_task_names_the_group_and_its_blocks(
+    runs: TriageRunActivities,
+) -> None:
+    """T-027: in a group case the objective says the snapshot is one offense of the group and
+    the group summary block counts all of them."""
+    task, _ = await ActivityEnvironment().run(
+        runs.begin_triage_run,
+        "group-G-1-triage-1",
+        "group-G-1",
+        1,
+        "case-run-1",
+        offense(7, start=NOW - timedelta(minutes=20)),
+        group_summary(),
+    )
+
+    assert task.objective == group_objective(group_summary(), 1)
+    assert "48 QRadar offenses" in task.objective
+    assert "offense 7" in task.objective
+    assert "qradar.group_summary" in task.objective
+    assert task.time_window == TimeWindow(start=NOW - timedelta(minutes=20), end=NOW)
 
 
 @pytest.mark.parametrize(

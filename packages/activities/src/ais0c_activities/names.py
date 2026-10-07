@@ -9,11 +9,19 @@ from typing import Final
 
 CASE_TASK_QUEUE: Final = "soc-case"
 CASE_WORKFLOW: Final = "CaseWorkflow"
+# The case of an offense group in storm (T-027) and the signal that wakes it.
+GROUP_CASE_WORKFLOW: Final = "GroupCaseWorkflow"
+GROUP_UPDATED: Final = "group_updated"
 
 
 def case_workflow_id(offense_id: int) -> str:
     """ID of the offense's case workflow and of its `cases` row (architecture §20)."""
     return f"case-{offense_id}"
+
+
+def group_case_id(group_id: str) -> str:
+    """ID of the group's case workflow and of its `cases` row (docs/impl/data-model.md)."""
+    return f"group-{group_id}"
 
 
 # Intake activities (OffenseIntake).
@@ -22,6 +30,7 @@ ADMIT_OFFENSES: Final = "admit_offenses"
 FIND_CLOSED_OFFENSES: Final = "find_closed_offenses"
 NEXT_PENDING_OFFENSES: Final = "next_pending_offenses"
 START_CASE: Final = "start_case"
+WAKE_GROUP_CASES: Final = "wake_group_cases"
 
 # Case activities (CaseWorkflow). The intake also calls `close_case` for an offense whose case
 # workflow no longer exists.
@@ -44,6 +53,15 @@ RECORD_PLAN: Final = "record_plan"
 CASE_URL: Final = "case_url"
 WRITE_OFFENSE_NOTE: Final = "write_offense_note"
 SEND_EMAIL: Final = "send_email"
+
+# Group case activities (GroupCaseWorkflow, T-027). The group case also calls `case_url`,
+# `fetch_offense`, `evaluation_window`, `record_decision`, `mark_no_ai_decision` and
+# `agent_retry_delay`, and runs the agent chain as CaseWorkflow does.
+GROUP_SETTLE_DELAY: Final = "group_settle_delay"
+GROUP_CASE_STATE: Final = "group_case_state"
+ENRICH_GROUP: Final = "enrich_group"
+BEGIN_GROUP_EVALUATION: Final = "begin_group_evaluation"
+CLOSE_GROUP_CASE: Final = "close_group_case"
 
 # Triage run activities (TriageWorkflow). The agent's model and tool activities come from
 # Pydantic AI's TemporalDurability.

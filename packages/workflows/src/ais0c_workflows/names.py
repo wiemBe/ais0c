@@ -14,6 +14,8 @@ EXECUTOR_TASK_QUEUE: Final = "soc-executor"
 
 OFFENSE_INTAKE: Final = "OffenseIntake"
 CASE_WORKFLOW: Final = "CaseWorkflow"
+# The case of an offense group in storm (T-027).
+GROUP_CASE_WORKFLOW: Final = "GroupCaseWorkflow"
 TRIAGE_WORKFLOW: Final = "TriageWorkflow"
 # One run of a chain agent: Orchestrator, Investigation, Verification or Reporting.
 AGENT_WORKFLOW: Final = "AgentWorkflow"
@@ -26,11 +28,18 @@ KNOWLEDGE_SYNC_SCHEDULE_ID: Final = "knowledge-sync"
 OFFENSE_UPDATED: Final = "offense_updated"
 OFFENSE_CLOSED: Final = "offense_closed"
 CASE_STATE: Final = "state"
+# GroupCaseWorkflow's signal: the group took another offense. Its query is `state` too.
+GROUP_UPDATED: Final = "group_updated"
 
 
 def case_workflow_id(offense_id: int) -> str:
     """ID of the offense's case workflow (architecture §20)."""
     return f"case-{offense_id}"
+
+
+def group_case_id(group_id: str) -> str:
+    """ID of the group's case workflow and of its `cases` row (docs/impl/data-model.md)."""
+    return f"group-{group_id}"
 
 
 def agent_workflow_id(case_id: str, agent: str, evaluation_no: int, *, retry: bool = False) -> str:
@@ -54,6 +63,7 @@ ADMIT_OFFENSES: Final = "admit_offenses"
 FIND_CLOSED_OFFENSES: Final = "find_closed_offenses"
 NEXT_PENDING_OFFENSES: Final = "next_pending_offenses"
 START_CASE: Final = "start_case"
+WAKE_GROUP_CASES: Final = "wake_group_cases"
 
 # Case activities.
 FETCH_OFFENSE: Final = "fetch_offense"
@@ -76,6 +86,15 @@ CASE_URL: Final = "case_url"
 WRITE_OFFENSE_NOTE: Final = "write_offense_note"
 SEND_EMAIL: Final = "send_email"
 
+# GroupCaseWorkflow activities (T-027). It also calls `case_url`, `fetch_offense`,
+# `evaluation_window`, `record_decision`, `mark_no_ai_decision`, `agent_retry_delay` and
+# `reevaluation_interval`, and the chain's.
+GROUP_SETTLE_DELAY: Final = "group_settle_delay"
+GROUP_CASE_STATE: Final = "group_case_state"
+ENRICH_GROUP: Final = "enrich_group"
+BEGIN_GROUP_EVALUATION: Final = "begin_group_evaluation"
+CLOSE_GROUP_CASE: Final = "close_group_case"
+
 # TriageWorkflow activities. The agent's model requests and tool calls are activities too;
 # Pydantic AI's TemporalDurability registers them under names it derives from the agent.
 BEGIN_TRIAGE_RUN: Final = "begin_triage_run"
@@ -96,6 +115,7 @@ ACTIVITY_NAMES: Final = frozenset(
         FIND_CLOSED_OFFENSES,
         NEXT_PENDING_OFFENSES,
         START_CASE,
+        WAKE_GROUP_CASES,
         FETCH_OFFENSE,
         RECORD_OFFENSE_UPDATE,
         REEVALUATION_INTERVAL,
@@ -112,6 +132,11 @@ ACTIVITY_NAMES: Final = frozenset(
         CASE_URL,
         WRITE_OFFENSE_NOTE,
         SEND_EMAIL,
+        GROUP_SETTLE_DELAY,
+        GROUP_CASE_STATE,
+        ENRICH_GROUP,
+        BEGIN_GROUP_EVALUATION,
+        CLOSE_GROUP_CASE,
         BEGIN_TRIAGE_RUN,
         FINISH_TRIAGE_RUN,
         BEGIN_AGENT_RUN,

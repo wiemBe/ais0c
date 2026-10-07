@@ -7,7 +7,8 @@ Verification and Reporting). The Action Executor's note and e-mail activities
 (`NoteActivities`, `EmailActivities`) run in their own process on the `soc-executor` task queue,
 from `ExecutorRuntime` (T-33 (1), T-045); the case queue has the rest, including `case_url`. The
 `soc-batch` task queue has KnowledgeSync's catalog sync (`CatalogSyncActivities`,
-`BatchRuntime.activities`).
+`BatchRuntime.activities`). The case of an offense group in storm (`GroupCaseActivities`,
+T-027) runs on the case queue too.
 """
 
 from collections.abc import Callable
@@ -64,14 +65,18 @@ from ais0c_activities.gateway_source import (
     GatewayOffenseSource,
     OffenseSourceError,
 )
+from ais0c_activities.group_case import COUNTED_STATUSES, GroupCaseActivities, GroupCaseState
+from ais0c_activities.group_values import NOVELTY_KINDS, novelty_values, offense_values, unseen
 from ais0c_activities.grouping import (
     GROUP_WINDOW,
     RATE_WINDOW,
+    SAMPLE_ONE_IN,
     GroupingDecision,
     GroupingOutcome,
     GroupState,
     decide_grouping,
     rule_set_hash,
+    sample_chosen,
 )
 from ais0c_activities.intake import CaseLauncher, IntakeActivities
 from ais0c_activities.model_release import (
@@ -104,7 +109,12 @@ from ais0c_activities.runtime import (
 )
 from ais0c_activities.settings import CaseSettings
 from ais0c_activities.skills import PLAN_AGENT_ROLES, candidates, check_skill
-from ais0c_activities.triage import TriageRunActivities, TriageRuntime, evaluation_window
+from ais0c_activities.triage import (
+    TriageRunActivities,
+    TriageRuntime,
+    evaluation_window,
+    group_objective,
+)
 from ais0c_contracts import ModelRelease
 
 
@@ -119,7 +129,7 @@ def case_queue_activities(
     ioc_matcher: IocMatcher | None = None,
 ) -> list[Callable[..., object]]:
     """Every activity of the `soc-case` task queue, ready to register on a worker: the intake,
-    case, chain and agent run activities and the agents' own."""
+    case, group case, chain and agent run activities and the agents' own."""
     intake = IntakeActivities(
         sessions=sessions, source=source, settings=settings, ioc_matcher=ioc_matcher
     )
@@ -127,12 +137,15 @@ def case_queue_activities(
     case = CaseActivities(
         sessions=sessions, source=source, settings=settings, ioc_matcher=ioc_matcher
     )
+    groups = GroupCaseActivities(sessions=sessions, settings=settings, ioc_matcher=ioc_matcher)
     runs = TriageRunActivities(sessions=sessions, runtime=triage)
     chain_runs = ChainActivities.of(chain, sessions=sessions, settings=settings)
     return [
         *intake.activities(),
         launcher.start_case,
+        launcher.wake_group_cases,
         *case.activities(),
+        *groups.activities(),
         *runs.activities(),
         *triage.temporal_activities,
         *chain_runs.activities(),
@@ -142,13 +155,16 @@ def case_queue_activities(
 
 __all__ = [
     "CATALOG_SYNC_AGENT_ID",
+    "COUNTED_STATUSES",
     "GROUP_WINDOW",
     "INTAKE_CONTEXT",
     "INVENTORY_PROFILE",
     "KNOWLEDGE_SYNC_CONTEXT",
     "NOTE_PROFILE",
+    "NOVELTY_KINDS",
     "PLAN_AGENT_ROLES",
     "RATE_WINDOW",
+    "SAMPLE_ONE_IN",
     "SEND_EMAIL",
     "SOURCE_AGENT_ID",
     "WRITE_OFFENSE_NOTE",
@@ -169,6 +185,8 @@ __all__ = [
     "GatewayOffenseSource",
     "GatewayProfile",
     "GatewayTool",
+    "GroupCaseActivities",
+    "GroupCaseState",
     "GroupState",
     "GroupingDecision",
     "GroupingOutcome",
@@ -205,6 +223,7 @@ __all__ = [
     "decide_grouping",
     "evaluation_window",
     "floor_level",
+    "group_objective",
     "investigation_task",
     "load_batch_runtime",
     "load_case_runtime",
@@ -215,15 +234,19 @@ __all__ = [
     "load_smtp_settings",
     "match_critical_assets",
     "model_release_changes",
+    "novelty_values",
+    "offense_values",
     "orchestrator_task",
     "parse_model_releases",
     "pre_priority",
     "reporting_task",
     "rule_set_hash",
     "sample_applies",
+    "sample_chosen",
     "sample_value",
     "sampled",
     "sla_deadline",
     "system_run",
+    "unseen",
     "verification_task",
 ]

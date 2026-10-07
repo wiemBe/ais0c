@@ -42,6 +42,7 @@ from ais0c_workflows import (
     AgentOutcome,
     AgentRequest,
     ChainResult,
+    GroupSummary,
     TriageFailure,
     TriageOutcome,
     TriageRequest,
@@ -52,15 +53,19 @@ from ais0c_workflows.agent_runtime import (
     ReportingInput,
     VerificationInput,
 )
+from ais0c_workflows.group_summary import GroupRule, GroupValueCount, GroupValues
 from ais0c_workflows.names import (
     ADMIT_OFFENSES,
     AGENT_RETRY_DELAY,
     AGENT_WORKFLOW,
+    BEGIN_GROUP_EVALUATION,
     BEGIN_TRIAGE_RUN,
     CANDIDATE_SKILLS,
     CASE_STATE,
     CASE_URL,
     CLOSE_CASE,
+    CLOSE_GROUP_CASE,
+    ENRICH_GROUP,
     ENRICH_OFFENSE,
     EVALUATION_WINDOW,
     EXECUTOR_TASK_QUEUE,
@@ -68,6 +73,8 @@ from ais0c_workflows.names import (
     FETCH_OFFENSE_CHANGES,
     FIND_CLOSED_OFFENSES,
     FINISH_TRIAGE_RUN,
+    GROUP_CASE_STATE,
+    GROUP_SETTLE_DELAY,
     MARK_NO_AI_DECISION,
     NEXT_PENDING_OFFENSES,
     OFFENSE_CLOSED,
@@ -81,11 +88,14 @@ from ais0c_workflows.names import (
     START_CASE,
     START_EVALUATION,
     TRIAGE_WORKFLOW,
+    WAKE_GROUP_CASES,
     WRITE_OFFENSE_NOTE,
 )
 from ais0c_workflows.notify import (
     CaseAlertRequest,
+    EmailRequest,
     EvaluationNoteRequest,
+    GroupAlertRequest,
     NoDecisionNoteRequest,
     NoteRequest,
 )
@@ -196,6 +206,10 @@ class IntakeFakes:
         self.admitted: list[list[int]] = []
         self.started: list[int] = []
         self.closed_records: list[tuple[str, int]] = []
+        # The offense IDs of each `wake_group_cases` call, and the storm groups it reports
+        # by offense.
+        self.woken: list[list[int]] = []
+        self.storm_groups: dict[int, str] = {}
 
     def put(self, *offenses: OffenseSnapshot) -> None:
         for item in offenses:
@@ -208,6 +222,7 @@ class IntakeFakes:
             self.find_closed_offenses,
             self.next_pending_offenses,
             self.start_case,
+            self.wake_group_cases,
             self.close_case,
         ]
 
@@ -242,6 +257,11 @@ class IntakeFakes:
     async def start_case(self, offense_id: int) -> bool:
         self.started.append(offense_id)
         return True
+
+    @activity.defn(name=WAKE_GROUP_CASES)
+    async def wake_group_cases(self, offense_ids: list[int]) -> list[str]:
+        self.woken.append(list(offense_ids))
+        return sorted({self.storm_groups[oid] for oid in offense_ids if oid in self.storm_groups})
 
     @activity.defn(name=CLOSE_CASE)
     async def close_case(self, case_id: str, offense_id: int) -> None:
@@ -309,7 +329,7 @@ class TriageStub:
         try:
             result = await workflow.execute_activity(
                 SCRIPTED_TRIAGE,
-                args=[request.case_id, request.evaluation_no],
+                args=[request.case_id, request.evaluation_no, request.group_summary],
                 result_type=TriageResult,
                 start_to_close_timeout=timedelta(minutes=5),
                 retry_policy=STUB_RETRY,
@@ -560,7 +580,9 @@ class RecordedPlan:
     steps: list[str]
 
 
-type ExecutorRequest = EvaluationNoteRequest | NoDecisionNoteRequest | CaseAlertRequest
+type ExecutorRequest = (
+    EvaluationNoteRequest | NoDecisionNoteRequest | CaseAlertRequest | GroupAlertRequest
+)
 # What the executor fakes answer an attempt with (the request, the attempt's number); raising
 # plays a failure. The workflow does not read the outcome, so it is a plain mapping.
 type ExecutorBehavior = Callable[[ExecutorRequest, int], Awaitable[dict[str, object]]]
@@ -635,6 +657,9 @@ class CaseFakes:
         self.note_requests: list[NoteRequest] = []
         self.note_attempts: list[int] = []
         self.email_requests: list[CaseAlertRequest] = []
+        self.group_alerts: list[GroupAlertRequest] = []
+        # The group summary of each evaluation's Triage request (T-027), first attempts only.
+        self.triage_summaries: list[tuple[int, GroupSummary | None]] = []
         self.email_attempts: list[int] = []
 
     def activities(self) -> list[Callable[..., object]]:
@@ -713,11 +738,14 @@ class CaseFakes:
         return start + self.sla
 
     @activity.defn(name=SCRIPTED_TRIAGE)
-    async def scripted_triage(self, case_id: str, evaluation_no: int) -> TriageResult:
+    async def scripted_triage(
+        self, case_id: str, evaluation_no: int, group_summary: GroupSummary | None = None
+    ) -> TriageResult:
         info = activity.info()
         run_id = info.workflow_id or ""
         if run_id not in self.triage_runs:
             self.triage_runs.append(run_id)
+            self.triage_summaries.append((evaluation_no, group_summary))
         await self.events.add("triage", evaluation_no)
         call = TriageCall(
             evaluation_no=evaluation_no, attempt=info.attempt, retry=run_id.endswith("-retry")
@@ -780,10 +808,13 @@ class CaseFakes:
         return await self.note_behavior(request, attempt)
 
     @activity.defn(name=SEND_EMAIL)
-    async def send_email(self, request: CaseAlertRequest) -> dict[str, object]:
+    async def send_email(self, request: EmailRequest) -> dict[str, object]:
         attempt = activity.info().attempt
         self.email_attempts.append(attempt)
-        if attempt == 1:
+        if attempt == 1 and isinstance(request, GroupAlertRequest):
+            self.group_alerts.append(request)
+            await self.executor_events.add("group_alert", len(self.group_alerts))
+        elif attempt == 1 and isinstance(request, CaseAlertRequest):
             self.email_requests.append(request)
             await self.executor_events.add("email", len(self.email_requests))
         return await self.email_behavior(request, attempt)
@@ -825,6 +856,160 @@ class CaseFakes:
         self.agent_calls.append(call)
         await self.agent_events.add(str(call.agent), request.evaluation_no)
         return await self.agent_behavior(call)
+
+
+# --- GroupCaseWorkflow (T-027) ----------------------------------------------------------------
+
+
+def values(*pairs: tuple[str, int], distinct: int | None = None) -> GroupValues:
+    top = [GroupValueCount(value=value, offenses=count) for value, count in pairs]
+    return GroupValues(distinct=len(top) if distinct is None else distinct, top=top)
+
+
+def group_summary(
+    count: int,
+    *,
+    at: datetime,
+    example: int = 201,
+    sources: Sequence[tuple[str, int]] = (),
+    destinations: Sequence[tuple[str, int]] = (),
+) -> GroupSummary:
+    """The summary of a password spray of `count` offenses: one rule, one log source."""
+    return GroupSummary(
+        offense_count=count,
+        first_seen_at=at,
+        last_seen_at=at,
+        example_offense_id=example,
+        rules=[GroupRule(rule_id=100201, name="BF: Excessive logon failures")],
+        source_ips=values(*sources) if sources else values(distinct=count),
+        destination_ips=values(*destinations) if destinations else values(distinct=0),
+        usernames=values(("svc_backup_7731", count)),
+        log_sources=values(("112", count)),
+        categories=values(("User Login Failure", count)),
+    )
+
+
+@dataclass(frozen=True)
+class BegunGroupEvaluation:
+    """What `begin_group_evaluation` got."""
+
+    evaluation_no: int
+    floor_level: Level | None
+    sla_start: datetime
+
+
+class GroupFakes(CaseFakes):
+    """The activities of a group case over a group the test changes, with CaseFakes' chain.
+
+    `summary`, `grouped` and `window_end` are what `group_case_state` returns; a test changes
+    them as the intake would and signals `group_updated`. `fetch_offense` returns `offense`.
+    `begun` collects what `begin_group_evaluation` got; the SLA deadline is the start plus
+    `sla`. `close_group_case` closes the group once the time it gets is past `window_end`.
+    """
+
+    def __init__(
+        self,
+        offense: OffenseSnapshot,
+        *,
+        summary: GroupSummary | None,
+        grouped: Sequence[int],
+        window_end: datetime,
+        settle: timedelta = timedelta(minutes=10),
+        sla: timedelta = timedelta(minutes=60),
+        floor_level: Level | None = None,
+        reevaluation_interval: timedelta = timedelta(minutes=30),
+        retry_delay: timedelta = timedelta(minutes=5),
+        triage_behavior: TriageBehavior = decide_at_once,
+        agent_behavior: AgentBehavior = answer_agents,
+        note_behavior: ExecutorBehavior = written,
+        email_behavior: ExecutorBehavior = email_sent,
+    ) -> None:
+        super().__init__(
+            offense,
+            floor_level=floor_level,
+            sla=sla,
+            reevaluation_interval=reevaluation_interval,
+            retry_delay=retry_delay,
+            triage_behavior=triage_behavior,
+            agent_behavior=agent_behavior,
+            note_behavior=note_behavior,
+            email_behavior=email_behavior,
+        )
+        self.summary = summary
+        self.grouped = list(grouped)
+        self.window_end = window_end
+        self.settle = settle
+        self.begun: list[BegunGroupEvaluation] = []
+        self.states_read = 0
+        self.enriched: list[GroupSummary] = []
+        self.closed_at: list[datetime] = []
+
+    def activities(self) -> list[Callable[..., object]]:
+        return [
+            *super().activities(),
+            self.group_settle_delay,
+            self.group_case_state,
+            self.enrich_group,
+            self.begin_group_evaluation,
+            self.close_group_case,
+        ]
+
+    def group_notes(self) -> list[tuple[int, int, str]]:
+        """The group notes as (offense, evaluation, verdict), in the order they were made."""
+        return [
+            (r.content.offense_id, r.content.evaluation_no, r.content.verdict.value)
+            for r in self.note_requests
+            if isinstance(r, EvaluationNoteRequest) and r.content.group_id is not None
+        ]
+
+    @activity.defn(name=GROUP_SETTLE_DELAY)
+    async def group_settle_delay(self) -> timedelta:
+        return self.settle
+
+    @activity.defn(name=GROUP_CASE_STATE)
+    async def group_case_state(
+        self, group_id: str
+    ) -> tuple[GroupSummary | None, list[int], datetime]:
+        self.states_read += 1
+        await self.events.add("state", self.states_read)
+        return self.summary, list(self.grouped), self.window_end
+
+    @activity.defn(name=ENRICH_GROUP)
+    async def enrich_group(
+        self, group_id: str, offense: OffenseSnapshot, summary: GroupSummary
+    ) -> EnrichmentContext:
+        self.enriched.append(summary)
+        return EnrichmentContext(
+            catalog=CatalogContext(rules=[], log_sources=[]),
+            critical_asset_hits=[],
+            ioc_hits=[],
+            entity_resolutions=[],
+            group_id=group_id,
+            floor_level=self.floor_level,
+        )
+
+    @activity.defn(name=BEGIN_GROUP_EVALUATION)
+    async def begin_group_evaluation(
+        self,
+        case_id: str,
+        group_id: str,
+        evaluation_no: int,
+        floor_level: Level | None,
+        sla_start: datetime,
+        workflow_id: str,
+        run_id: str,
+    ) -> datetime:
+        self.begun.append(BegunGroupEvaluation(evaluation_no, floor_level, sla_start))
+        await self.events.add("evaluation", evaluation_no)
+        return sla_start + self.sla
+
+    @activity.defn(name=CLOSE_GROUP_CASE)
+    async def close_group_case(self, group_id: str, case_id: str, at: datetime) -> datetime | None:
+        if at <= self.window_end:
+            return self.window_end
+        self.closed_at.append(at)
+        await self.events.add("closed")
+        return None
 
 
 # --- the executor's worker --------------------------------------------------------------------
@@ -884,6 +1069,7 @@ class ScriptedAgent:
         self.run_ids: list[str] = []
         self.nonces: list[str] = []
         self.tasks: list[AgentTask] = []
+        self.group_summaries: list[GroupSummary | None] = []
 
     async def __call__(
         self,
@@ -893,11 +1079,13 @@ class ScriptedAgent:
         *,
         run_id: str,
         nonce: str,
+        group_summary: GroupSummary | None = None,
     ) -> AgentReport:
         if not workflow.unsafe.is_replaying():
             self.run_ids.append(run_id)
             self.nonces.append(nonce)
             self.tasks.append(task)
+            self.group_summaries.append(group_summary)
         if self.tool_call:
             await workflow.execute_activity(
                 TOOL_STEP,
@@ -951,6 +1139,7 @@ class TriageFakes:
         self.tool = tool
         self.events = Events()
         self.begun: list[tuple[str, str, int, str, int]] = []
+        self.begun_summaries: list[GroupSummary | None] = []
         self.finished: list[tuple[str, RunStatus, TriageResult | None, str | None]] = []
 
     def activities(self) -> list[Callable[..., object]]:
@@ -964,8 +1153,10 @@ class TriageFakes:
         evaluation_no: int,
         parent_run_id: str,
         offense: OffenseSnapshot,
+        group_summary: GroupSummary | None = None,
     ) -> tuple[AgentTask, str]:
         self.begun.append((run_id, case_id, evaluation_no, parent_run_id, offense.offense_id))
+        self.begun_summaries.append(group_summary)
         return agent_task(run_id, budget_seconds=self.budget_seconds), "0123456789abcdef"
 
     @activity.defn(name=FINISH_TRIAGE_RUN)

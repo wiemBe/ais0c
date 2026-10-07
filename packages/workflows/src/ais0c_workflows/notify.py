@@ -1,4 +1,5 @@
-"""What CaseWorkflow hands the Action Executor's activities (architecture §9; T-33, T-045).
+"""What CaseWorkflow and GroupCaseWorkflow hand the Action Executor's activities (architecture
+§9; T-33, T-045, T-027).
 
 This package may not import the executor (docs/impl/repo-structure.md), so the request bodies of
 the executor's two activities are this package's own models. They mirror
@@ -14,6 +15,11 @@ Also here, all deterministic (criteria 3, 4 and 8):
   decision writes its own note beside the no-decision one (D-30);
 - the `NoteContent` of a decision, built from the Reporting agent's report; without a report the
   note carries the fixed Turkish sentence and no urgent events;
+- the group note of an offense a group took (T-027): the group's decision with `group_id` set,
+  which the executor writes in the short group format; its marker is the group case's, the same
+  on every offense of the group, so each offense gets one note per group decision (the executor
+  keeps `notes_written` unique per offense and marker);
+- the group's alert e-mail, built from the group's decision as a case alert is from a case's;
 - the levels that get an alert e-mail, and the retry policy and timeouts of the executor's
   activities.
 """
@@ -29,11 +35,13 @@ with workflow.unsafe.imports_passed_through():
     from pydantic import BaseModel, ConfigDict, Field
 
     from ais0c_contracts import (
+        ActionType,
         CaseReport,
         CaseVerdict,
         Confidence,
         Level,
         NoteContent,
+        UrgentEvent,
         UtcDatetime,
     )
 
@@ -45,6 +53,7 @@ NO_AI_DECISION_NOTE_KIND: Final = "no_ai_decision"
 GROUP_NOTE_KIND: Final = "group"
 type NoteKind = Literal["evaluation", "no_ai_decision", "group"]
 CASE_ALERT_KIND: Final = "case_alert"
+GROUP_ALERT_KIND: Final = "group_alert"
 
 # The levels whose evaluation is e-mailed (architecture §9, D-22). Whether a re-evaluation is
 # e-mailed again is the executor's rule (D-42): only above the levels already sent.
@@ -120,6 +129,35 @@ class CaseAlertRequest(BaseModel):
     evaluated_at: UtcDatetime
     content: NoteContent
     """The fields of the evaluation's QRadar note."""
+
+
+class GroupAlertRequest(BaseModel):
+    """The body of the executor's `GroupAlert`: the e-mail of a group whose level is high or
+    critical (D-22, D-42)."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    kind: Literal["group_alert"] = GROUP_ALERT_KIND
+    case_id: str
+    """The group's case, `group-<group_id>`."""
+    group_id: str
+    title: str
+    """What the group's offenses share: the description QRadar gives the offense the summary
+    shows; the executor cleans and cuts it."""
+    offense_count: int
+    evaluation_no: int
+    evaluated_at: UtcDatetime
+    """When the group's decision was recorded; the time the e-mail shows."""
+    verdict: CaseVerdict
+    confidence: Confidence
+    notify_level: Level
+    summary_tr: str
+    urgent_events: list[UrgentEvent]
+    recommended_actions: list[ActionType]
+    case_url: str
+
+
+type EmailRequest = Annotated[CaseAlertRequest | GroupAlertRequest, Field(discriminator="kind")]
 
 
 def run_marker(case_id: str, evaluation_no: int, kind: NoteKind) -> str:
@@ -216,3 +254,56 @@ def _cut(text: str, limit: int) -> str:
     if len(text) <= limit:
         return text
     return text[: limit - 1].rstrip() + "…"
+
+
+def group_note(
+    *,
+    case_id: str,
+    group_id: str,
+    offense_id: int,
+    evaluated_at: UtcDatetime,
+    decision: NoteContent,
+) -> EvaluationNoteRequest:
+    """The group note of an offense the group took: the group's `decision` (its evaluation's
+    note content) with the offense's ID, the group's ID and the group marker (T-027 criterion
+    2)."""
+    content = decision.model_copy(
+        update={
+            "offense_id": offense_id,
+            "run_marker": run_marker(case_id, decision.evaluation_no, GROUP_NOTE_KIND),
+            "group_id": group_id,
+        }
+    )
+    return EvaluationNoteRequest(
+        case_id=case_id,
+        evaluated_at=evaluated_at,
+        content=NoteContent.model_validate(content.model_dump()),
+    )
+
+
+def group_alert(
+    *,
+    case_id: str,
+    group_id: str,
+    title: str,
+    offense_count: int,
+    evaluated_at: UtcDatetime,
+    decision: NoteContent,
+) -> GroupAlertRequest:
+    """The alert e-mail of a group decision whose level is high or critical, with the fields
+    of its note."""
+    return GroupAlertRequest(
+        case_id=case_id,
+        group_id=group_id,
+        title=title,
+        offense_count=offense_count,
+        evaluation_no=decision.evaluation_no,
+        evaluated_at=evaluated_at,
+        verdict=decision.verdict,
+        confidence=decision.confidence,
+        notify_level=decision.notify_level,
+        summary_tr=decision.summary_tr,
+        urgent_events=list(decision.urgent_events),
+        recommended_actions=list(decision.recommended_actions),
+        case_url=decision.case_url,
+    )

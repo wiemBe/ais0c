@@ -1,7 +1,7 @@
 """`alembic upgrade head` and `alembic downgrade base` on an empty database (T-004 criterion
 1), revision 0002 on a database that holds runs (T-016 criterion 2), and revisions 0003
-(T-017 criterion 1), 0004 (T-020), 0005 (T-021), 0006 (T-041 criterion 3) and 0007 (T-036
-criterion 1) on one that holds data.
+(T-017 criterion 1), 0004 (T-020), 0005 (T-021), 0006 (T-041 criterion 3), 0007 (T-036
+criterion 1), 0008 (T-57) and 0009 (T-027) on one that holds data.
 
 The tests run the real `alembic` command in packages/storage, so alembic.ini, env.py and the
 AIS0C_DATABASE_URL lookup are covered too.
@@ -65,7 +65,7 @@ def test_upgrade_head_then_downgrade_base(server: Server, empty_database: str) -
     upgraded = alembic("upgrade", "head", url=url)
     assert upgraded.returncode == 0, upgraded.stderr
     current = alembic("current", url=url)
-    assert "0008 (head)" in current.stdout
+    assert "0009 (head)" in current.stdout
     objects = public_objects(url)
     assert set(Base.metadata.tables) <= objects["relations"]
     assert objects["functions"] == {"audit_log_append_only"}
@@ -162,6 +162,7 @@ def test_offline_mode_prints_the_sql(server: Server, empty_database: str) -> Non
     assert "NULLS NOT DISTINCT" in printed.stdout
     assert "ADD COLUMN evaluation_no INTEGER" in printed.stdout
     assert "ADD COLUMN error TEXT" in printed.stdout
+    assert "CREATE TABLE offense_group_values" in printed.stdout
 
 
 def test_revision_0008_backfills_qa_evaluation_and_keeps_data_on_downgrade(
@@ -222,6 +223,67 @@ def test_revision_0008_backfills_qa_evaluation_and_keeps_data_on_downgrade(
             }
         assert "evaluation_no" not in qa_columns
         assert "error" not in run_columns
+    finally:
+        engine.dispose()
+
+
+def test_revision_0009_adds_group_values_and_keeps_offenses(
+    server: Server, empty_database: str
+) -> None:
+    """0009 (T-027): recorded offenses get no full analysis reason, so they count against the
+    group's hourly limit as before; the new table takes a group's values and goes on
+    downgrade, while the offenses stay."""
+    url = server.app_url(empty_database)
+    first = alembic("upgrade", "0008", url=url)
+    assert first.returncode == 0, first.stderr
+    engine = create_sync_engine(url)
+    try:
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "INSERT INTO offense_groups (group_id, rule_set_hash, window_start,"
+                    " window_end, offense_count, status) VALUES ('G-1', 'abc', now(),"
+                    " now() + interval '1 day', 1, 'storm')"
+                )
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO offenses_seen (offense_id, first_seen_at, last_updated_at,"
+                    " description, rule_ids, catalog_mode, group_id, status, pre_priority)"
+                    " VALUES (9, now(), now(), 'Synthetic', '{100201}', 'analyze', 'G-1',"
+                    " 'done', 0)"
+                )
+            )
+
+        upgraded = alembic("upgrade", "head", url=url)
+        assert upgraded.returncode == 0, upgraded.stderr
+        with engine.begin() as connection:
+            assert connection.scalar(text("SELECT full_analysis_reason FROM offenses_seen")) is None
+            connection.execute(
+                text(
+                    "INSERT INTO offense_group_values (group_id, kind, value, offense_id,"
+                    " seen_at) VALUES ('G-1', 'source_ip', '203.0.113.7', 9, now())"
+                )
+            )
+        with pytest.raises(IntegrityError):
+            with engine.begin() as connection:
+                connection.execute(
+                    text(
+                        "INSERT INTO offense_group_values (group_id, kind, value, offense_id,"
+                        " seen_at) VALUES ('G-1', 'source_ip', '203.0.113.7', 9, now())"
+                    )
+                )
+
+        downgraded = alembic("downgrade", "0008", url=url)
+        assert downgraded.returncode == 0, downgraded.stderr
+        with engine.connect() as connection:
+            assert connection.scalar(text("SELECT count(*) FROM offenses_seen")) == 1
+            tables = set(inspect(connection).get_table_names())
+            columns = {
+                column["name"] for column in inspect(connection).get_columns("offenses_seen")
+            }
+        assert "offense_group_values" not in tables
+        assert "full_analysis_reason" not in columns
     finally:
         engine.dispose()
 

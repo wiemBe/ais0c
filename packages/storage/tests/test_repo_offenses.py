@@ -1,4 +1,5 @@
-"""Repository functions of `offenses_seen` and `offense_groups` (criterion 6)."""
+"""Repository functions of `offenses_seen`, `offense_groups` (criterion 6) and
+`offense_group_values` (T-027). IPs are from the RFC 5737 ranges."""
 
 from datetime import timedelta
 
@@ -10,17 +11,24 @@ from storage_payloads import T0, T1
 
 from ais0c_contracts import CatalogMode
 from ais0c_storage.db import create_session_factory
-from ais0c_storage.enums import GroupStatus, OffenseStatus
+from ais0c_storage.enums import FullAnalysisReason, GroupStatus, GroupValueKind, OffenseStatus
 from ais0c_storage.errors import DuplicateError, NotFoundError
 from ais0c_storage.repositories import (
+    GroupValueCounts,
+    add_group_values,
     add_offense_seen,
+    close_ended_offense_group,
+    count_group_values,
     count_offenses,
     create_offense_group,
     find_offense_group,
     get_offense_group,
     get_offense_seen,
     increment_offense_group,
+    list_group_offenses,
     list_pending_offenses,
+    seen_group_values,
+    set_full_analysis_reason,
     update_offense_group,
     update_offense_seen,
 )
@@ -36,6 +44,7 @@ async def add(
     seen_after: timedelta = timedelta(0),
     status: OffenseStatus = OffenseStatus.PENDING,
     group_id: str | None = None,
+    reason: FullAnalysisReason | None = None,
 ) -> bool:
     return await add_offense_seen(
         session,
@@ -48,6 +57,7 @@ async def add(
         pre_priority=pre_priority,
         status=status,
         group_id=group_id,
+        full_analysis_reason=reason,
     )
 
 
@@ -230,3 +240,123 @@ async def test_concurrent_increments_are_not_lost(engine: AsyncEngine) -> None:
         group = await get_offense_group(reader, "G-1")
     assert group is not None
     assert group.offense_count == 10
+
+
+# --- T-027: full analysis reasons, the group's offenses and values, closing a group ----------
+
+
+async def storm_group(session: AsyncSession, group_id: str = "G-1") -> None:
+    await create_offense_group(
+        session,
+        group_id=group_id,
+        rule_set_hash="hash-a",
+        window_start=T0,
+        window_end=T0 + timedelta(hours=24),
+        status=GroupStatus.STORM,
+    )
+
+
+async def test_count_offenses_by_full_analysis_reason(session: AsyncSession) -> None:
+    """The hourly limit counts the limit's and the exempt offenses and those recorded before
+    the reason existed; the novelty escapes and the sample count on their own."""
+    await add(session, 1, status=OffenseStatus.DONE, group_id="G-1")
+    await add(session, 2, group_id="G-1", reason=FullAnalysisReason.LIMIT)
+    await add(session, 3, group_id="G-1", reason=FullAnalysisReason.EXEMPT)
+    await add(session, 4, group_id="G-1", reason=FullAnalysisReason.NOVELTY)
+    await add(session, 5, group_id="G-1", reason=FullAnalysisReason.SAMPLE)
+
+    limit = {None, FullAnalysisReason.LIMIT, FullAnalysisReason.EXEMPT}
+    assert await count_offenses(session, group_id="G-1", full_analysis_reasons=limit) == 3
+    novelty = {FullAnalysisReason.NOVELTY}
+    assert await count_offenses(session, group_id="G-1", full_analysis_reasons=novelty) == 1
+    assert await count_offenses(session, full_analysis_reasons=set()) == 0
+
+    updated = await set_full_analysis_reason(session, 4, None)
+    assert updated.full_analysis_reason is None
+    assert await count_offenses(session, group_id="G-1", full_analysis_reasons=novelty) == 0
+    with pytest.raises(NotFoundError):
+        await set_full_analysis_reason(session, 99999, FullAnalysisReason.LIMIT)
+
+
+async def test_the_group_offenses_come_oldest_first(session: AsyncSession) -> None:
+    await add(session, 7, status=OffenseStatus.GROUPED, group_id="G-1", seen_after=timedelta(2))
+    await add(session, 9, status=OffenseStatus.GROUPED, group_id="G-1")
+    await add(session, 8, status=OffenseStatus.DONE, group_id="G-1")
+    await add(session, 6, status=OffenseStatus.GROUPED, group_id="G-2")
+
+    every = await list_group_offenses(session, "G-1")
+    grouped = await list_group_offenses(session, "G-1", statuses={OffenseStatus.GROUPED})
+
+    assert [row.offense_id for row in every] == [8, 9, 7]
+    assert [row.offense_id for row in grouped] == [9, 7]
+
+
+async def test_group_values_are_recorded_once_per_offense(session: AsyncSession) -> None:
+    await storm_group(session)
+    await add(session, 1, status=OffenseStatus.GROUPED, group_id="G-1")
+    values = {
+        GroupValueKind.SOURCE_IP: ["203.0.113.7", "203.0.113.7"],
+        GroupValueKind.LOG_SOURCE: ["112"],
+        GroupValueKind.USERNAME: [],
+    }
+
+    await add_group_values(session, "G-1", 1, values, seen_at=T0)
+    await add_group_values(session, "G-1", 1, values, seen_at=T1)
+    await add_group_values(session, "G-1", 1, {}, seen_at=T1)
+
+    seen = await seen_group_values(
+        session,
+        "G-1",
+        {
+            GroupValueKind.LOG_SOURCE: ["112", "113"],
+            GroupValueKind.CATEGORY: ["Firewall Permit"],
+            GroupValueKind.USERNAME: [],
+        },
+    )
+    assert seen == {(GroupValueKind.LOG_SOURCE, "112")}
+    assert await seen_group_values(session, "G-1", {}) == set()
+    assert await seen_group_values(session, "G-2", {GroupValueKind.LOG_SOURCE: ["112"]}) == set()
+
+
+async def test_group_value_counts_give_the_most_frequent_values(session: AsyncSession) -> None:
+    await storm_group(session)
+    sources = {1: ["203.0.113.7"], 2: ["203.0.113.7", "203.0.113.9"], 3: ["203.0.113.8"]}
+    for offense_id, addresses in sources.items():
+        await add(session, offense_id, status=OffenseStatus.GROUPED, group_id="G-1")
+        await add_group_values(
+            session,
+            "G-1",
+            offense_id,
+            {GroupValueKind.SOURCE_IP: addresses, GroupValueKind.LOG_SOURCE: ["112"]},
+            seen_at=T0,
+        )
+    # A skipped offense's values do not count.
+    await add(session, 4, status=OffenseStatus.SKIPPED, group_id="G-1")
+    await add_group_values(
+        session, "G-1", 4, {GroupValueKind.SOURCE_IP: ["203.0.113.8"]}, seen_at=T0
+    )
+    counted = set(OffenseStatus) - {OffenseStatus.SKIPPED}
+
+    counts = await count_group_values(session, "G-1", top=2, statuses=counted)
+
+    assert counts == {
+        GroupValueKind.SOURCE_IP: GroupValueCounts(
+            distinct=3, top=[("203.0.113.7", 2), ("203.0.113.8", 1)]
+        ),
+        GroupValueKind.LOG_SOURCE: GroupValueCounts(distinct=1, top=[("112", 3)]),
+    }
+    assert await count_group_values(session, "G-2", top=2, statuses=counted) == {}
+
+
+async def test_a_group_closes_only_after_its_window(session: AsyncSession) -> None:
+    await storm_group(session)
+    window_end = T0 + timedelta(hours=24)
+
+    still_open = await close_ended_offense_group(session, "G-1", at=window_end)
+    assert still_open is not None
+    assert still_open.status is GroupStatus.STORM
+
+    closed = await close_ended_offense_group(session, "G-1", at=window_end + timedelta(seconds=1))
+    assert closed is not None
+    assert closed.status is GroupStatus.CLOSED
+    assert await close_ended_offense_group(session, "G-404", at=window_end) is None

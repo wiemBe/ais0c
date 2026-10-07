@@ -1,7 +1,9 @@
-"""Temporal workflows: OffenseIntake, CaseWorkflow, HuntWorkflow, TuningWorkflow, KnowledgeSync.
+"""Temporal workflows: OffenseIntake, CaseWorkflow, GroupCaseWorkflow, HuntWorkflow,
+TuningWorkflow, KnowledgeSync.
 
 CaseWorkflow runs each evaluation's agents as child workflows: TriageWorkflow, then AgentWorkflow
-for the Orchestrator, the plan's steps and Reporting.
+for the Orchestrator, the plan's steps and Reporting. GroupCaseWorkflow runs the same chain for
+an offense group in storm (T-027).
 
 Deterministic: no I/O. Activities are called by name, never imported. Workers run these
 workflows in Temporal's sandbox with the Pydantic data converter.
@@ -18,6 +20,9 @@ from ais0c_workflows.agent import AgentOutcome, AgentRequest, AgentWorkflow, Cha
 from ais0c_workflows.agent_run import AgentFailure
 from ais0c_workflows.case import CaseCarry, CaseStatus, CaseView, CaseWorkflow
 from ais0c_workflows.chain import ChainDecision
+from ais0c_workflows.evaluation import AgentChain, ExecutorCalls
+from ais0c_workflows.group import GroupCarry, GroupCaseWorkflow, GroupDecision, GroupView
+from ais0c_workflows.group_summary import GroupSummary
 from ais0c_workflows.intake import IntakeCheckpoint, OffenseIntake
 from ais0c_workflows.knowledge_sync import KnowledgeSync, KnowledgeSyncResult
 from ais0c_workflows.reevaluation import reevaluation_due, should_reevaluate
@@ -30,7 +35,13 @@ from ais0c_workflows.triage import (
 )
 
 # Workflows of the `soc-case` task queue.
-CASE_QUEUE_WORKFLOWS: Final = (OffenseIntake, CaseWorkflow, TriageWorkflow, AgentWorkflow)
+CASE_QUEUE_WORKFLOWS: Final = (
+    OffenseIntake,
+    CaseWorkflow,
+    GroupCaseWorkflow,
+    TriageWorkflow,
+    AgentWorkflow,
+)
 # Workflows of the `soc-batch` task queue.
 BATCH_QUEUE_WORKFLOWS: Final = (KnowledgeSync,)
 
@@ -38,6 +49,7 @@ __all__ = [
     "BATCH_QUEUE_WORKFLOWS",
     "CASE_QUEUE_WORKFLOWS",
     "MODEL_ACCESS_FAILURES",
+    "AgentChain",
     "AgentFailure",
     "AgentOutcome",
     "AgentRequest",
@@ -48,6 +60,12 @@ __all__ = [
     "CaseWorkflow",
     "ChainDecision",
     "ChainResult",
+    "ExecutorCalls",
+    "GroupCarry",
+    "GroupCaseWorkflow",
+    "GroupDecision",
+    "GroupSummary",
+    "GroupView",
     "IntakeCheckpoint",
     "KnowledgeSync",
     "KnowledgeSyncResult",

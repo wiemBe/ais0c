@@ -30,6 +30,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Final, Self
 
+from pydantic import BaseModel
 from pydantic_ai.durable_exec.temporal import TemporalDurability
 from pydantic_ai.models import Model
 from temporalio import activity, workflow
@@ -44,6 +45,7 @@ from ais0c_agents import (
     AgentManifest,
     AgentRun,
     GatewayClient,
+    GroupSummary,
     PromptTemplate,
     RunDeps,
     ToolsetProfile,
@@ -98,6 +100,16 @@ def evaluation_window(offense: OffenseSnapshot, now: datetime) -> TimeWindow:
     and at least MIN_WINDOW back, until `now`."""
     start = min(max(offense.start_time, now - TRIAGE_WINDOW), now - MIN_WINDOW)
     return TimeWindow(start=start, end=now)
+
+
+def group_objective(summary: GroupSummary, evaluation_no: int) -> str:
+    """The objective of a group case's agents: the group's offenses evaluated as one (T-027)."""
+    return (
+        f"Triage a storm of {summary.offense_count} QRadar offenses of the same rules as one "
+        f"group (evaluation {evaluation_no}). The offense snapshot is offense "
+        f"{summary.example_offense_id}, one of them; the qradar.group_summary block counts what "
+        "all of them carry."
+    )
 
 
 @dataclass(frozen=True)
@@ -157,15 +169,23 @@ class TriageRuntime:
         *,
         run_id: str,
         nonce: str,
+        group_summary: BaseModel | None = None,
     ) -> AgentRun[TriageResult]:
         """One Triage run, in TriageWorkflow's workflow code (`TriageAgentRun`).
 
         `run_id` is the run's ID, under which `begin_triage_run` recorded the run; the workflow
         gives it (T-29) and the agent writes it into every ToolIntent. Durations come from the
-        workflow clock, so a replay measures what the run measured.
+        workflow clock, so a replay measures what the run measured. `group_summary` is set in a
+        group case: the workflow's copy of the agent's `GroupSummary` (the workflows package may
+        not import this one), read field for field.
         """
+        summary = (
+            None
+            if group_summary is None
+            else GroupSummary.model_validate(group_summary.model_dump(mode="json"))
+        )
         return await self.agent.run(
-            TriageTask(task=task, offense=offense, enrichment=enrichment),
+            TriageTask(task=task, offense=offense, enrichment=enrichment, group_summary=summary),
             run_id=run_id,
             nonce=nonce,
             clock=workflow.time,
@@ -180,16 +200,26 @@ class TriageRuntime:
         parent_run_id: str,
         offense: OffenseSnapshot,
         now: datetime,
+        group_summary: GroupSummary | None = None,
     ) -> AgentTask:
-        """The AgentTask of a case evaluation's Triage run; its budget is the manifest's."""
+        """The AgentTask of a case evaluation's Triage run; its budget is the manifest's.
+
+        In a group case the objective says what the two untrusted blocks are: one offense of
+        the group, and the summary of all of them.
+        """
         manifest = self.agent.manifest
+        objective = (
+            f"Triage QRadar offense {offense.offense_id} (evaluation {evaluation_no})."
+            if group_summary is None
+            else group_objective(group_summary, evaluation_no)
+        )
         return AgentTask(
             task_id=run_id,
             parent_run_id=parent_run_id,
             case_id=case_id,
             agent_id=manifest.id,
             agent_version=manifest.version,
-            objective=f"Triage QRadar offense {offense.offense_id} (evaluation {evaluation_no}).",
+            objective=objective,
             context_refs=[],
             time_window=evaluation_window(offense, now),
             budget=Budget(
@@ -223,9 +253,10 @@ class TriageRunActivities:
         evaluation_no: int,
         parent_run_id: str,
         offense: OffenseSnapshot,
+        group_summary: GroupSummary | None = None,
     ) -> tuple[AgentTask, str]:
         """Record the run as started, with its model release; returns its AgentTask and a fresh
-        `untrusted_*` nonce.
+        `untrusted_*` nonce. `group_summary` is set in a group case (T-027).
 
         A retry finds the run it recorded and returns the same task.
         """
@@ -248,6 +279,7 @@ class TriageRunActivities:
                 parent_run_id=parent_run_id,
                 offense=offense,
                 now=now,
+                group_summary=group_summary,
             )
             await start_agent_run(
                 session,

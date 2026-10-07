@@ -1,4 +1,5 @@
-"""OffenseIntake: go-live checkpoint, paging, signals and case starts (criteria 1, 2, 5, 7).
+"""OffenseIntake: go-live checkpoint, paging, signals and case starts (criteria 1, 2, 5, 7), and
+the group cases it wakes (T-027).
 
 The intake runs against fake activities. `CaseStub` stands in for the case workflows under
 their `case-<offense_id>` IDs and records the signals it gets.
@@ -82,6 +83,24 @@ async def test_first_run_sets_go_live_and_older_offenses_are_never_processed(
     assert fakes.admitted == [[3]]
     assert second.go_live_at == first.go_live_at
     assert (second.last_updated_time, second.last_offense_id) == (t1 - timedelta(minutes=4), 3)
+
+
+async def test_every_page_wakes_the_group_cases_of_its_offenses(
+    env: WorkflowEnvironment,
+) -> None:
+    """T-027: the activity starts or wakes the case of every storm group that took an offense
+    of the page; the intake hands it every admitted offense, once per page."""
+    fakes = IntakeFakes()
+    async with intake(env, fakes) as runner:
+        first = await runner.run()
+        await env.sleep(timedelta(minutes=5))
+        now = await env.get_current_time()
+        fakes.put(offense(20, start=now), offense(21, start=now), offense(22, start=now))
+        fakes.storm_groups = {21: "G-1", 22: "G-1"}
+        second = await runner.run(first)
+        await runner.run(second)
+
+    assert fakes.woken == [[20, 21, 22]]
 
 
 async def test_each_run_continues_from_the_previous_checkpoint(env: WorkflowEnvironment) -> None:

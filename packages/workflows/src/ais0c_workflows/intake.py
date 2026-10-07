@@ -7,7 +7,8 @@ A Temporal Schedule starts a run every short interval (services/worker). A run:
    processed (D-26).
 2. Pages through the offenses changed since the checkpoint and admits them: repeat check,
    Analysis Catalog, grouping and pre-priority (`admit_offenses`). An open case whose offense
-   changed gets `offense_updated`.
+   changed gets `offense_updated`. A storm group that took an offense of the page has its case
+   started or woken (`wake_group_cases`, T-027).
 3. Sends `offense_closed` to the cases of offenses closed in QRadar.
 4. Starts the pending cases that fit under the concurrent case limit, highest pre-priority
    first.
@@ -32,6 +33,7 @@ from ais0c_workflows.names import (
     OFFENSE_INTAKE,
     OFFENSE_UPDATED,
     START_CASE,
+    WAKE_GROUP_CASES,
     case_workflow_id,
 )
 
@@ -107,6 +109,11 @@ class OffenseIntake:
                         for oid in changed
                         if oid in versions
                     )
+                )
+                await call(
+                    WAKE_GROUP_CASES,
+                    [offense.offense_id for offense in eligible],
+                    result_type=list[str],
                 )
             for offense in page:
                 checkpoint = checkpoint.past(offense)

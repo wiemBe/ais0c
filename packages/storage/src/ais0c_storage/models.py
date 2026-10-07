@@ -64,7 +64,9 @@ from ais0c_storage.enums import (
     Analytic,
     CaseStatus,
     CriticalAssetKind,
+    FullAnalysisReason,
     GroupStatus,
+    GroupValueKind,
     HuntPackStatus,
     HuntStatus,
     NoteStatus,
@@ -132,6 +134,11 @@ class OffenseSeenRow(Base):
     status: Mapped[OffenseStatus] = mapped_column(EnumText(OffenseStatus), index=True)
     # Order of the backlog after an outage (architecture §9).
     pre_priority: Mapped[int]
+    # Not in data-model.md (T-027): why the offense got a full analysis instead of joining its
+    # group; the group's hourly counters read it.
+    full_analysis_reason: Mapped[FullAnalysisReason | None] = mapped_column(
+        EnumText(FullAnalysisReason)
+    )
 
 
 class OffenseGroupRow(Base):
@@ -145,6 +152,24 @@ class OffenseGroupRow(Base):
     status: Mapped[GroupStatus] = mapped_column(EnumText(GroupStatus))
     # Case of the group evaluation.
     case_id: Mapped[str | None]
+
+
+class OffenseGroupValueRow(Base):
+    """Not in data-model.md (T-027): a value an offense of the group carries.
+
+    One row per group, kind, value and offense: the group's seen values (T-62) are the rows of
+    the group, and the number of offenses that carry a value is the number of its rows.
+    """
+
+    __tablename__ = "offense_group_values"
+
+    group_id: Mapped[str] = mapped_column(ForeignKey("offense_groups.group_id"), primary_key=True)
+    kind: Mapped[GroupValueKind] = mapped_column(EnumText(GroupValueKind), primary_key=True)
+    value: Mapped[str] = mapped_column(primary_key=True)
+    offense_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("offenses_seen.offense_id"), primary_key=True, autoincrement=False
+    )
+    seen_at: Mapped[datetime]
 
 
 class CaseRow(Base):

@@ -73,6 +73,8 @@ DOC: dict[str, Table] = {
         "case_id text?",
         "status text",
         "pre_priority int",
+        # Not in data-model.md (T-027): why a grouped rule set's offense got a full analysis.
+        "full_analysis_reason text?",
         pk=("offense_id",),
     ),
     "offense_groups": table(
@@ -84,6 +86,19 @@ DOC: dict[str, Table] = {
         "status text",
         "case_id text?",
         pk=("group_id",),
+    ),
+    # Not in data-model.md (T-027): the values the group's offenses carry (T-62).
+    "offense_group_values": table(
+        "group_id text",
+        "kind text",
+        "value text",
+        "offense_id bigint",
+        "seen_at timestamptz",
+        pk=("group_id", "kind", "value", "offense_id"),
+        fk=(
+            ("group_id", "offense_groups.group_id"),
+            ("offense_id", "offenses_seen.offense_id"),
+        ),
     ),
     "cases": table(
         "case_id text",

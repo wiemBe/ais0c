@@ -48,6 +48,7 @@ from ais0c_contracts import (
     Usage,
     VerificationResult,
 )
+from ais0c_workflows.group_summary import GroupSummary
 from ais0c_workflows.plan import PlanCandidate
 
 
@@ -78,8 +79,9 @@ class TriageAgentRun(Protocol):
     """One run of the Triage agent, called from workflow code.
 
     `run_id` is the run's `agent_runs.run_id`, which every tool call carries; `nonce` is the
-    run's `untrusted_*` tag suffix (docs/impl/prompts.md). The call must be deterministic apart
-    from the activities Pydantic AI starts for it.
+    run's `untrusted_*` tag suffix (docs/impl/prompts.md). `group_summary` is set in a group
+    case (T-027): the summary of the group `offense` belongs to. The call must be deterministic
+    apart from the activities Pydantic AI starts for it.
     """
 
     def __call__(
@@ -90,6 +92,7 @@ class TriageAgentRun(Protocol):
         *,
         run_id: str,
         nonce: str,
+        group_summary: GroupSummary | None = None,
     ) -> Awaitable[TriageRunReport]: ...
 
 

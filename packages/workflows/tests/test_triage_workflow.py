@@ -37,6 +37,7 @@ from ais0c_contracts import (
 )
 from ais0c_workflows import (
     MODEL_ACCESS_FAILURES,
+    GroupSummary,
     TriageFailure,
     TriageOutcome,
     TriageRequest,
@@ -209,6 +210,7 @@ async def test_a_run_ending_without_a_result_is_recorded_as_such(
         *,
         run_id: str,
         nonce: str,
+        group_summary: GroupSummary | None = None,
     ) -> AgentReport:
         return AgentReport(
             status=RunStatus.BUDGET_EXHAUSTED,
@@ -243,6 +245,7 @@ async def test_a_run_the_agent_ends_failed_is_invalid_output(env: WorkflowEnviro
         *,
         run_id: str,
         nonce: str,
+        group_summary: GroupSummary | None = None,
     ) -> AgentReport:
         return AgentReport(
             status=RunStatus.FAILED,

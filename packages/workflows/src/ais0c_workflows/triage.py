@@ -5,7 +5,9 @@ CaseWorkflow starts it as a child with the ID `<case_id>-triage-<evaluation_no>`
 the run's `agent_runs.run_id`. A run:
 
 1. `begin_triage_run` records the run in `agent_runs` and returns its AgentTask and a fresh
-   `untrusted_*` nonce. The gateway takes tool calls only for a recorded run in progress.
+   `untrusted_*` nonce. The gateway takes tool calls only for a recorded run in progress. In a
+   group case (T-027) the request carries the group's summary, which the task's objective and
+   the agent's prompt describe beside the snapshot of one of the group's offenses.
 2. The Triage agent runs here, in workflow code, through Pydantic AI's TemporalDurability: each
    model request and each tool call is an activity of this workflow. A worker that stops in the
    middle loses nothing; the next worker replays the history and continues from the last
@@ -37,6 +39,7 @@ with workflow.unsafe.imports_passed_through():
     )
     from ais0c_workflows.agent_run import MODEL_ACCESS_FAILURES, AgentFailure, run_within_budget
     from ais0c_workflows.agent_runtime import triage_agent
+    from ais0c_workflows.group_summary import GroupSummary
 
 # Triage's name for AgentFailure: why a Triage run ended without a decision.
 TriageFailure = AgentFailure
@@ -61,6 +64,8 @@ class TriageRequest(BaseModel):
     parent_run_id: str
     offense: OffenseSnapshot
     enrichment: EnrichmentContext
+    # Set in a group case: the summary of the group `offense` belongs to (T-027).
+    group_summary: GroupSummary | None = None
 
 
 class TriageOutcome(BaseModel):
@@ -91,11 +96,17 @@ class TriageWorkflow:
             request.evaluation_no,
             request.parent_run_id,
             request.offense,
+            request.group_summary,
             result_type=tuple[AgentTask, str],
         )
         end = await run_within_budget(
             lambda: triage_agent()(
-                task, request.offense, request.enrichment, run_id=run_id, nonce=nonce
+                task,
+                request.offense,
+                request.enrichment,
+                run_id=run_id,
+                nonce=nonce,
+                group_summary=request.group_summary,
             ),
             run_id=run_id,
             seconds=task.budget.seconds,
