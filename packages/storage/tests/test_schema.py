@@ -431,7 +431,7 @@ DOC: dict[str, Table] = {
         pk=("id",),
         fk=(("cluster_id", "fp_clusters.cluster_id"),),
     ),
-    # --- Platform bayrakları ve onaylar. change_approvals comes with a later task (D-36).
+    # --- Platform bayrakları ve onaylar
     "platform_flags": table(
         "name text",
         "enabled bool",
@@ -439,6 +439,24 @@ DOC: dict[str, Table] = {
         "changed_by text",
         "changed_at timestamptz",
         pk=("name",),
+    ),
+    # `comment` is not in data-model.md (T-033): the second admin's comment on a rejection. One
+    # pending request per object is a partial unique index, which this table does not list.
+    "change_approvals": table(
+        "id uuid",
+        "object_type text",
+        "object_id text",
+        "object_version text",
+        "change jsonb",
+        "requested_by text",
+        "requested_at timestamptz",
+        "decided_by text?",
+        "decided_at timestamptz?",
+        "status text",
+        "reason text?",
+        "comment text?",
+        pk=("id",),
+        unique_indexes=("uq_change_approvals_pending_object",),
     ),
     # Not in data-model.md (T-032): the platform's health alarms; one open row per kind and
     # subject (a partial unique index, which this table does not list).

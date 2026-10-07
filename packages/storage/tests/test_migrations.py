@@ -1,7 +1,7 @@
 """`alembic upgrade head` and `alembic downgrade base` on an empty database (T-004 criterion
 1), revision 0002 on a database that holds runs (T-016 criterion 2), and revisions 0003
 (T-017 criterion 1), 0004 (T-020), 0005 (T-021), 0006 (T-041 criterion 3), 0007 (T-036
-criterion 1), 0008 (T-57), 0009 (T-027) and 0010 (T-032) on one that holds data.
+criterion 1), 0008 (T-57), 0009 (T-027) 0010 (T-032) and 0011 (T-033) on one that holds data.
 
 The tests run the real `alembic` command in packages/storage, so alembic.ini, env.py and the
 AIS0C_DATABASE_URL lookup are covered too.
@@ -65,7 +65,7 @@ def test_upgrade_head_then_downgrade_base(server: Server, empty_database: str) -
     upgraded = alembic("upgrade", "head", url=url)
     assert upgraded.returncode == 0, upgraded.stderr
     current = alembic("current", url=url)
-    assert "0010 (head)" in current.stdout
+    assert "0011 (head)" in current.stdout
     objects = public_objects(url)
     assert set(Base.metadata.tables) <= objects["relations"]
     assert objects["functions"] == {"audit_log_append_only"}
@@ -690,6 +690,69 @@ def test_revision_0010_adds_health_alarms_and_their_route(
         with engine.connect() as connection:
             assert "health_alarms" not in inspect(connection).get_table_names()
             assert connection.scalar(text("SELECT count(*) FROM notification_routes")) == 9
+        again = alembic("upgrade", "head", url=url)
+        assert again.returncode == 0, again.stderr
+    finally:
+        engine.dispose()
+
+
+def test_revision_0011_adds_change_approvals_with_their_rules(
+    server: Server, empty_database: str
+) -> None:
+    """0011 (T-033): the database refuses the requester as decider, a second pending request for
+    one object, a reason on anything but a rejection, and the downgrade drops the table."""
+    url = server.app_url(empty_database)
+    first = alembic("upgrade", "0010", url=url)
+    assert first.returncode == 0, first.stderr
+    upgraded = alembic("upgrade", "head", url=url)
+    assert upgraded.returncode == 0, upgraded.stderr
+    engine = create_sync_engine(url)
+    insert = text(
+        "INSERT INTO change_approvals (id, object_type, object_id, object_version, change,"
+        " requested_by, status, decided_by, decided_at, reason)"
+        " VALUES (gen_random_uuid(), :type, :object_id, 'v1', '{}', 'admin-a', :status,"
+        " :decided_by, CASE WHEN :status = 'pending' THEN NULL ELSE now() END, :reason)"
+    )
+
+    def row(**values: object) -> dict[str, object]:
+        base: dict[str, object] = {
+            "type": "catalog_rule",
+            "object_id": "100201",
+            "status": "pending",
+            "decided_by": None,
+            "reason": None,
+        }
+        return base | values
+
+    try:
+        with engine.begin() as connection:
+            connection.execute(insert, row())
+            # Decided requests are history: any number of them per object.
+            connection.execute(insert, row(status="approved", decided_by="admin-b"))
+            connection.execute(
+                insert, row(status="rejected", decided_by="admin-b", reason="rejected_by_admin")
+            )
+            connection.execute(insert, row(status="rejected", reason="withdrawn"))
+            connection.execute(insert, row(object_id="100202"))
+            connection.execute(insert, row(type="catalog_log_source"))
+        refused = {
+            "a second pending request": row(),
+            "the requester as decider": row(object_id="9", status="approved", decided_by="admin-a"),
+            "an approval nobody decided": row(object_id="9", status="approved"),
+            "a reason on an approval": row(
+                object_id="9", status="approved", decided_by="admin-b", reason="stale"
+            ),
+            "a rejection without a reason": row(object_id="9", status="rejected"),
+        }
+        for what, values in refused.items():
+            with engine.begin() as connection, pytest.raises(IntegrityError):
+                connection.execute(insert, values)
+            assert what
+
+        downgraded = alembic("downgrade", "0010", url=url)
+        assert downgraded.returncode == 0, downgraded.stderr
+        with engine.connect() as connection:
+            assert "change_approvals" not in inspect(connection).get_table_names()
         again = alembic("upgrade", "head", url=url)
         assert again.returncode == 0, again.stderr
     finally:

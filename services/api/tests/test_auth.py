@@ -52,6 +52,11 @@ ADMIN_ONLY = [
     ("put", "/notification-recipients/operators", {"emails": []}),
     ("put", "/notification-routes", {"routes": []}),
     ("put", "/admin/platform-flags/writes_enabled", {"enabled": True, "reason": "canary"}),
+    ("get", "/changes", None),
+    ("get", "/changes/00000000-0000-7000-8000-000000000000", None),
+    ("post", "/changes/00000000-0000-7000-8000-000000000000/approve", None),
+    ("post", "/changes/00000000-0000-7000-8000-000000000000/reject", {}),
+    ("post", "/changes/00000000-0000-7000-8000-000000000000/withdraw", None),
 ]
 
 OPERATOR_READS = [
@@ -235,7 +240,7 @@ async def test_health_needs_no_token_and_says_only_that_it_is_alive(api: Harness
 
 
 @pytest.mark.parametrize(
-    ("method", "path", "body"), OPERATOR_READS, ids=lambda value: str(value)[:40]
+    ("method", "path", "body"), OPERATOR_READS, ids=lambda value: str(value)[-40:]
 )
 async def test_an_operator_may_read_everything_an_operator_may(
     api: Harness, method: str, path: str, body: object
@@ -246,7 +251,7 @@ async def test_an_operator_may_read_everything_an_operator_may(
     assert await call(api, method, path, body, "operator") == 200
 
 
-@pytest.mark.parametrize(("method", "path", "body"), ADMIN_ONLY, ids=lambda value: str(value)[:40])
+@pytest.mark.parametrize(("method", "path", "body"), ADMIN_ONLY, ids=lambda value: str(value)[-40:])
 async def test_an_operator_may_not_change_anything_that_needs_an_admin(
     api: Harness, method: str, path: str, body: object
 ) -> None:
@@ -256,7 +261,7 @@ async def test_an_operator_may_not_change_anything_that_needs_an_admin(
     assert await call(api, method, path, body, "operator") == 403
 
 
-@pytest.mark.parametrize(("method", "path", "body"), ADMIN_ONLY, ids=lambda value: str(value)[:40])
+@pytest.mark.parametrize(("method", "path", "body"), ADMIN_ONLY, ids=lambda value: str(value)[-40:])
 async def test_a_hunter_may_not_reach_an_admin_endpoint_either(
     api: Harness, method: str, path: str, body: object
 ) -> None:
@@ -266,7 +271,7 @@ async def test_a_hunter_may_not_reach_an_admin_endpoint_either(
     assert await call(api, method, path, body, "hunter") == 403
 
 
-@pytest.mark.parametrize(("method", "path", "body"), ADMIN_ONLY, ids=lambda value: str(value)[:40])
+@pytest.mark.parametrize(("method", "path", "body"), ADMIN_ONLY, ids=lambda value: str(value)[-40:])
 async def test_an_admin_may_reach_every_admin_endpoint(
     api: Harness, method: str, path: str, body: object
 ) -> None:

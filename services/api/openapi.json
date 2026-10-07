@@ -836,6 +836,173 @@
         "title": "CatalogRuleUpdate",
         "type": "object"
       },
+      "ChangeAccepted": {
+        "additionalProperties": false,
+        "description": "The answer (202) of a change that waits for a second admin (D-36, T-77).",
+        "properties": {
+          "change_id": {
+            "format": "uuid",
+            "title": "Change Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "change_id"
+        ],
+        "title": "ChangeAccepted",
+        "type": "object"
+      },
+      "ChangeItem": {
+        "additionalProperties": false,
+        "description": "One `change_approvals` row: a change asked for, and what became of it.\n\n`change` is `{ action, before, after }` (a flag change also has `reason`): the object's values\nwhen the request was made and the ones asked for. `decided_by` is set only by a second admin's\napproval or rejection; a withdrawn or stale request has none.",
+        "properties": {
+          "change": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "title": "Change",
+            "type": "object"
+          },
+          "comment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comment"
+          },
+          "decided_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided At"
+          },
+          "decided_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided By"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "object_id": {
+            "title": "Object Id",
+            "type": "string"
+          },
+          "object_type": {
+            "$ref": "#/components/schemas/ChangeObjectType"
+          },
+          "object_version": {
+            "title": "Object Version",
+            "type": "string"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ChangeRejectReason"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requested_at": {
+            "format": "date-time",
+            "title": "Requested At",
+            "type": "string"
+          },
+          "requested_by": {
+            "title": "Requested By",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ChangeStatus"
+          }
+        },
+        "required": [
+          "id",
+          "object_type",
+          "object_id",
+          "object_version",
+          "change",
+          "requested_by",
+          "requested_at",
+          "status"
+        ],
+        "title": "ChangeItem",
+        "type": "object"
+      },
+      "ChangeObjectType": {
+        "description": "`change_approvals.object_type` (D-36, T-77). `skill`, `policy` and `hunt_pack` are files in\nthe repository whose approval is a code review; they are listed because data-model.md lists\nthem and no endpoint writes them.",
+        "enum": [
+          "catalog_rule",
+          "catalog_log_source",
+          "critical_asset",
+          "platform_flag",
+          "skill",
+          "policy",
+          "hunt_pack"
+        ],
+        "title": "ChangeObjectType",
+        "type": "string"
+      },
+      "ChangeReject": {
+        "additionalProperties": false,
+        "description": "`POST /changes/{id}/reject`.",
+        "properties": {
+          "comment": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comment"
+          }
+        },
+        "title": "ChangeReject",
+        "type": "object"
+      },
+      "ChangeRejectReason": {
+        "description": "`change_approvals.reason`, set only on a `rejected` request.",
+        "enum": [
+          "rejected_by_admin",
+          "stale",
+          "withdrawn"
+        ],
+        "title": "ChangeRejectReason",
+        "type": "string"
+      },
+      "ChangeStatus": {
+        "description": "`change_approvals.status`.",
+        "enum": [
+          "pending",
+          "approved",
+          "rejected"
+        ],
+        "title": "ChangeStatus",
+        "type": "string"
+      },
       "Claim": {
         "additionalProperties": false,
         "properties": {
@@ -1502,6 +1669,7 @@
         "title": "Health",
         "type": "object"
       },
+      "JsonValue": {},
       "Level": {
         "description": "Severity level. Values compare as strings, not by severity.",
         "enum": [
@@ -1884,6 +2052,34 @@
         "title": "Page[CatalogRule]",
         "type": "object"
       },
+      "Page_ChangeItem_": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ChangeItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "Page[ChangeItem]",
+        "type": "object"
+      },
       "Page_GroupSummary_": {
         "additionalProperties": false,
         "properties": {
@@ -2034,6 +2230,19 @@
       "Problem": {
         "description": "The shape of an RFC 9457 answer, for the UI's own error handling.\n\nNot a response model of any route: `ais0c_api.openapi` makes it every operation's `default`\nresponse in the schema. `errors`, `domains` and `list_names` appear only on the problems that\ncarry them.",
         "properties": {
+          "change_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Change Id"
+          },
           "detail": {
             "anyOf": [
               {
@@ -2826,7 +3035,7 @@
     },
     "/api/v1/admin/platform-flags/{name}": {
       "put": {
-        "description": "Switch a platform flag (admin). `reason` is required and may not be blank. An unknown flag\nname is a 404 and nothing is written.",
+        "description": "Switch a platform flag (admin). `reason` is required and may not be blank.\n\nSwitching off is written at once (200) and ends a pending request to switch on as stale.\nSwitching on is a request (202) that a second admin approves; the approval's actor is the\nflag's `changed_by` and the reason is the request's. An unknown flag name is a 404 and\nnothing is written.",
         "operationId": "put_flag_api_v1_admin_platform_flags__name__put",
         "parameters": [
           {
@@ -2858,7 +3067,17 @@
                 }
               }
             },
-            "description": "Successful Response"
+            "description": "Switched off at once."
+          },
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChangeAccepted"
+                }
+              }
+            },
+            "description": "Switching on waits for a second admin."
           },
           "default": {
             "content": {
@@ -3426,7 +3645,7 @@
         ]
       },
       "put": {
-        "description": "An admin's edit of a log source. It becomes `defined` and the change is audited.",
+        "description": "An admin's edit of a log source, waiting for a second admin (202). The log source becomes\n`defined` when the request is approved.",
         "operationId": "put_log_source_api_v1_catalog_log_sources__log_source_id__put",
         "parameters": [
           {
@@ -3450,11 +3669,11 @@
           "required": true
         },
         "responses": {
-          "200": {
+          "202": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CatalogLogSource"
+                  "$ref": "#/components/schemas/ChangeAccepted"
                 }
               }
             },
@@ -3663,7 +3882,7 @@
         ]
       },
       "put": {
-        "description": "An admin's edit of a rule. The rule becomes `defined` and the change is audited.\n\nAn unknown `rule_id` is a 404 and nothing is written.",
+        "description": "An admin's edit of a rule, waiting for a second admin (202).\n\nAn unknown `rule_id` is a 404, a body that breaks the catalog contract a 422, and a rule that\nalready has a pending request a 409. The rule changes when the request is approved.",
         "operationId": "put_rule_api_v1_catalog_rules__rule_id__put",
         "parameters": [
           {
@@ -3687,11 +3906,11 @@
           "required": true
         },
         "responses": {
-          "200": {
+          "202": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CatalogRule"
+                  "$ref": "#/components/schemas/ChangeAccepted"
                 }
               }
             },
@@ -3716,7 +3935,7 @@
     },
     "/api/v1/catalog/rules/{rule_id}/accept-draft": {
       "post": {
-        "description": "Accept the note the AI suggested: it becomes the rule's `context_note` and the draft is\ncleared. A rule with no draft, or an unknown `rule_id`, is a 404.",
+        "description": "Accepting the note the AI suggested, waiting for a second admin (202): on approval it\nbecomes the rule's `context_note` and the draft is cleared. A rule with no draft, or an\nunknown `rule_id`, is a 404.",
         "operationId": "post_accept_draft_api_v1_catalog_rules__rule_id__accept_draft_post",
         "parameters": [
           {
@@ -3730,11 +3949,11 @@
           }
         ],
         "responses": {
-          "200": {
+          "202": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CatalogRule"
+                  "$ref": "#/components/schemas/ChangeAccepted"
                 }
               }
             },
@@ -3789,6 +4008,286 @@
         ]
       }
     },
+    "/api/v1/changes": {
+      "get": {
+        "description": "The requests, newest first; `status` and `object_type` narrow the list.",
+        "operationId": "get_changes_api_v1_changes_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ChangeStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "object_type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ChangeObjectType"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Object Type"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_ChangeItem_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "An RFC 9457 problem. `title` is a machine-readable code (`catalog.rule_not_found`); the UI builds the message from it."
+          }
+        },
+        "summary": "Get Changes",
+        "tags": [
+          "changes"
+        ]
+      }
+    },
+    "/api/v1/changes/{change_id}": {
+      "get": {
+        "description": "One request; an unknown ID is a 404.",
+        "operationId": "get_one_change_api_v1_changes__change_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "change_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Change Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChangeItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "An RFC 9457 problem. `title` is a machine-readable code (`catalog.rule_not_found`); the UI builds the message from it."
+          }
+        },
+        "summary": "Get One Change",
+        "tags": [
+          "changes"
+        ]
+      }
+    },
+    "/api/v1/changes/{change_id}/approve": {
+      "post": {
+        "description": "Approve and apply a request (an admin other than the requester).\n\nThe change, the request's end and the audit rows are one transaction. A decided request is a\n409 (`change.already_decided`), the requester's own request a 403 (`change.self_approval`), and\nan object that changed since the request a 409 (`change.stale`) that ends the request.",
+        "operationId": "post_approve_api_v1_changes__change_id__approve_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "change_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Change Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChangeItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "An RFC 9457 problem. `title` is a machine-readable code (`catalog.rule_not_found`); the UI builds the message from it."
+          }
+        },
+        "summary": "Post Approve",
+        "tags": [
+          "changes"
+        ]
+      }
+    },
+    "/api/v1/changes/{change_id}/reject": {
+      "post": {
+        "description": "Reject a request (an admin other than the requester); nothing changes.",
+        "operationId": "post_reject_api_v1_changes__change_id__reject_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "change_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Change Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChangeReject"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChangeItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "An RFC 9457 problem. `title` is a machine-readable code (`catalog.rule_not_found`); the UI builds the message from it."
+          }
+        },
+        "summary": "Post Reject",
+        "tags": [
+          "changes"
+        ]
+      }
+    },
+    "/api/v1/changes/{change_id}/withdraw": {
+      "post": {
+        "description": "Take a request back (only the admin who asked); nothing changes and nobody decided it.",
+        "operationId": "post_withdraw_api_v1_changes__change_id__withdraw_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "change_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Change Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChangeItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "An RFC 9457 problem. `title` is a machine-readable code (`catalog.rule_not_found`); the UI builds the message from it."
+          }
+        },
+        "summary": "Post Withdraw",
+        "tags": [
+          "changes"
+        ]
+      }
+    },
     "/api/v1/critical-assets": {
       "get": {
         "description": "The hand-kept critical asset list, by kind then value (architecture §9).",
@@ -3825,7 +4324,7 @@
         ]
       },
       "post": {
-        "description": "Add a critical asset (admin). Storage normalizes an IP or CIDR and validates the level; a\nvalue it refuses is a 422 and nothing is written.",
+        "description": "Ask to add a critical asset (admin); a second admin's approval adds it (202).\n\nStorage's checks run now, so a value it refuses is a 422 and nothing waits. An asset of this\nkind and value that is already listed is a 409 (`critical_asset.exists`), and one that already\nwaits for approval a 409 (`change.pending_exists`).",
         "operationId": "post_critical_asset_api_v1_critical_assets_post",
         "requestBody": {
           "content": {
@@ -3838,11 +4337,11 @@
           "required": true
         },
         "responses": {
-          "201": {
+          "202": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CriticalAsset"
+                  "$ref": "#/components/schemas/ChangeAccepted"
                 }
               }
             },
@@ -3867,7 +4366,7 @@
     },
     "/api/v1/critical-assets/{asset_id}": {
       "delete": {
-        "description": "Remove a critical asset (admin); an unknown ID is a 404 and nothing is written.",
+        "description": "Ask to remove a critical asset (admin); a second admin's approval removes it (202). An\nunknown ID is a 404 and nothing waits.",
         "operationId": "delete_asset_api_v1_critical_assets__asset_id__delete",
         "parameters": [
           {
@@ -3882,7 +4381,14 @@
           }
         ],
         "responses": {
-          "204": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChangeAccepted"
+                }
+              }
+            },
             "description": "Successful Response"
           },
           "default": {

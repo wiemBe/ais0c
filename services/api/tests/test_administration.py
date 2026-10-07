@@ -33,41 +33,36 @@ pytestmark = pytest.mark.anyio
 
 
 async def test_a_critical_asset_is_added_listed_and_deleted(api: Harness) -> None:
-    created = await api.post(
+    asked = await api.post(
         "/critical-assets",
         {"kind": "ip", "value": "192.0.2.10", "label": "VPN", "level": "high"},
         as_role="admin",
     )
 
-    assert created.status_code == 201
-    asset = created.json()
-    assert (asset["kind"], asset["value"], asset["label"], asset["level"]) == (
-        "ip",
-        "192.0.2.10",
-        "VPN",
-        "high",
-    )
+    # The asset waits for a second admin (T-033); the list is unchanged until then.
+    assert asked.status_code == 202
+    assert (await api.get("/critical-assets")).json() == []
+    assert (await api.approve(asked)).status_code == 200
     listed = (await api.get("/critical-assets")).json()
-    assert [item["id"] for item in listed] == [asset["id"]]
+    assert [(item["kind"], item["value"], item["label"], item["level"]) for item in listed] == [
+        ("ip", "192.0.2.10", "VPN", "high")
+    ]
 
-    deleted = await api.delete(f"/critical-assets/{asset['id']}", as_role="admin")
+    removal = await api.delete(f"/critical-assets/{listed[0]['id']}", as_role="admin")
 
-    assert deleted.status_code == 204
+    assert removal.status_code == 202
+    assert len((await api.get("/critical-assets")).json()) == 1
+    assert (await api.approve(removal)).status_code == 200
     assert (await api.get("/critical-assets")).json() == []
 
 
 async def test_storage_normalizes_the_value_of_an_asset(api: Harness) -> None:
     """An IP is stored canonically, as storage's `_normalized` does."""
-    await api.post(
-        "/critical-assets",
+    for body in (
         {"kind": "ip", "value": "2001:0DB8:0000::0001", "label": "VPN", "level": "critical"},
-        as_role="admin",
-    )
-    await api.post(
-        "/critical-assets",
         {"kind": "cidr", "value": "198.51.100.0/24", "label": "Bölge", "level": "high"},
-        as_role="admin",
-    )
+    ):
+        await api.approve(await api.post("/critical-assets", body, as_role="admin"))
 
     rows = await api.rows("SELECT kind, value FROM critical_assets ORDER BY kind")
     assert [(row["kind"], row["value"]) for row in rows] == [
@@ -117,11 +112,12 @@ async def test_deleting_an_asset_that_is_not_there_is_a_404(api: Harness) -> Non
 
 async def test_the_assets_are_listed_by_kind_then_value(api: Harness) -> None:
     for kind, value in (("host", "dc.example.com"), ("ip", "192.0.2.2"), ("ip", "192.0.2.1")):
-        await api.post(
+        asked = await api.post(
             "/critical-assets",
             {"kind": kind, "value": value, "label": "X", "level": "high"},
             as_role="admin",
         )
+        await api.approve(asked)
 
     listed = (await api.get("/critical-assets")).json()
 

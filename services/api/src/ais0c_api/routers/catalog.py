@@ -2,8 +2,9 @@
 (api.md "Analiz Kataloğu"; T-028 criterion 7, D-25, T-37).
 
 Reading is an operator's job, editing an admin's. Notes reach prompts as trusted context, so every
-edit is audited in the same transaction. Double control (D-36) comes with T-033: here a change is
-written directly.
+edit goes through double control (D-36, T-033): the endpoint writes a pending request (202) and a
+second admin's approval applies and audits it (`ais0c_api.changes`). A request that cannot be
+valid is refused here, so only a change that could be applied waits.
 
 `POST /catalog/sync` asks Temporal to start the KnowledgeSync Schedule now. The API itself never
 talks to QRadar; the batch worker does that (architecture §25, api.md).
@@ -15,12 +16,22 @@ from fastapi import APIRouter, Query
 from pydantic import ValidationError
 
 from ais0c_api import audit
-from ais0c_api.dependencies import ADMIN, OPERATOR, ReadSession, Trigger, WriteSession, now
+from ais0c_api.changes import (
+    ACTION_ACCEPT_DRAFT,
+    ACTION_UPDATE,
+    log_source_values,
+    log_source_version,
+    queue_change,
+    rule_values,
+    rule_version,
+)
+from ais0c_api.dependencies import ADMIN, OPERATOR, ReadSession, Trigger, WriteSession
 from ais0c_api.models import (
     CatalogLogSource,
     CatalogLogSourceUpdate,
     CatalogRule,
     CatalogRuleUpdate,
+    ChangeAccepted,
     Page,
     SyncAccepted,
 )
@@ -33,17 +44,16 @@ from ais0c_api.pagination import (
 )
 from ais0c_api.problems import Problem, invalid_cursor, not_found
 from ais0c_api.temporal import KNOWLEDGE_SYNC_SCHEDULE_ID, ScheduleNotFound, TemporalUnavailable
+from ais0c_contracts import CatalogLogSource as CatalogLogSourceContract
 from ais0c_contracts import CatalogMode
-from ais0c_storage.errors import NotFoundError
+from ais0c_contracts import CatalogRule as CatalogRuleContract
+from ais0c_storage.enums import ChangeObjectType
 from ais0c_storage.models import CatalogLogSourceRow, CatalogRuleRow
 from ais0c_storage.repositories import (
-    accept_catalog_rule_draft,
     get_catalog_log_source,
     get_catalog_rule,
     list_catalog_log_sources,
     list_catalog_rules,
-    update_catalog_log_source,
-    update_catalog_rule,
 )
 
 router = APIRouter(prefix="/catalog", tags=["catalog"])
@@ -139,68 +149,63 @@ async def get_rule(rule_id: int, _user: OPERATOR, session: ReadSession) -> Catal
     return rule(row)
 
 
-@router.put("/rules/{rule_id}", response_model=CatalogRule)
+@router.put("/rules/{rule_id}", response_model=ChangeAccepted, status_code=202)
 async def put_rule(
     rule_id: int, body: CatalogRuleUpdate, user: ADMIN, session: WriteSession
-) -> CatalogRule:
-    """An admin's edit of a rule. The rule becomes `defined` and the change is audited.
+) -> ChangeAccepted:
+    """An admin's edit of a rule, waiting for a second admin (202).
 
-    An unknown `rule_id` is a 404 and nothing is written.
+    An unknown `rule_id` is a 404, a body that breaks the catalog contract a 422, and a rule that
+    already has a pending request a 409. The rule changes when the request is approved.
     """
+    row = await get_catalog_rule(session, rule_id)
+    if row is None:
+        raise not_found("catalog.rule_not_found")
+    techniques = sorted(set(body.attack_techniques))
     try:
-        row = await update_catalog_rule(
-            session,
-            rule_id,
+        CatalogRuleContract(
+            rule_id=rule_id,
             mode=body.mode,
             min_level=body.min_level,
-            has_automated_action=body.has_automated_action,
             context_note=body.context_note,
-            attack_techniques=list(body.attack_techniques),
-            updated_by=user.subject,
-            updated_at=now(),
+            attack_techniques=techniques,
         )
-    except NotFoundError:
-        raise not_found("catalog.rule_not_found") from None
     except ValidationError as error:
         raise Problem(
             422, "catalog.rule_invalid", detail="the rule does not match the catalog contract"
         ) from error
-    await audit.record(
+    after = body.model_dump(mode="json")
+    after["attack_techniques"] = list(techniques)
+    return await queue_change(
         session,
-        actor_id=user.subject,
-        action=audit.ACTION_CATALOG_RULE_UPDATE,
-        object_type=audit.OBJECT_CATALOG_RULE,
+        user,
+        object_type=ChangeObjectType.CATALOG_RULE,
         object_id=str(rule_id),
-        details={
-            "mode": row.mode.value,
-            "min_level": None if row.min_level is None else row.min_level.value,
-            "has_automated_action": row.has_automated_action,
-            "context_note": row.context_note,
-            "attack_techniques": list(row.attack_techniques),
-        },
+        object_version=rule_version(row),
+        action=ACTION_UPDATE,
+        before=rule_values(row),
+        after=after,
     )
-    return rule(row)
 
 
-@router.post("/rules/{rule_id}/accept-draft", response_model=CatalogRule)
-async def post_accept_draft(rule_id: int, user: ADMIN, session: WriteSession) -> CatalogRule:
-    """Accept the note the AI suggested: it becomes the rule's `context_note` and the draft is
-    cleared. A rule with no draft, or an unknown `rule_id`, is a 404."""
-    try:
-        row = await accept_catalog_rule_draft(
-            session, rule_id, updated_by=user.subject, updated_at=now()
-        )
-    except NotFoundError:
-        raise not_found("catalog.rule_draft_not_found") from None
-    await audit.record(
+@router.post("/rules/{rule_id}/accept-draft", response_model=ChangeAccepted, status_code=202)
+async def post_accept_draft(rule_id: int, user: ADMIN, session: WriteSession) -> ChangeAccepted:
+    """Accepting the note the AI suggested, waiting for a second admin (202): on approval it
+    becomes the rule's `context_note` and the draft is cleared. A rule with no draft, or an
+    unknown `rule_id`, is a 404."""
+    row = await get_catalog_rule(session, rule_id)
+    if row is None or row.ai_draft_note is None:
+        raise not_found("catalog.rule_draft_not_found")
+    return await queue_change(
         session,
-        actor_id=user.subject,
-        action=audit.ACTION_CATALOG_RULE_ACCEPT_DRAFT,
-        object_type=audit.OBJECT_CATALOG_RULE,
+        user,
+        object_type=ChangeObjectType.CATALOG_RULE,
         object_id=str(rule_id),
-        details={"context_note": row.context_note},
+        object_version=rule_version(row),
+        action=ACTION_ACCEPT_DRAFT,
+        before={"context_note": row.context_note, "ai_draft_note": row.ai_draft_note},
+        after={"context_note": row.ai_draft_note, "ai_draft_note": None},
     )
-    return rule(row)
 
 
 @router.get("/log-sources", response_model=Page[CatalogLogSource])
@@ -239,46 +244,38 @@ async def get_log_source(
     return log_source(row)
 
 
-@router.put("/log-sources/{log_source_id}", response_model=CatalogLogSource)
+@router.put("/log-sources/{log_source_id}", response_model=ChangeAccepted, status_code=202)
 async def put_log_source(
     log_source_id: int, body: CatalogLogSourceUpdate, user: ADMIN, session: WriteSession
-) -> CatalogLogSource:
-    """An admin's edit of a log source. It becomes `defined` and the change is audited."""
+) -> ChangeAccepted:
+    """An admin's edit of a log source, waiting for a second admin (202). The log source becomes
+    `defined` when the request is approved."""
+    row = await get_catalog_log_source(session, log_source_id)
+    if row is None:
+        raise not_found("catalog.log_source_not_found")
     try:
-        row = await update_catalog_log_source(
-            session,
-            log_source_id,
+        CatalogLogSourceContract(
+            log_source_id=log_source_id,
             description=body.description,
-            owner=body.owner,
             criticality=body.criticality,
-            in_scope=body.in_scope,
             context_note=body.context_note,
-            updated_by=user.subject,
-            updated_at=now(),
         )
-    except NotFoundError:
-        raise not_found("catalog.log_source_not_found") from None
     except ValidationError as error:
         raise Problem(
             422,
             "catalog.log_source_invalid",
             detail="the log source does not match the catalog contract",
         ) from error
-    await audit.record(
+    return await queue_change(
         session,
-        actor_id=user.subject,
-        action=audit.ACTION_CATALOG_LOG_SOURCE_UPDATE,
-        object_type=audit.OBJECT_CATALOG_LOG_SOURCE,
+        user,
+        object_type=ChangeObjectType.CATALOG_LOG_SOURCE,
         object_id=str(log_source_id),
-        details={
-            "description": row.description,
-            "owner": row.owner,
-            "criticality": None if row.criticality is None else row.criticality.value,
-            "in_scope": row.in_scope,
-            "context_note": row.context_note,
-        },
+        object_version=log_source_version(row),
+        action=ACTION_UPDATE,
+        before=log_source_values(row),
+        after=body.model_dump(mode="json"),
     )
-    return log_source(row)
 
 
 @router.post("/sync", response_model=SyncAccepted, status_code=202)

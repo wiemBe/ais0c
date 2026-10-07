@@ -75,6 +75,7 @@ UNMODELED = {
     "actors.sources",
     "fp_clusters.pattern",
     "health_alarms.details",
+    "change_approvals.change",
 }
 
 VALID: dict[str, object] = {

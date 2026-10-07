@@ -96,9 +96,12 @@ type QueryValue = str | int | bool | list[str | int] | None
 OPERATOR_TOKEN = "synthetic-operator-token-" + secrets.token_hex(16)
 HUNTER_TOKEN = "synthetic-hunter-token-" + secrets.token_hex(16)
 ADMIN_TOKEN = "synthetic-admin-token-" + secrets.token_hex(16)
+# A second admin: double control needs one (D-36).
+ADMIN2_TOKEN = "synthetic-admin2-token-" + secrets.token_hex(16)
 OPERATOR_SUBJECT = "synthetic-operator"
 HUNTER_SUBJECT = "synthetic-hunter"
 ADMIN_SUBJECT = "synthetic-admin"
+ADMIN2_SUBJECT = "synthetic-admin-2"
 
 # 0007 seeds the routing table and no domain is allowed, so an address test needs one first.
 ALLOW_EXAMPLE_DOMAIN = "INSERT INTO allowed_email_domains (domain) VALUES ('example.com')"
@@ -272,6 +275,7 @@ class DevUsersFile:
     operator: str
     hunter: str
     admin: str
+    admin2: str
 
     @classmethod
     def write(
@@ -288,6 +292,7 @@ class DevUsersFile:
                 (OPERATOR_TOKEN, OPERATOR_SUBJECT, "operator"),
                 (HUNTER_TOKEN, HUNTER_SUBJECT, "hunter"),
                 (ADMIN_TOKEN, ADMIN_SUBJECT, "admin"),
+                (ADMIN2_TOKEN, ADMIN2_SUBJECT, "admin"),
             ]
         )
         path = directory / "dev-users.json"
@@ -314,6 +319,7 @@ class DevUsersFile:
             operator=OPERATOR_TOKEN,
             hunter=HUNTER_TOKEN,
             admin=ADMIN_TOKEN,
+            admin2=ADMIN2_TOKEN,
         )
 
 
@@ -359,6 +365,7 @@ class Harness:
             "operator": self.users_file.operator,
             "hunter": self.users_file.hunter,
             "admin": self.users_file.admin,
+            "admin2": self.users_file.admin2,
         }[as_role]
         return {"Authorization": f"Bearer {token}"}
 
@@ -381,6 +388,14 @@ class Harness:
 
     async def delete(self, path: str, *, as_role: str = "admin") -> httpx2.Response:
         return await self.client.delete(f"/api/v1{path}", headers=self.headers(as_role))
+
+    async def approve(
+        self, accepted: httpx2.Response, *, as_role: str = "admin2"
+    ) -> httpx2.Response:
+        """A second admin approves the change a 202 answer named (D-36)."""
+        assert accepted.status_code == 202, accepted.text
+        change_id = accepted.json()["change_id"]
+        return await self.post(f"/changes/{change_id}/approve", as_role=as_role)
 
     async def raw(
         self, method: str, path: str, *, headers: dict[str, str] | None = None
@@ -450,11 +465,20 @@ def api_routes() -> list[tuple[str, APIRoute]]:
     for `APIRoute`s there finds none. The routers `ais0c_api.routers` includes are read instead,
     and `test_service_and_problems.py` checks that they hold every operation of the schema.
     """
-    from ais0c_api.routers import API_PREFIX, administration, cases, catalog, groups, monitoring, qa
+    from ais0c_api.routers import (
+        API_PREFIX,
+        administration,
+        cases,
+        catalog,
+        changes,
+        groups,
+        monitoring,
+        qa,
+    )
 
     return [
         (API_PREFIX + route.path, route)
-        for module in (cases, qa, groups, catalog, administration, monitoring)
+        for module in (cases, qa, groups, catalog, changes, administration, monitoring)
         for route in module.router.routes
         if isinstance(route, APIRoute)
     ]

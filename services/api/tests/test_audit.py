@@ -94,7 +94,7 @@ async def test_resolving_a_qa_item_leaves_one_row(api: Harness) -> None:
 async def test_a_catalog_rule_edit_leaves_one_row(api: Harness) -> None:
     await seed_for_every_change(api)
 
-    await api.put(
+    asked = await api.put(
         "/catalog/rules/100201",
         {
             "mode": "analyze",
@@ -104,9 +104,18 @@ async def test_a_catalog_rule_edit_leaves_one_row(api: Harness) -> None:
             "attack_techniques": ["T1003.006"],
         },
     )
+    # The request is not the change: nothing but `change.request` is written until it is approved.
+    assert await audit_rows(api, action="catalog.rule.update") == []
+    await api.approve(asked)
 
     rows = await audit_rows(api, action="catalog.rule.update")
     assert len(rows) == 1
+    # The approver acts; the details name the requester and the request (T-033).
+    assert (rows[0]["actor_id"], rows[0]["details"]["requested_by"]) == (
+        "synthetic-admin-2",
+        "synthetic-admin",
+    )
+    assert rows[0]["details"]["change_id"] == asked.json()["change_id"]
     assert (rows[0]["object_type"], rows[0]["object_id"]) == ("catalog_rule", "100201")
     assert rows[0]["details"]["mode"] == "analyze"
     assert rows[0]["details"]["min_level"] == "high"
@@ -120,19 +129,22 @@ async def test_accepting_a_draft_leaves_one_row(api: Harness) -> None:
 
     response = await api.post("/catalog/rules/100201/accept-draft", as_role="admin")
 
-    assert response.status_code == 200
+    assert response.status_code == 202
+    assert (await api.approve(response)).status_code == 200
     rows = await audit_rows(api, action="catalog.rule.accept_draft")
     assert len(rows) == 1
-    assert rows[0]["details"] == {"context_note": "Önerilen açıklama."}
+    assert rows[0]["details"]["context_note"] == "Önerilen açıklama."
+    assert rows[0]["details"]["requested_by"] == "synthetic-admin"
 
 
 async def test_a_catalog_log_source_edit_leaves_one_row(api: Harness) -> None:
     await seed_for_every_change(api)
 
-    await api.put(
+    asked = await api.put(
         "/catalog/log-sources/2001",
         {"description": "Güvenlik duvarı.", "in_scope": True, "criticality": "medium"},
     )
+    await api.approve(asked)
 
     rows = await audit_rows(api, action="catalog.log_source.update")
     assert len(rows) == 1
@@ -161,15 +173,21 @@ async def test_adding_a_critical_asset_leaves_one_row(api: Harness) -> None:
         {"kind": "cidr", "value": "192.0.2.0/24", "label": "Ofis", "level": "critical"},
         as_role="admin",
     )
+    assert await audit_rows(api, action="critical_asset.add") == []
 
+    await api.approve(response)
     rows = await audit_rows(api, action="critical_asset.add")
     assert len(rows) == 1
-    assert rows[0]["object_id"] == response.json()["id"]
+    listed = (await api.get("/critical-assets")).json()
+    assert rows[0]["object_id"] == listed[0]["id"]
+    assert rows[0]["actor_id"] == "synthetic-admin-2"
     assert rows[0]["details"] == {
         "kind": "cidr",
         "value": "192.0.2.0/24",
         "label": "Ofis",
         "level": "critical",
+        "requested_by": "synthetic-admin",
+        "change_id": response.json()["change_id"],
     }
 
 
@@ -181,9 +199,10 @@ async def test_deleting_a_critical_asset_leaves_one_row(api: Harness) -> None:
         {"kind": "user", "value": "svc_backup", "label": "Backup", "level": "high"},
         as_role="admin",
     )
-    asset_id = created.json()["id"]
+    await api.approve(created)
+    asset_id = (await api.get("/critical-assets")).json()[0]["id"]
 
-    await api.delete(f"/critical-assets/{asset_id}", as_role="admin")
+    await api.approve(await api.delete(f"/critical-assets/{asset_id}", as_role="admin"))
 
     rows = await audit_rows(api, action="critical_asset.delete")
     assert len(rows) == 1
@@ -258,18 +277,27 @@ async def test_changing_a_platform_flag_leaves_one_row(api: Harness) -> None:
     """`set_platform_flag` writes its own audit row, in the same transaction (T-017)."""
     await seed_for_every_change(api)
 
-    await api.put(
+    asked = await api.put(
         "/admin/platform-flags/writes_enabled",
         {"enabled": True, "reason": "Canary başlıyor."},
         as_role="admin",
     )
+    assert await audit_rows(api, object_type="platform_flag", object_id="writes_enabled") == []
+    await api.approve(asked)
 
     rows = await audit_rows(api, object_type="platform_flag", object_id="writes_enabled")
     assert len(rows) == 1
     row = rows[0]
-    assert (row["actor_kind"], row["actor_id"]) == ("user", "synthetic-admin")
+    # The approver is the actor; the request's author is in the details.
+    assert (row["actor_kind"], row["actor_id"]) == ("user", "synthetic-admin-2")
     assert row["action"] == "platform_flag.update"
-    assert row["details"] == {"enabled": True, "previous": None, "reason": "Canary başlıyor."}
+    assert row["details"] == {
+        "enabled": True,
+        "previous": None,
+        "reason": "Canary başlıyor.",
+        "requested_by": "synthetic-admin",
+        "change_id": asked.json()["change_id"],
+    }
 
 
 # --- a rejected request writes neither a change nor an audit row ----------------------------------

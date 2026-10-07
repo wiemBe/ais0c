@@ -36,8 +36,17 @@ ACTION_RECIPIENTS_REPLACE: Final = "notification_recipients.replace"
 OBJECT_RECIPIENT_GROUP: Final = "notification_recipient_group"
 ACTION_ROUTES_REPLACE: Final = "notification_routes.replace"
 OBJECT_ROUTES_TABLE: Final = "notification_routes"
+# Double control (D-36): the audit rows of a request and its end. The object's own action
+# (`catalog.rule.update`, ...) is written by the approval, with the approver as actor.
+ACTION_CHANGE_REQUEST: Final = "change.request"
+ACTION_CHANGE_APPROVE: Final = "change.approve"
+ACTION_CHANGE_REJECT: Final = "change.reject"
+ACTION_CHANGE_WITHDRAW: Final = "change.withdraw"
+ACTION_CHANGE_STALE: Final = "change.stale"
+OBJECT_CHANGE: Final = "change_approval"
 # A platform flag's own row is written by `set_platform_flag`, which appends its audit entry in
-# the same transaction (T-017); this module does not write a second one.
+# the same transaction (T-017); this module does not write a second one. Switching the kill
+# switch on is a request first (T-033); its approval writes that row.
 
 
 async def record(

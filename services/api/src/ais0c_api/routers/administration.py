@@ -13,12 +13,22 @@ table before and after.
 
 import uuid
 
-from fastapi import APIRouter, Response
+from fastapi import APIRouter
 from pydantic import JsonValue, ValidationError
 
 from ais0c_api import audit
+from ais0c_api.changes import (
+    ABSENT,
+    ACTION_ADD,
+    ACTION_DELETE,
+    asset_key,
+    asset_values,
+    asset_version,
+    queue_change,
+)
 from ais0c_api.dependencies import ADMIN, OPERATOR, ReadSession, WriteSession
 from ais0c_api.models import (
+    ChangeAccepted,
     CriticalAsset,
     CriticalAssetAdd,
     NotificationRoute,
@@ -28,11 +38,12 @@ from ais0c_api.models import (
     RecipientsView,
 )
 from ais0c_api.problems import Problem, not_found
+from ais0c_storage.enums import ChangeObjectType
 from ais0c_storage.models import NotificationRouteRow
 from ais0c_storage.repositories import (
-    add_critical_asset,
+    check_critical_asset,
     check_recipient_domains,
-    delete_critical_asset,
+    find_critical_asset,
     get_critical_asset,
     list_allowed_email_domains,
     list_critical_assets,
@@ -59,59 +70,57 @@ async def get_critical_assets(_user: OPERATOR, session: ReadSession) -> list[Cri
     ]
 
 
-@router.post("/critical-assets", response_model=CriticalAsset, status_code=201)
+@router.post("/critical-assets", response_model=ChangeAccepted, status_code=202)
 async def post_critical_asset(
     body: CriticalAssetAdd, user: ADMIN, session: WriteSession
-) -> CriticalAsset:
-    """Add a critical asset (admin). Storage normalizes an IP or CIDR and validates the level; a
-    value it refuses is a 422 and nothing is written."""
+) -> ChangeAccepted:
+    """Ask to add a critical asset (admin); a second admin's approval adds it (202).
+
+    Storage's checks run now, so a value it refuses is a 422 and nothing waits. An asset of this
+    kind and value that is already listed is a 409 (`critical_asset.exists`), and one that already
+    waits for approval a 409 (`change.pending_exists`).
+    """
     try:
-        row = await add_critical_asset(
-            session, kind=body.kind, value=body.value, label=body.label, level=body.level
+        value = check_critical_asset(
+            kind=body.kind, value=body.value, label=body.label, level=body.level
         )
     except (ValueError, ValidationError) as error:
         raise Problem(
             422, "critical_asset.invalid", detail="the asset is not a usable critical asset"
         ) from error
-    await audit.record(
+    if await find_critical_asset(session, kind=body.kind, value=value) is not None:
+        raise Problem(409, "critical_asset.exists", detail="the asset is already listed")
+    after = body.model_dump(mode="json")
+    after["value"] = value
+    return await queue_change(
         session,
-        actor_id=user.subject,
-        action=audit.ACTION_CRITICAL_ASSET_ADD,
-        object_type=audit.OBJECT_CRITICAL_ASSET,
-        object_id=str(row.id),
-        details={
-            "kind": row.kind.value,
-            "value": row.value,
-            "label": row.label,
-            "level": row.level.value,
-        },
-    )
-    return CriticalAsset(
-        id=row.id, kind=row.kind, value=row.value, label=row.label, level=row.level
+        user,
+        object_type=ChangeObjectType.CRITICAL_ASSET,
+        object_id=asset_key(body.kind.value, value),
+        object_version=ABSENT,
+        action=ACTION_ADD,
+        before=None,
+        after=after,
     )
 
 
-@router.delete("/critical-assets/{asset_id}", status_code=204, response_class=Response)
-async def delete_asset(asset_id: uuid.UUID, user: ADMIN, session: WriteSession) -> Response:
-    """Remove a critical asset (admin); an unknown ID is a 404 and nothing is written."""
+@router.delete("/critical-assets/{asset_id}", response_model=ChangeAccepted, status_code=202)
+async def delete_asset(asset_id: uuid.UUID, user: ADMIN, session: WriteSession) -> ChangeAccepted:
+    """Ask to remove a critical asset (admin); a second admin's approval removes it (202). An
+    unknown ID is a 404 and nothing waits."""
     row = await get_critical_asset(session, asset_id)
     if row is None:
         raise not_found("critical_asset.not_found")
-    await delete_critical_asset(session, asset_id)
-    await audit.record(
+    return await queue_change(
         session,
-        actor_id=user.subject,
-        action=audit.ACTION_CRITICAL_ASSET_DELETE,
-        object_type=audit.OBJECT_CRITICAL_ASSET,
+        user,
+        object_type=ChangeObjectType.CRITICAL_ASSET,
         object_id=str(asset_id),
-        details={
-            "kind": row.kind.value,
-            "value": row.value,
-            "label": row.label,
-            "level": row.level.value,
-        },
+        object_version=asset_version(row),
+        action=ACTION_DELETE,
+        before=asset_values(row),
+        after=None,
     )
-    return Response(status_code=204)
 
 
 @router.get("/notification-recipients", response_model=RecipientsView)

@@ -34,19 +34,33 @@ async def test_every_flag_the_platform_knows_is_answered(api: Harness) -> None:
     assert {flag["name"] for flag in body} == {flag.value for flag in PlatformFlag}
 
 
+async def switch_on(api: Harness, reason: str = "Canary başlıyor.") -> None:
+    """Switching on waits for a second admin (D-36, T-77): admin asks, admin 2 approves."""
+    asked = await api.put(
+        f"/admin/platform-flags/{WRITES}", {"enabled": True, "reason": reason}, as_role="admin"
+    )
+    assert (await api.approve(asked)).status_code == 200
+
+
 async def test_an_admin_switches_the_flag_on_and_off(api: Harness) -> None:
-    on = await api.put(
+    asked = await api.put(
         f"/admin/platform-flags/{WRITES}",
         {"enabled": True, "reason": "Canary başlıyor."},
         as_role="admin",
     )
 
-    assert on.status_code == 200
-    assert on.json()["enabled"] is True
-    assert on.json()["reason"] == "Canary başlıyor."
-    assert on.json()["changed_by"] == "synthetic-admin"
-    assert on.json()["changed_at"] is not None
-    assert (await api.get("/admin/platform-flags")).json()[0]["enabled"] is True
+    # The request waits: the flag the executor reads is still off (criterion 4).
+    assert asked.status_code == 202
+    assert set(asked.json()) == {"change_id"}
+    assert (await api.get("/admin/platform-flags")).json()[0]["enabled"] is False
+    assert await api.rows("SELECT * FROM platform_flags") == []
+
+    assert (await api.approve(asked)).status_code == 200
+    state = (await api.get("/admin/platform-flags")).json()[0]
+    assert state["enabled"] is True
+    # The approver wrote it, with the requester's reason.
+    assert (state["reason"], state["changed_by"]) == ("Canary başlıyor.", "synthetic-admin-2")
+    assert state["changed_at"] is not None
 
     off = await api.put(
         f"/admin/platform-flags/{WRITES}",
@@ -54,16 +68,15 @@ async def test_an_admin_switches_the_flag_on_and_off(api: Harness) -> None:
         as_role="admin",
     )
 
+    assert off.status_code == 200
     assert off.json()["enabled"] is False
     assert off.json()["reason"] == "Not yazımları hatalı."
     assert (await api.get("/admin/platform-flags")).json()[0]["enabled"] is False
 
 
 async def test_switching_off_is_one_step_and_needs_no_second_person(api: Harness) -> None:
-    """T-63 (2): the emergency stop never waits (D-36 comes with T-033)."""
-    await api.put(
-        f"/admin/platform-flags/{WRITES}", {"enabled": True, "reason": "x"}, as_role="admin"
-    )
+    """T-63 (2): the emergency stop never waits."""
+    await switch_on(api, "x")
 
     response = await api.put(
         f"/admin/platform-flags/{WRITES}",
@@ -73,6 +86,80 @@ async def test_switching_off_is_one_step_and_needs_no_second_person(api: Harness
 
     assert response.status_code == 200
     assert response.json()["enabled"] is False
+    assert (await api.rows("SELECT enabled FROM platform_flags")) == [{"enabled": False}]
+
+
+async def test_the_executor_reads_the_flag_only_after_the_approval(api: Harness) -> None:
+    """Criterion 4: the row the executor reads is off before the approval and on after it."""
+    from ais0c_storage.repositories import get_platform_flag
+
+    async def executor_reads() -> bool:
+        async with api.sessions() as session:
+            row = await get_platform_flag(session, PlatformFlag.WRITES_ENABLED)
+        return row is not None and row.enabled
+
+    asked = await api.put(
+        f"/admin/platform-flags/{WRITES}", {"enabled": True, "reason": "Canary."}, as_role="admin"
+    )
+    assert await executor_reads() is False
+
+    await api.approve(asked)
+
+    assert await executor_reads() is True
+
+
+async def test_switching_off_ends_a_pending_request_to_switch_on(api: Harness) -> None:
+    """A close while an open request waits writes at once and makes the request stale."""
+    asked = await api.put(
+        f"/admin/platform-flags/{WRITES}", {"enabled": True, "reason": "Canary."}, as_role="admin"
+    )
+
+    # The requester closes it: allowed, and the request ends without a decider.
+    off = await api.put(
+        f"/admin/platform-flags/{WRITES}",
+        {"enabled": False, "reason": "Vazgeçildi."},
+        as_role="admin",
+    )
+
+    assert off.status_code == 200
+    ended = (await api.get(f"/changes/{asked.json()['change_id']}", as_role="admin2")).json()
+    assert (ended["status"], ended["reason"], ended["decided_by"]) == ("rejected", "stale", None)
+    approve = await api.approve(asked)
+    assert approve.status_code == 409
+    assert approve.json()["title"] == "change.already_decided"
+    assert (await api.get("/admin/platform-flags")).json()[0]["enabled"] is False
+
+
+async def test_a_second_request_to_switch_on_is_a_409(api: Harness) -> None:
+    first = await api.put(
+        f"/admin/platform-flags/{WRITES}", {"enabled": True, "reason": "Canary."}, as_role="admin"
+    )
+
+    second = await api.put(
+        f"/admin/platform-flags/{WRITES}", {"enabled": True, "reason": "Yine."}, as_role="admin2"
+    )
+
+    assert second.status_code == 409
+    assert second.json()["title"] == "change.pending_exists"
+    assert second.json()["change_id"] == first.json()["change_id"]
+
+
+async def test_the_flag_changed_since_the_request_makes_it_stale(api: Harness) -> None:
+    """Closed and opened again by another request: the old request is not approvable."""
+    asked = await api.put(
+        f"/admin/platform-flags/{WRITES}", {"enabled": True, "reason": "Canary."}, as_role="admin"
+    )
+    # Something else changes the flag directly in storage (a direct write by another tool).
+    await api.seed(
+        "INSERT INTO platform_flags (name, enabled, reason, changed_by, changed_at)"
+        " VALUES ('writes_enabled', false, 'elle', 'other', now())"
+    )
+
+    response = await api.approve(asked)
+
+    assert response.status_code == 409
+    assert response.json()["title"] == "change.stale"
+    assert (await api.get("/admin/platform-flags")).json()[0]["enabled"] is False
 
 
 @pytest.mark.parametrize("reason", ["", "   ", "\n"], ids=["empty", "spaces", "newline"])
@@ -135,9 +222,7 @@ async def test_a_hunter_may_not_change_the_flags_either(api: Harness) -> None:
 
 async def test_the_change_records_who_and_why(api: Harness) -> None:
     """T-017: the flag row and its audit row are written in one transaction."""
-    await api.put(
-        f"/admin/platform-flags/{WRITES}", {"enabled": True, "reason": "Canary."}, as_role="admin"
-    )
+    await switch_on(api, "Canary.")
     await api.put(
         f"/admin/platform-flags/{WRITES}",
         {"enabled": False, "reason": "Geri alındı."},
@@ -146,41 +231,38 @@ async def test_the_change_records_who_and_why(api: Harness) -> None:
 
     rows = await api.rows(
         "SELECT actor_kind, actor_id, action, object_type, object_id, details FROM audit_log "
-        "ORDER BY id"
+        "WHERE object_type = 'platform_flag' ORDER BY id"
     )
     assert len(rows) == 2
-    assert rows[0]["details"] == {"enabled": True, "previous": None, "reason": "Canary."}
+    assert rows[0]["details"]["enabled"] is True
+    assert rows[0]["details"]["previous"] is None
+    assert rows[0]["details"]["reason"] == "Canary."
+    assert rows[0]["details"]["requested_by"] == "synthetic-admin"
     assert rows[1]["details"] == {"enabled": False, "previous": True, "reason": "Geri alındı."}
     assert {row["actor_kind"] for row in rows} == {ActorKind.USER.value}
-    assert {row["actor_id"] for row in rows} == {"synthetic-admin"}
-    assert {row["object_type"] for row in rows} == {"platform_flag"}
+    assert [row["actor_id"] for row in rows] == ["synthetic-admin-2", "synthetic-admin"]
 
 
 async def test_setting_the_flag_to_the_value_it_has_is_still_recorded(api: Harness) -> None:
-    """Storage records every change, so two identical calls leave two rows."""
-    await api.put(
-        f"/admin/platform-flags/{WRITES}", {"enabled": True, "reason": "Canary."}, as_role="admin"
-    )
-    await api.put(
-        f"/admin/platform-flags/{WRITES}", {"enabled": True, "reason": "Canary."}, as_role="admin"
-    )
+    """Storage records every change, so two identical approvals leave two rows."""
+    await switch_on(api, "Canary.")
+    await switch_on(api, "Canary.")
 
-    rows = await api.rows("SELECT details FROM audit_log ORDER BY id")
+    rows = await api.rows(
+        "SELECT details FROM audit_log WHERE action = 'platform_flag.update' ORDER BY id"
+    )
     assert [row["details"]["previous"] for row in rows] == [None, True]
 
 
 async def test_an_agent_cannot_change_a_flag_through_the_api(api: Harness) -> None:
     """The API's caller is a user session; there is no route that acts as an agent."""
-    response = await api.put(
-        f"/admin/platform-flags/{WRITES}", {"enabled": True, "reason": "x"}, as_role="admin"
-    )
+    await switch_on(api, "x")
 
-    assert response.status_code == 200
     row = await api.one(
         "SELECT changed_by FROM platform_flags WHERE name = :name", {"name": WRITES}
     )
     assert row is not None
-    assert row["changed_by"] == "synthetic-admin"
+    assert row["changed_by"] == "synthetic-admin-2"
 
 
 async def test_the_executor_reads_the_same_row_the_api_wrote(api: Harness) -> None:

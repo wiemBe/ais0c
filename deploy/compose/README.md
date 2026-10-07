@@ -192,34 +192,45 @@ Analist arayüzünün konuştuğu FastAPI servisi ([T-028](../../docs/impl/tasks
 
 `AIS0C_API_AUTH` verilmezse veya bilinmeyen bir değerse servis açılmaz (çıkış kodu 2). `dev` modu geliştirme içindir ve açılışta uyarı olarak loglanır.
 
-**Dev kullanıcı dosyası.** `deploy/compose/secrets/api/dev-users.json`, git dışıdır (`deploy/compose/secrets/.gitignore`). Dosyada token'ın kendisi değil **sha256'ı** durur; API gelen token'ın sha256'sını hesaplayıp karşılaştırır. Token'ı üretip hash'ini dosyaya yaz:
+**Dev kullanıcı dosyası.** `deploy/compose/secrets/api/dev-users.json`, git dışıdır (`deploy/compose/secrets/.gitignore`). Dosyada token'ın kendisi değil **sha256'ı** durur; API gelen token'ın sha256'sını hesaplayıp karşılaştırır. Çift kontrol ([T-033](../../docs/impl/tasks/T-033-cift-kontrol.md), D-36) bir değişikliği isteyenle onaylayanın farklı kişi olmasını ister; bu yüzden dev'de **iki admin** gerekir. Tek admin'le katalog ve kritik varlık değişiklikleri ve kill switch'in açılması "Bekleyen değişiklikler"de kalır (kapatmak tek adımdır). İki token üretip hash'lerini dosyaya yaz:
 
 ```bash
-TOKEN=$(openssl rand -hex 32)
-HASH=$(printf '%s' "$TOKEN" | sha256sum | cut -d' ' -f1)
+TOKEN_1=$(openssl rand -hex 32)
+TOKEN_2=$(openssl rand -hex 32)
+HASH_1=$(printf '%s' "$TOKEN_1" | sha256sum | cut -d' ' -f1)
+HASH_2=$(printf '%s' "$TOKEN_2" | sha256sum | cut -d' ' -f1)
 mkdir -p deploy/compose/secrets/api
 cat > deploy/compose/secrets/api/dev-users.json <<EOF
 {
   "users": [
     {
-      "token_sha256": "$HASH",
-      "subject": "soc-operator-1",
-      "display_name": "SOC Operatör 1",
+      "token_sha256": "$HASH_1",
+      "subject": "soc-admin-1",
+      "display_name": "SOC Admin 1",
+      "roles": ["admin"]
+    },
+    {
+      "token_sha256": "$HASH_2",
+      "subject": "soc-admin-2",
+      "display_name": "SOC Admin 2",
       "roles": ["admin"]
     }
   ]
 }
 EOF
 chmod 600 deploy/compose/secrets/api/dev-users.json
-echo "token: $TOKEN"
+echo "admin 1 token: $TOKEN_1"
+echo "admin 2 token: $TOKEN_2"
 ```
+
+İki tarayıcı profilinde (veya biri gizli pencerede) farklı token'la giriş yap: biri isteği açar, öteki "Yönetim → Bekleyen değişiklikler"den onaylar. `subject` değerleri benzersiz olmalıdır: aynı `subject` iki admin sayılmaz. Operatör veya avcı eklemek için aynı dosyaya `"roles": ["operator"]` gibi girdiler yazılır.
 
 Roller kapsayıcıdır: `admin` ⊇ `hunter` ⊇ `operator`. Dosyada token'ın kendisi hiçbir zaman bulunmaz; hash'i olan tek şey budur.
 
 Aramak için `Authorization: Bearer <token>` başlığı:
 
 ```bash
-curl -sS -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8000/api/v1/me
+curl -sS -H "Authorization: Bearer $TOKEN_1" http://127.0.0.1:8000/api/v1/me
 ```
 
 **Arayüzü dev'de çalıştırmak** ([T-029](../../docs/impl/tasks/T-029-arayuz-mvp.md)): API yukarıdaki gibi `127.0.0.1:8000`'de çalışırken `apps/ui`'de `pnpm install` ve `pnpm dev` (Vite `/api`'yi API'ye yönlendirir); tarayıcıda `http://localhost:5173` açılır ve giriş ekranına dev token'ı yapıştırılır. Node kurulu değilse `docker run --rm -it --network host -v "$PWD:/repo:z" -w /repo/apps/ui node:22 corepack pnpm dev --host`. Ayrıntı: [apps/ui/README.md](../../apps/ui/README.md).

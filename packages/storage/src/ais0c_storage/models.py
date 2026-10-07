@@ -1,7 +1,7 @@
 """Tables of docs/impl/data-model.md as SQLAlchemy ORM classes.
 
 Every table of the document is here except `knowledge_chunks` (embedding model and vector size
-are open) and `change_approvals` (D-36, a later task). The schema itself is created by the
+are open). The schema itself is created by the
 Alembic migrations; a test checks that the two match.
 
 Column types check values on write (`ais0c_storage.columns`): JSON columns against the contract
@@ -63,6 +63,9 @@ from ais0c_storage.enums import (
     ActorKind,
     Analytic,
     CaseStatus,
+    ChangeObjectType,
+    ChangeRejectReason,
+    ChangeStatus,
     CriticalAssetKind,
     FullAnalysisReason,
     GroupStatus,
@@ -621,7 +624,6 @@ class TuningProposalRow(Base):
 
 
 # --- Platform bayrakları ve onaylar ---------------------------------------------------------
-# change_approvals (D-36) comes with its own task.
 
 
 class PlatformFlagRow(Base):
@@ -634,6 +636,53 @@ class PlatformFlagRow(Base):
     reason: Mapped[str | None]
     changed_by: Mapped[str]
     changed_at: Mapped[datetime]
+
+
+class ChangeApprovalRow(Base):
+    """A change waiting for a second admin, or decided (D-36, T-77; migration 0011).
+
+    `decided_by` is set only when an admin other than the requester approved or rejected;
+    a withdrawn or stale request has no `decided_by`, and `decided_at` says when it ended.
+    At most one `pending` row per object (a partial unique index).
+    """
+
+    __tablename__ = "change_approvals"
+    __table_args__ = (
+        Index(
+            "uq_change_approvals_pending_object",
+            "object_type",
+            "object_id",
+            unique=True,
+            postgresql_where=text("status = 'pending'"),
+        ),
+        CheckConstraint(
+            "decided_by IS NULL OR decided_by <> requested_by", name="decider_is_not_requester"
+        ),
+        CheckConstraint(
+            "(status = 'pending') = (decided_at IS NULL)", name="decided_at_iff_decided"
+        ),
+        CheckConstraint("(status = 'rejected') = (reason IS NOT NULL)", name="reason_iff_rejected"),
+        CheckConstraint(
+            "status <> 'approved' OR decided_by IS NOT NULL", name="approval_has_decider"
+        ),
+        Index("ix_change_approvals_status_requested_at", "status", "requested_at"),
+    )
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    object_type: Mapped[ChangeObjectType] = mapped_column(EnumText(ChangeObjectType))
+    object_id: Mapped[str]
+    # The object as it was when the request was made; a different one at approval is stale.
+    object_version: Mapped[str]
+    # What was asked: `action`, the object's `before` and `after`, for a flag also `reason`.
+    change: Mapped[JsonValue] = _json()
+    requested_by: Mapped[str]
+    requested_at: Mapped[datetime] = _created_at()
+    decided_by: Mapped[str | None]
+    decided_at: Mapped[datetime | None]
+    status: Mapped[ChangeStatus] = mapped_column(EnumText(ChangeStatus))
+    reason: Mapped[ChangeRejectReason | None] = mapped_column(EnumText(ChangeRejectReason))
+    # Not in data-model.md: the second admin's comment on a rejection.
+    comment: Mapped[str | None]
 
 
 class HealthAlarmRow(Base):

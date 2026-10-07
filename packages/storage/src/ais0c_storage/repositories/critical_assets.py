@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ais0c_contracts import Level, ShortText
 from ais0c_storage.enums import CriticalAssetKind
 from ais0c_storage.models import CriticalAssetRow
-from ais0c_storage.repositories._common import fetch_all, get_row, insert_row
+from ais0c_storage.repositories._common import fetch_all, fetch_one, get_row, insert_row
 
 CRITICAL_ASSET_LEVELS = frozenset({Level.HIGH, Level.CRITICAL})
 
@@ -31,15 +31,25 @@ def _normalized(kind: CriticalAssetKind, value: str) -> str:
     return value
 
 
+def check_critical_asset(*, kind: CriticalAssetKind, value: str, label: str, level: Level) -> str:
+    """The value in the form it is stored, after the checks `add_critical_asset` makes.
+
+    Raises ValueError (or ValidationError for a label that is too long) for an asset that could
+    not be added. The API checks a request with this before it waits for approval.
+    """
+    if level not in CRITICAL_ASSET_LEVELS:
+        raise ValueError("a critical asset is high or critical")
+    _LABEL.validate_python(label)
+    return _normalized(kind, value)
+
+
 async def add_critical_asset(
     session: AsyncSession, *, kind: CriticalAssetKind, value: str, label: str, level: Level
 ) -> CriticalAssetRow:
     """`level` is `high` or `critical`. `label` is a short label such as "SWIFT", at most 300
     characters; a longer one raises ValidationError."""
-    if level not in CRITICAL_ASSET_LEVELS:
-        raise ValueError("a critical asset is high or critical")
-    _LABEL.validate_python(label)
-    values = dict(kind=kind, value=_normalized(kind, value), label=label, level=level)
+    normalized = check_critical_asset(kind=kind, value=value, label=label, level=level)
+    values = dict(kind=kind, value=normalized, label=label, level=level)
     return await insert_row(session, CriticalAssetRow, values)
 
 
@@ -56,6 +66,16 @@ async def delete_critical_asset(session: AsyncSession, asset_id: uuid.UUID) -> b
         .returning(CriticalAssetRow.id)
     )
     return await session.scalar(statement) is not None
+
+
+async def find_critical_asset(
+    session: AsyncSession, *, kind: CriticalAssetKind, value: str
+) -> CriticalAssetRow | None:
+    """The asset of this kind and (already normalized) value, if the list has one."""
+    statement = select(CriticalAssetRow).where(
+        CriticalAssetRow.kind == kind, CriticalAssetRow.value == value
+    )
+    return await fetch_one(session, statement)
 
 
 async def list_critical_assets(

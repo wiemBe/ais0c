@@ -13,7 +13,14 @@ from datetime import datetime
 from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    JsonValue,
+    StringConstraints,
+    model_validator,
+)
 
 from ais0c_api.auth import Role
 from ais0c_contracts import (
@@ -37,6 +44,9 @@ from ais0c_contracts import (
 )
 from ais0c_storage.enums import (
     CaseStatus,
+    ChangeObjectType,
+    ChangeRejectReason,
+    ChangeStatus,
     CriticalAssetKind,
     FullAnalysisReason,
     GroupStatus,
@@ -92,6 +102,8 @@ class Problem(BaseModel):
     domains: list[str] | None = None
     # `notification_routes.unknown_group`: the groups that have no members.
     list_names: list[str] | None = None
+    # `change.pending_exists`: the request that is already waiting for the object.
+    change_id: UUID | None = None
 
 
 # --- session and health -----------------------------------------------------------------------
@@ -545,3 +557,40 @@ class PlatformFlagUpdate(ApiModel):
 
     enabled: bool
     reason: Annotated[str, StringConstraints(max_length=500)]
+
+
+# --- double control ----------------------------------------------------------------------------
+
+
+class ChangeAccepted(ApiModel):
+    """The answer (202) of a change that waits for a second admin (D-36, T-77)."""
+
+    change_id: UUID
+
+
+class ChangeItem(ApiModel):
+    """One `change_approvals` row: a change asked for, and what became of it.
+
+    `change` is `{ action, before, after }` (a flag change also has `reason`): the object's values
+    when the request was made and the ones asked for. `decided_by` is set only by a second admin's
+    approval or rejection; a withdrawn or stale request has none.
+    """
+
+    id: UUID
+    object_type: ChangeObjectType
+    object_id: str
+    object_version: str
+    change: dict[str, JsonValue]
+    requested_by: str
+    requested_at: datetime
+    decided_by: str | None = None
+    decided_at: datetime | None = None
+    status: ChangeStatus
+    reason: ChangeRejectReason | None = None
+    comment: str | None = None
+
+
+class ChangeReject(ApiModel):
+    """`POST /changes/{id}/reject`."""
+
+    comment: Annotated[str, StringConstraints(max_length=500)] | None = None

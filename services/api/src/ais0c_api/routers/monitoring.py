@@ -2,9 +2,10 @@
 (api.md "İzleme ve yönetim"; T-028 criteria 1, 2, 10 and 11, T-23, T-63 (2)).
 
 The kill switch lives here: `GET /admin/platform-flags` is an operator's, `PUT` is an admin's and
-needs a reason. Switching off is always one step (an emergency stop); whether switching on goes
-through double control (D-36) is T-033's decision (T-63 (2)). The flag row and its audit entry are
-written by `set_platform_flag`, in one transaction, so this module writes no second one.
+needs a reason. Switching off is always one step (an emergency stop, T-63) and ends a pending
+request to switch on; switching on is a request that a second admin approves (D-36, T-77, 202).
+The flag row and its audit entry are written by `set_platform_flag`, in one transaction, so this
+module writes no second one.
 
 `/health` asks for nothing and says nothing about the database, the version or the settings.
 """
@@ -12,7 +13,9 @@ written by `set_platform_flag`, in one transaction, so this module writes no sec
 from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter
+from fastapi.responses import JSONResponse
 
+from ais0c_api.changes import ACTION_ENABLE, accepted, flag_version, mark_stale, queue_change
 from ais0c_api.dependencies import (
     ADMIN,
     OPERATOR,
@@ -23,6 +26,7 @@ from ais0c_api.dependencies import (
     aware,
 )
 from ais0c_api.models import (
+    ChangeAccepted,
     Health,
     Me,
     PlatformFlagState,
@@ -32,9 +36,15 @@ from ais0c_api.models import (
 )
 from ais0c_api.problems import Problem, not_found
 from ais0c_contracts import Level
-from ais0c_storage.enums import ActorKind, PlatformFlag
+from ais0c_storage.enums import ActorKind, ChangeObjectType, PlatformFlag
 from ais0c_storage.models import PlatformFlagRow
-from ais0c_storage.repositories import list_platform_flags, set_platform_flag, sla_metrics
+from ais0c_storage.repositories import (
+    get_pending_change,
+    get_platform_flag,
+    list_platform_flags,
+    set_platform_flag,
+    sla_metrics,
+)
 
 router = APIRouter(tags=["monitoring"])
 
@@ -116,12 +126,24 @@ async def get_flags(_user: OPERATOR, session: ReadSession) -> list[PlatformFlagS
     return [flag_state(name, rows.get(name)) for name in PlatformFlag]
 
 
-@router.put("/admin/platform-flags/{name}", response_model=PlatformFlagState)
+@router.put(
+    "/admin/platform-flags/{name}",
+    response_model=None,
+    responses={
+        200: {"model": PlatformFlagState, "description": "Switched off at once."},
+        202: {"model": ChangeAccepted, "description": "Switching on waits for a second admin."},
+    },
+)
 async def put_flag(
     name: str, body: PlatformFlagUpdate, user: ADMIN, session: WriteSession
-) -> PlatformFlagState:
-    """Switch a platform flag (admin). `reason` is required and may not be blank. An unknown flag
-    name is a 404 and nothing is written."""
+) -> PlatformFlagState | JSONResponse:
+    """Switch a platform flag (admin). `reason` is required and may not be blank.
+
+    Switching off is written at once (200) and ends a pending request to switch on as stale.
+    Switching on is a request (202) that a second admin approves; the approval's actor is the
+    flag's `changed_by` and the reason is the request's. An unknown flag name is a 404 and
+    nothing is written.
+    """
     try:
         flag = PlatformFlag(name)
     except ValueError:
@@ -130,11 +152,26 @@ async def put_flag(
         raise Problem(
             422, "platform_flag.reason_required", detail="a reason is required to change a flag"
         )
+    if body.enabled:
+        current = await get_platform_flag(session, flag)
+        return accepted(
+            await queue_change(
+                session,
+                user,
+                object_type=ChangeObjectType.PLATFORM_FLAG,
+                object_id=flag.value,
+                object_version=flag_version(current),
+                action=ACTION_ENABLE,
+                before={"enabled": current is not None and current.enabled},
+                after={"enabled": True},
+                extra={"reason": body.reason.strip()},
+            )
+        )
     try:
         row = await set_platform_flag(
             session,
             flag,
-            enabled=body.enabled,
+            enabled=False,
             reason=body.reason,
             actor_kind=ActorKind.USER,
             actor_id=user.subject,
@@ -143,4 +180,9 @@ async def put_flag(
         raise Problem(
             422, "platform_flag.invalid", detail="the flag change is not acceptable"
         ) from error
-    return flag_state(flag, row)
+    waiting = await get_pending_change(
+        session, ChangeObjectType.PLATFORM_FLAG, flag.value, lock=True
+    )
+    if waiting is not None:
+        await mark_stale(session, waiting, actor_id=user.subject, cause="flag_closed")
+    return JSONResponse(flag_state(flag, row).model_dump(mode="json"))

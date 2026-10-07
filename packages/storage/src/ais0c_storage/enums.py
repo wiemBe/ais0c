@@ -189,6 +189,39 @@ class HealthAlarmStatus(StrEnum):
     RESOLVED = "resolved"
 
 
+class ChangeObjectType(StrEnum):
+    """`change_approvals.object_type` (D-36, T-77). `skill`, `policy` and `hunt_pack` are files in
+    the repository whose approval is a code review; they are listed because data-model.md lists
+    them and no endpoint writes them."""
+
+    CATALOG_RULE = "catalog_rule"
+    CATALOG_LOG_SOURCE = "catalog_log_source"
+    CRITICAL_ASSET = "critical_asset"
+    # Only the opening of the kill switch (T-77); closing it is one step.
+    PLATFORM_FLAG = "platform_flag"
+    SKILL = "skill"
+    POLICY = "policy"
+    HUNT_PACK = "hunt_pack"
+
+
+class ChangeStatus(StrEnum):
+    """`change_approvals.status`."""
+
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+
+
+class ChangeRejectReason(StrEnum):
+    """`change_approvals.reason`, set only on a `rejected` request."""
+
+    REJECTED_BY_ADMIN = "rejected_by_admin"
+    # The object changed after the request was made.
+    STALE = "stale"
+    # The requester took the request back.
+    WITHDRAWN = "withdrawn"
+
+
 class ActorKind(StrEnum):
     """`audit_log.actor_kind`."""
 

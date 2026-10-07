@@ -8,6 +8,9 @@ A flag changes only through `set_platform_flag`. It needs a reason and appends t
 `audit_log` in the same transaction. An agent cannot change a flag.
 """
 
+from collections.abc import Mapping
+
+from pydantic import JsonValue
 from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -44,6 +47,7 @@ async def set_platform_flag(
     reason: str,
     actor_kind: ActorKind,
     actor_id: str,
+    extra_details: Mapping[str, JsonValue] | None = None,
 ) -> PlatformFlagRow:
     """Switch a flag on or off and append the change to `audit_log`.
 
@@ -51,7 +55,8 @@ async def set_platform_flag(
     audit entry. The entry records who (`actor_kind`, `actor_id`), when (`at`) and why
     (`details.reason`), with the new value and the one it replaced (`details.previous`, null
     if the flag had never been set). `changed_at` and `at` are the database's transaction time.
-    Setting a flag to the value it already has is recorded the same way.
+    Setting a flag to the value it already has is recorded the same way. `extra_details` are
+    added to the entry's details, for example who asked for a change another admin approved.
 
     Raises ValueError for a blank reason or actor, and when `actor_kind` is `agent`.
     """
@@ -93,6 +98,11 @@ async def set_platform_flag(
         action=PLATFORM_FLAG_AUDIT_ACTION,
         object_type=PLATFORM_FLAG_OBJECT_TYPE,
         object_id=name.value,
-        details={"enabled": enabled, "previous": previous, "reason": reason},
+        details={
+            **(extra_details or {}),
+            "enabled": enabled,
+            "previous": previous,
+            "reason": reason,
+        },
     )
     return row

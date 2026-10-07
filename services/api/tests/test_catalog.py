@@ -78,9 +78,10 @@ async def test_the_rules_are_listed_as_the_sync_left_them(api: Harness) -> None:
 
 async def test_the_rules_filter_on_defined_and_mode(api: Harness) -> None:
     await add_catalog(api.sessions, rules=[(100201, "A"), (100305, "B")])
-    await api.put(
+    asked = await api.put(
         "/catalog/rules/100305", {"mode": "skip", "has_automated_action": False}, as_role="admin"
     )
+    await api.approve(asked)
 
     assert rule_ids(await api.get("/catalog/rules", defined=True)) == [100305]
     assert rule_ids(await api.get("/catalog/rules", defined=False)) == [100201]
@@ -157,32 +158,50 @@ async def test_an_admin_edits_a_rule_and_it_becomes_defined(api: Harness) -> Non
             "min_level": "high",
             "has_automated_action": False,
             "context_note": "Taranan kaynaklardan gelen trafik.",
-            "attack_techniques": ["T1003.006", "T1078"],
+            "attack_techniques": ["T1078", "T1003.006", "T1078"],
         },
         as_role="admin",
     )
 
-    assert response.status_code == 200
-    row = response.json()
+    # The edit waits for a second admin: the rule is untouched until then (D-36).
+    assert response.status_code == 202
+    assert set(response.json()) == {"change_id"}
+    untouched = (await api.get("/catalog/rules/100201")).json()
+    assert untouched["defined"] is False
+    assert untouched["context_note"] is None
+    pending = (await api.get(f"/changes/{response.json()['change_id']}", as_role="admin")).json()
+    assert (pending["object_type"], pending["object_id"], pending["status"]) == (
+        "catalog_rule",
+        "100201",
+        "pending",
+    )
+    assert pending["requested_by"] == "synthetic-admin"
+    assert pending["change"]["action"] == "update"
+    assert pending["change"]["before"]["context_note"] is None
+    assert pending["change"]["after"]["context_note"] == "Taranan kaynaklardan gelen trafik."
+
+    assert (await api.approve(response)).status_code == 200
+    row = (await api.get("/catalog/rules/100201")).json()
     assert row["defined"] is True
     assert row["mode"] == "analyze"
     assert row["min_level"] == "high"
     assert row["context_note"] == "Taranan kaynaklardan gelen trafik."
     # Stored sorted and once each, as `update_catalog_rule` does.
     assert row["attack_techniques"] == ["T1003.006", "T1078"]
-    assert row["updated_by"] == "synthetic-admin"
+    # The approver wrote the change.
+    assert row["updated_by"] == "synthetic-admin-2"
 
 
 async def test_a_rule_can_be_set_to_skip(api: Harness) -> None:
     await add_catalog(api.sessions, rules=[(100201, "A")])
 
-    row = (
-        await api.put(
-            "/catalog/rules/100201",
-            {"mode": "skip", "has_automated_action": True, "context_note": None},
-            as_role="admin",
-        )
-    ).json()
+    asked = await api.put(
+        "/catalog/rules/100201",
+        {"mode": "skip", "has_automated_action": True, "context_note": None},
+        as_role="admin",
+    )
+    await api.approve(asked)
+    row = (await api.get("/catalog/rules/100201")).json()
 
     assert (row["mode"], row["has_automated_action"]) == ("skip", True)
 
@@ -226,8 +245,11 @@ async def test_accepting_a_draft_makes_it_the_rule_note(api: Harness) -> None:
 
     response = await api.post("/catalog/rules/100201/accept-draft", as_role="admin")
 
-    assert response.status_code == 200
-    row = response.json()
+    assert response.status_code == 202
+    waiting = (await api.get("/catalog/rules/100201")).json()
+    assert (waiting["context_note"], waiting["ai_draft_note"]) == (None, "Öneri.")
+    assert (await api.approve(response)).status_code == 200
+    row = (await api.get("/catalog/rules/100201")).json()
     assert row["context_note"] == "Öneri."
     assert row["ai_draft_note"] is None
 
@@ -237,7 +259,7 @@ async def test_accepting_a_draft_twice_is_a_404(api: Harness) -> None:
     await api.rows(
         "UPDATE catalog_rules SET ai_draft_note = :note RETURNING rule_id", {"note": "Öneri."}
     )
-    await api.post("/catalog/rules/100201/accept-draft", as_role="admin")
+    await api.approve(await api.post("/catalog/rules/100201/accept-draft", as_role="admin"))
 
     second = await api.post("/catalog/rules/100201/accept-draft", as_role="admin")
 
@@ -303,15 +325,17 @@ async def test_an_admin_edits_a_log_source_and_it_becomes_defined(api: Harness) 
         as_role="admin",
     )
 
-    assert response.status_code == 200
-    row = response.json()
+    assert response.status_code == 202
+    assert (await api.get("/catalog/log-sources/2001")).json()["defined"] is False
+    assert (await api.approve(response)).status_code == 200
+    row = (await api.get("/catalog/log-sources/2001")).json()
     assert row["defined"] is True
     assert row["description"] == "Windows güvenlik günlükleri."
     assert row["owner"] == "soc-ekip"
     assert row["criticality"] == "medium"
     assert row["in_scope"] is False
     assert row["context_note"] == "Sunucu günlükleri."
-    assert row["updated_by"] == "synthetic-admin"
+    assert row["updated_by"] == "synthetic-admin-2"
 
 
 async def test_editing_an_unknown_log_source_is_a_404(api: Harness) -> None:
