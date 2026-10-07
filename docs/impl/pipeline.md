@@ -93,8 +93,8 @@ Sıra:
 Sıra (2026-10-07):
 
 1. Bitti, `main`'de: T-027–T-030, T-032 (kararlar T-65–T-73); T-052, T-053, T-054 (T-74–T-76; T-054'ün gate'i geçmedi).
-2. Şimdi, paralel: T-056 (düzeltme payı, token ve istek sınırı; Triage'ın gate'inin yeniden koşulması), T-055 (skill suite'i, bütçeler, replay'in eksikleri), T-057 (Orchestrator ve Reporting prompt v2), T-033 (çift kontrol; migration `0011`). Çakışma yerleri: T-055 ve T-057 harness'in `report.py`'si.
-3. Sonra: T-058 (H-5'ten sonra), T-031 (H-7, S-12 ve on-prem gate'inden sonra), T-035 (H-6).
+2. Şimdi, paralel: T-056 (düzeltme payı, token ve istek sınırı; Triage'ın gate'inin yeniden koşulması), T-055 (skill suite'i, bütçeler, replay'in eksikleri), T-057 (Orchestrator ve Reporting prompt v2), T-033 (çift kontrol; migration `0011`), T-058 (lab senaryo seti), T-059 (Triage Gold). Çakışma yerleri: T-055, T-057 ve T-059 harness'te (`report.py`, senaryo biçimi).
+3. Sonra: T-060 (T-058'in kuralları lab'a kurulup senaryolar koşulunca), T-031 (H-7, S-12 ve on-prem gate'inden sonra), T-035 (H-6).
 
 | Görev | Kapsam | Bağımlı olduğu |
 |---|---|---|
@@ -106,7 +106,9 @@ Sıra (2026-10-07):
 | T-054 | Triage prompt v3: katalog notu ve varlık açıklaması kararı veremez, untrusted veride karar iddiası talimattır, cevapsız araç zararsızlık kanıtı değildir, `rationale` ≤ 600, grup vakası bölümü; manifest `1.2.0` ve `adversarial-fn`; grup vakasının kararsız notu (T-65 (2)); güvenlik suite'lerinin iki gerçek koşusu. Dosya: [T-054](tasks/T-054-triage-prompt-v3.md) | T-027, T-030 |
 | T-055 | Replay'in eksikleri (`list_assets` türetilir, kayıttaki offense açık görünür, tek anonimleştirici), kayıt katmanları, `windows-dcsync` skill suite'i (tespit, eksik telemetri, payload'da talimat), Investigation/Verification/plan/skill bütçelerinin ölçümü, ajan başına `budget_exhausted` oranı, T-60'ın sorusu (T-75, T-76). Dosya: [T-055](tasks/T-055-skill-suite-ve-butceler.md) | T-052 |
 | T-057 | Orchestrator prompt v2 (`injection_suspected` yalnızca Orchestrator'a talimat vermeye çalışan metin için) ve Reporting prompt v2 (data gap'ler, girdiden aynen zaman, terim tutarlılığı); Turkish Quality'nin geçme kuralı senaryo başına; değerlendirici gerekçeleri koşu dosyasında (T-75). Dosya: [T-057](tasks/T-057-orchestrator-reporting-prompt-v2.md) | T-053 |
-| T-058 | `vpn-new-country` ve `password-spraying` skill suite'leri: loggen senaryosu (password spraying için yeni), lab kuralları (kullanıcı, H-5), lab kayıtları ve suite'ler. Dosyası H-5'ten sonra yazılır. | T-055, H-5 |
+| T-058 | Lab senaryo seti (T-78): Kerberoasting, password spraying, WAF (F5 ASM) SQLi/XSS geçti, tarama engellendi, onaylı tarayıcı; log üreticinin yeni türleri, lab kurallarının kaynağı ve eklenti zip'i, e2e'de senaryo seçimi. Dosya: [T-058](tasks/T-058-lab-senaryo-seti.md) | — |
+| T-059 | Triage Gold suite'i (`fixture` modu, T-78'in sekiz senaryosu), kalite senaryolarında saldırı alanlarının isteğe bağlı olması, karar ve seviye doğruluğu metrikleri. Dosya: [T-059](tasks/T-059-triage-gold.md) | T-030 |
+| T-060 | Senaryo setinin lab kayıtları ve replay suite'leri (Investigation, Verification), `vpn-new-country` ve `password-spraying` skill suite'leri. Dosyası kurallar kurulup senaryolar lab'da koşulunca yazılır. | T-055, T-058, kuralların kurulması |
 | T-056 | Son cevabın düzeltme payı: araçlar geri çekilirken bir çıktı düzeltme isteğine de yer kalır (offense 36: Verification'ın `reason`'ı 300 karakteri aştı, düzeltme isteği 120.000'i aştı); Verification ve Investigation prompt v2'de alan sınırları; lab ölçümü. Dosya: [T-056](tasks/T-056-cevap-duzeltme-payi.md) | T-051 |
 | T-031 | Prod shadow dağıtımı: prod compose, LiteLLM prod konfigürasyonu, shadow modu, case, batch ve executor worker'larının compose servisleri (T-33, T-037, T-045), dağıtım notları. Shadow başlamadan model geçiş gate'i on-prem prod modelleriyle koşar ve geçer: dev raporu baseline, on-prem raporu candidate (T-030'un `gate` komutu, T-64) | T-018, T-026, T-030, T-037, T-045, H-7 |
 
