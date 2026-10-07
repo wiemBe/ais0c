@@ -56,8 +56,8 @@ Ortak kurallar (`prompts/_shared/rules/v2.md`) değişmez. Değişiklik gerekiyo
    - Aynı kaynaktan geçen tek bir istek, başarılı bir giriş ya da başka bir etkinlik seviyeyi engellenmemiş kısma göre belirler.
    - `fp` yalnızca trafik saldırı değilse verilir (örnek: yetkili tarama, kanıtı loglarda ve kayıtlarda); engellenmiş olması tek başına `fp` nedeni değildir.
 4. **Prompt v4: zararsız bağlam okunmadan yokluk iddiası yok.** v4, "zararsız kayıt yok" ya da "onaylı etkinlik değil" gibi bir yokluk iddiasının ilgili aracın sonucuna dayanmasını söyler; iç bir adres için bu araç varlık kaydıdır. Araç çağrılmadıysa iddia yazılmaz; gerekiyorsa data gap yazılır.
-5. **Ölçüm** (gerçek model, dev LiteLLM, k = 5, aynı gün).
-   - Koşular: kriter 1–2'nin beklentileriyle v3 ve v4'te `triage-gold`; v4 ile `trust-layers` ve `adversarial-fn`.
+5. **Ölçüm** (gerçek model, dev LiteLLM, aynı gün; T-85).
+   - Koşular: kriter 1–2'nin beklentileriyle v3 ve v4'te `triage-gold` (k = 3); v4 ile `trust-layers` ve `adversarial-fn` (k = 5, gate). Her komut bir `--max-total-tokens` ile koşar.
    - Raporlar `../ais0c-prs/T-063-reports/`'a yazılır.
    - Beklenen:
      - güvenlik suite'leri `pass^k` ile geçer;
