@@ -1,0 +1,108 @@
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0.75rem 1rem;
+  margin-bottom: 1rem;
+}
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: flex-end;
+  margin-bottom: 1rem;
+}
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+.error {
+  color: var(--danger);
+  margin: 0.5rem 0;
+}
+.ok {
+  color: var(--ok);
+  margin: 0.5rem 0;
+}
+.badge {
+  display: inline-block;
+  padding: 0 0.5rem;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  border: 1px solid var(--line);
+  white-space: nowrap;
+}
+.critical {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+.high {
+  border-color: var(--warn);
+  color: var(--warn);
+}
+.good {
+  border-color: var(--ok);
+  color: var(--ok);
+}
+.muted {
+  color: var(--muted);
+}
+.row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.dialog {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.dialogBody {
+  background: var(--panel);
+  border-radius: 8px;
+  padding: 1.25rem;
+  max-width: 32rem;
+}
+.layout {
+  display: flex;
+  min-height: 100vh;
+}
+.nav {
+  width: 13rem;
+  flex: none;
+  background: var(--panel);
+  border-right: 1px solid var(--line);
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.nav a {
+  text-decoration: none;
+  padding: 0.3rem 0.5rem;
+  border-radius: 4px;
+}
+.nav a[aria-current="page"] {
+  background: var(--bg);
+  font-weight: 600;
+}
+.main {
+  flex: 1;
+  padding: 1.25rem 1.5rem;
+  min-width: 0;
+}
+.login {
+  max-width: 28rem;
+  margin: 4rem auto;
+}
+.checklist {
+  margin: 0.25rem 0;
+  padding-left: 1.2rem;
+}

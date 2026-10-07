@@ -28,7 +28,7 @@ file is made.
 
 | Module | What it holds |
 |---|---|
-| `settings.py` | The environment variables; `AIS0C_API_AUTH` has no default |
+| `settings.py` | The environment variables; `AIS0C_API_AUTH` has no default; `AIS0C_QRADAR_OFFENSE_URL_TEMPLATE` is optional (T-029) |
 | `auth.py` | The dev users file, the token hash and the roles (T-63 (1)) |
 | `app.py` | The ASGI app and the RFC 9457 error handlers |
 | `problems.py` | `Problem` and the `application/problem+json` answers |
@@ -40,8 +40,16 @@ file is made.
 | `models.py` | The wire format: these models are not in `packages/contracts` |
 | `routers/` | The endpoints, under the `/api/v1` prefix |
 
+## QRadar offense link and group summary (T-029)
+
+With `AIS0C_QRADAR_OFFENSE_URL_TEMPLATE` set (an `https` URL with one `{offense_id}`; anything else
+stops the service) every offense of `GET /cases`, `GET /cases/{id}` and `GET /groups/{id}` carries
+`qradar_offense_url`; without it the field is `null`. `GET /groups/{id}` also returns `summary`,
+the group's counts from its own rows (offense count, time range, rules, and per kind of value the
+number of different values and the most frequent ones), and each offense's `full_analysis_reason`.
+
 ## What is not here yet
 
 OIDC (T-035), the audit log's own endpoints, double control for a catalog change (T-033), tuning,
-hunt, hunt pack and actor endpoints, `/metrics/agents`, `/admin/versions`, and the QRadar deep
-links in the evidence list (T-029).
+hunt, hunt pack and actor endpoints, `/metrics/agents` and `/admin/versions`. Deep links to an
+Ariel search are out of scope.

@@ -60,6 +60,60 @@ jobs:
         if: ${{ !cancelled() && steps.sync.outcome == 'success' }}
         run: uv run lint-imports
 
+  frontend:
+    name: Frontend checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    defaults:
+      run:
+        shell: bash
+        working-directory: apps/ui
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+
+      # The pnpm version is pinned by `packageManager` in apps/ui/package.json.
+      - name: Enable corepack
+        run: corepack enable
+
+      - name: Install dependencies
+        id: pnpm-install
+        run: pnpm install --frozen-lockfile
+
+      # The checks below also run when an earlier check failed, so one run reports every failure.
+      - name: Lint
+        id: ui-lint
+        if: ${{ !cancelled() && steps.pnpm-install.outcome == 'success' }}
+        run: pnpm lint
+
+      - name: Typecheck
+        id: ui-typecheck
+        if: ${{ !cancelled() && steps.pnpm-install.outcome == 'success' }}
+        run: pnpm typecheck
+
+      - name: Test
+        id: ui-test
+        if: ${{ !cancelled() && steps.pnpm-install.outcome == 'success' }}
+        run: pnpm test
+
+      - name: Build
+        id: ui-build
+        if: ${{ !cancelled() && steps.pnpm-install.outcome == 'success' }}
+        run: pnpm build
+
+      # The API types are generated from services/api/openapi.json; a stale file fails here.
+      - name: API types are up to date
+        id: ui-api-types
+        if: ${{ !cancelled() && steps.pnpm-install.outcome == 'success' }}
+        run: |
+          pnpm gen:api
+          git diff --exit-code -- src/api/schema.d.ts
+
   provider-names:
     name: Provider name check
     runs-on: ubuntu-24.04

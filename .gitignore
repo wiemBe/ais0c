@@ -27,3 +27,6 @@ node_modules/
 # Editors and OS
 .idea/
 .DS_Store
+
+apps/ui/node_modules
+apps/ui/dist

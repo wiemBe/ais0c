@@ -159,6 +159,7 @@ Analist arayüzünün konuştuğu FastAPI servisi ([T-028](../../docs/impl/tasks
 | `AIS0C_API_PORT` | Dinleme portu | `8000` |
 | `TEMPORAL_ADDRESS` | Temporal frontend; yalnızca `POST /catalog/sync` için | `127.0.0.1:7233` |
 | `TEMPORAL_NAMESPACE` | Namespace | `default` |
+| `AIS0C_QRADAR_OFFENSE_URL_TEMPLATE` | QRadar konsolunda offense sayfasının `https` adresi; `{offense_id}` yer tutucusunu bir kez içerir. Ayarlıysa vaka ve grup yanıtlarındaki her offense `qradar_offense_url` taşır; geçersizse API başlamaz. | yok (alan `null`) |
 
 `AIS0C_API_AUTH` verilmezse veya bilinmeyen bir değerse servis açılmaz (çıkış kodu 2). `dev` modu geliştirme içindir ve açılışta uyarı olarak loglanır.
 
@@ -191,6 +192,8 @@ Aramak için `Authorization: Bearer <token>` başlığı:
 ```bash
 curl -sS -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8000/api/v1/me
 ```
+
+**Arayüzü dev'de çalıştırmak** ([T-029](../../docs/impl/tasks/T-029-arayuz-mvp.md)): API yukarıdaki gibi `127.0.0.1:8000`'de çalışırken `apps/ui`'de `pnpm install` ve `pnpm dev` (Vite `/api`'yi API'ye yönlendirir); tarayıcıda `http://localhost:5173` açılır ve giriş ekranına dev token'ı yapıştırılır. Node kurulu değilse `docker run --rm -it --network host -v "$PWD:/repo:z" -w /repo/apps/ui node:22 corepack pnpm dev --host`. Ayrıntı: [apps/ui/README.md](../../apps/ui/README.md).
 
 Arayüzün OpenAPI şeması `services/api/openapi.json`'dur; `uv run python -m ais0c_api.openapi services/api/openapi.json` ile yeniden üretilir ve T-029 arayüz tiplerini buradan alır. Çalışan servis şemayı sunmaz (`/openapi.json` ve `/docs` yoktur).
 
