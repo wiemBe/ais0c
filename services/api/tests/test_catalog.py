@@ -12,8 +12,14 @@ The `missing` filters are new reads in storage, added with T-028.
 
 import pytest
 from api_support import Harness, add_catalog
+from temporalio.service import RPCError, RPCStatusCode
 
-from ais0c_api.temporal import KNOWLEDGE_SYNC_SCHEDULE_ID
+from ais0c_api.temporal import (
+    KNOWLEDGE_SYNC_SCHEDULE_ID,
+    ScheduleNotFound,
+    TemporalScheduleTrigger,
+    TemporalUnavailable,
+)
 
 pytestmark = pytest.mark.anyio
 
@@ -205,7 +211,9 @@ async def test_a_malformed_attack_technique_is_a_422(api: Harness, techniques: l
     )
 
     assert response.status_code == 422
-    assert response.json()["title"] == "catalog.invalid_attack_technique"
+    # The body is checked against contracts' `AttackTechnique`, which the schema carries too.
+    assert response.json()["title"] == "request.invalid"
+    assert [error["field"] for error in response.json()["errors"]] == ["body.attack_techniques.0"]
     stored = await api.one("SELECT defined FROM catalog_rules WHERE rule_id = 100201")
     assert stored == {"defined": False}
 
@@ -352,8 +360,54 @@ async def test_a_temporal_that_cannot_be_reached_is_a_503(api: Harness) -> None:
 
     assert response.status_code == 503
     assert response.json()["title"] == "temporal.unavailable"
+    # Where Temporal runs is not the client's business.
+    assert "127.0.0.1" not in response.text
     # The sync was not started, so no audit row says it was.
     assert await api.rows("SELECT * FROM audit_log WHERE action = 'catalog.sync'") == []
+
+
+async def test_a_schedule_the_batch_worker_never_created_is_a_409(api: Harness) -> None:
+    """Temporal answered; retrying will not help until the batch worker has run (T-037)."""
+    api.trigger.missing = True
+
+    response = await api.post("/catalog/sync", as_role="admin")
+
+    assert response.status_code == 409
+    assert response.json()["title"] == "catalog.sync_not_scheduled"
+    assert await api.rows("SELECT * FROM audit_log WHERE action = 'catalog.sync'") == []
+
+
+class _Handle:
+    def __init__(self, error: Exception) -> None:
+        self._error = error
+
+    async def trigger(self) -> None:
+        raise self._error
+
+
+class _Client:
+    def __init__(self, error: Exception) -> None:
+        self._error = error
+
+    def get_schedule_handle(self, schedule_id: str) -> _Handle:
+        return _Handle(self._error)
+
+
+@pytest.mark.parametrize(
+    ("status", "expected"),
+    [(RPCStatusCode.NOT_FOUND, ScheduleNotFound), (RPCStatusCode.UNAVAILABLE, TemporalUnavailable)],
+    ids=["not-found", "unavailable"],
+)
+async def test_the_temporal_trigger_tells_a_missing_schedule_apart(
+    status: RPCStatusCode, expected: type[Exception]
+) -> None:
+    trigger = TemporalScheduleTrigger("127.0.0.1:7233", "default")
+    trigger._client = _Client(RPCError("no", status, b""))  # pyright: ignore[reportAttributeAccessIssue, reportPrivateUsage]
+
+    with pytest.raises(expected) as raised:
+        await trigger.trigger(KNOWLEDGE_SYNC_SCHEDULE_ID)
+
+    assert type(raised.value) is expected
 
 
 async def test_the_sync_can_be_triggered_more_than_once(api: Harness) -> None:

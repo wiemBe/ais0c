@@ -39,9 +39,9 @@ from ais0c_storage.enums import (
     PolicyDecision,
     QAStatus,
 )
-from ais0c_storage.errors import NotFoundError
 from ais0c_storage.models import CaseRow, CatalogLogSourceRow, CatalogRuleRow
 from ais0c_storage.repositories import (
+    SlaBucket,
     SyncedLogSource,
     SyncedRule,
     add_allowed_email_domain,
@@ -50,15 +50,16 @@ from ais0c_storage.repositories import (
     add_offense_seen,
     add_operator_feedback,
     add_qa_items,
+    begin_case_reevaluation,
     check_recipient_domains,
     create_case,
     create_offense_group,
     get_critical_asset,
     get_evidence,
-    get_last_agent_run,
     get_qa_item,
     list_agent_runs,
     list_cases,
+    list_cases_by_ids,
     list_catalog_log_sources,
     list_catalog_rules,
     list_evidence_by_ids,
@@ -71,6 +72,7 @@ from ais0c_storage.repositories import (
     list_platform_flags,
     list_qa_items,
     list_qa_queue,
+    list_tool_calls_of_runs,
     list_tools_for_evidence,
     newest_case_cursor,
     newest_group_cursor,
@@ -177,6 +179,40 @@ async def test_the_case_list_pages_with_a_cursor(session: AsyncSession) -> None:
     assert await list_cases(session, after=newest_case_cursor(second[-1])) == []
 
 
+async def test_the_case_cursor_keeps_the_order_of_cases_created_together(
+    session: AsyncSession,
+) -> None:
+    """Cases opened in one transaction share `created_at`; the order is then `case_id`
+    ascending, and a page that ends among them goes on with the next ID, skipping and repeating
+    none."""
+    for offense_id in (1, 2, 3, 4):
+        await open_case(session, f"case-{offense_id}", offense_id)
+    await session.commit()
+    await open_case(session, "case-5", 5)
+    await session.commit()
+
+    everything = case_ids(await list_cases(session))
+    assert everything == ["case-5", "case-1", "case-2", "case-3", "case-4"]
+
+    seen: list[str] = []
+    page = await list_cases(session, limit=2)
+    while page:
+        seen.extend(case_ids(page))
+        page = await list_cases(session, after=newest_case_cursor(page[-1]), limit=2)
+    assert seen == everything
+
+
+async def test_cases_are_read_by_id(session: AsyncSession) -> None:
+    await open_case(session, "case-1", 1)
+    await open_case(session, "case-2", 2)
+
+    found = await list_cases_by_ids(session, ["case-1", "case-404"])
+
+    assert set(found) == {"case-1"}
+    assert found["case-1"].offense_id == 1
+    assert await list_cases_by_ids(session, []) == {}
+
+
 async def test_the_sla_metric_counts_each_floor_over_the_range(session: AsyncSession) -> None:
     """Every bucket has at least one case: on time, late and still running (criterion 10)."""
     await open_case(session, "case-on-time")
@@ -196,12 +232,50 @@ async def test_the_sla_metric_counts_each_floor_over_the_range(session: AsyncSes
         (None, 1),
     ]
     assert [
-        (bucket.on_time, bucket.late, bucket.undecided, bucket.running) for bucket in buckets
-    ] == [(1, 0, 0, 0), (0, 1, 0, 0), (0, 0, 0, 1)]
-    assert all(
-        bucket.total == bucket.on_time + bucket.late + bucket.undecided + bucket.running
+        (bucket.on_time, bucket.late, bucket.undecided, bucket.running, bucket.closed)
         for bucket in buckets
+    ] == [(1, 0, 0, 0, 0), (0, 1, 0, 0, 0), (0, 0, 0, 1, 0)]
+    assert all(bucket.total == adds_up(bucket) for bucket in buckets)
+
+
+def adds_up(bucket: SlaBucket) -> int:
+    return bucket.on_time + bucket.late + bucket.undecided + bucket.running + bucket.closed
+
+
+async def test_a_running_re_evaluation_counts_as_running_not_as_its_old_decision(
+    session: AsyncSession,
+) -> None:
+    """A re-evaluation keeps the previous decision's `decided_at` until it records its own; the
+    metric counts where the latest evaluation stands, once."""
+    await open_case(session, "case-1")
+    await decide(session, "case-1", floor=Level.HIGH, decided_at=T1 - timedelta(minutes=5))
+    await begin_case_reevaluation(session, "case-1", sla_due_at=T1 + timedelta(minutes=10))
+
+    (bucket,) = await sla_metrics(session, sla_due_from=T1, sla_due_to=T1 + timedelta(hours=1))
+
+    assert (bucket.total, bucket.on_time, bucket.running) == (1, 0, 1)
+    assert bucket.total == adds_up(bucket)
+
+    # The re-evaluation misses its deadline: undecided, not on time by the old decision.
+    await set_case_status(session, "case-1", CaseStatus.NO_AI_DECISION)
+    (bucket,) = await sla_metrics(session, sla_due_from=T1, sla_due_to=T1 + timedelta(hours=1))
+    assert (bucket.total, bucket.on_time, bucket.undecided) == (1, 0, 1)
+
+
+async def test_a_closed_case_counts_by_its_decision_or_as_closed(session: AsyncSession) -> None:
+    await open_case(session, "case-decided-then-closed")
+    await decide(
+        session, "case-decided-then-closed", floor=None, decided_at=T1 + timedelta(minutes=5)
     )
+    await set_case_status(session, "case-decided-then-closed", CaseStatus.CLOSED)
+    # Closed in QRadar while the AI was still on it.
+    await open_case(session, "case-closed-first")
+    await set_case_status(session, "case-closed-first", CaseStatus.CLOSED)
+
+    (bucket,) = await sla_metrics(session, sla_due_from=T0, sla_due_to=T1 + timedelta(hours=1))
+
+    assert (bucket.total, bucket.late, bucket.closed) == (2, 1, 1)
+    assert bucket.total == adds_up(bucket)
 
 
 async def test_the_sla_metric_counts_a_case_without_a_decision_as_undecided(
@@ -213,6 +287,7 @@ async def test_the_sla_metric_counts_a_case_without_a_decision_as_undecided(
     buckets = await sla_metrics(session, sla_due_from=T0, sla_due_to=T1 + timedelta(hours=1))
 
     assert [(bucket.undecided, bucket.running, bucket.total) for bucket in buckets] == [(1, 0, 1)]
+    assert all(bucket.total == adds_up(bucket) for bucket in buckets)
 
 
 # --- the QA queue -------------------------------------------------------------------------------
@@ -254,14 +329,31 @@ async def test_resolving_an_item_records_who_and_when(session: AsyncSession) -> 
 
     resolved = await resolve_qa_item(session, item.id, resolved_by="operator01", resolved_at=T1)
 
+    assert resolved is not None
     assert (resolved.status, resolved.resolved_by, resolved.resolved_at) == (
         QAStatus.RESOLVED,
         "operator01",
         T1,
     )
     assert await get_qa_item(session, item.id) == resolved
-    with pytest.raises(NotFoundError):
+    assert (
         await resolve_qa_item(session, uuid.uuid4(), resolved_by="operator01", resolved_at=T1)
+        is None
+    )
+
+
+async def test_an_item_is_resolved_only_once(session: AsyncSession) -> None:
+    """The second resolve changes nothing: the first operator and time stay."""
+    await open_case(session, "case-1")
+    item = (await add_qa_items(session, "case-1", 1, [QAReason.LOW_CONFIDENCE]))[0]
+    await resolve_qa_item(session, item.id, resolved_by="operator01", resolved_at=T0)
+
+    again = await resolve_qa_item(session, item.id, resolved_by="operator02", resolved_at=T1)
+
+    assert again is None
+    stored = await get_qa_item(session, item.id)
+    assert stored is not None
+    assert (stored.resolved_by, stored.resolved_at) == ("operator01", T0)
 
 
 async def test_operator_feedback_is_recorded_with_its_author(session: AsyncSession) -> None:
@@ -318,6 +410,29 @@ async def test_groups_are_listed_filtered_and_paged(session: AsyncSession) -> No
     assert [row.group_id for row in page] == ["g-2"]
     rest = await list_offense_groups(session, after=newest_group_cursor(page[-1]))
     assert [row.group_id for row in rest] == ["g-1"]
+
+
+async def test_the_group_cursor_keeps_the_order_of_groups_with_one_window_start(
+    session: AsyncSession,
+) -> None:
+    for group_id in ("g-a", "g-b", "g-c"):
+        await create_offense_group(
+            session,
+            group_id=group_id,
+            rule_set_hash=f"hash-{group_id}",
+            window_start=T0,
+            window_end=T0 + timedelta(minutes=10),
+            offense_count=2,
+        )
+    await session.commit()
+
+    page = await list_offense_groups(session, limit=1)
+    seen: list[str] = []
+    while page:
+        seen.extend(row.group_id for row in page)
+        page = await list_offense_groups(session, after=newest_group_cursor(page[-1]), limit=1)
+
+    assert seen == ["g-a", "g-b", "g-c"]
 
 
 async def test_the_offenses_of_a_group_are_read_by_id(session: AsyncSession) -> None:
@@ -519,25 +634,50 @@ async def test_every_flag_with_a_row_is_listed(session: AsyncSession) -> None:
     assert [(row.name, row.enabled) for row in flags] == [(PlatformFlag.WRITES_ENABLED, True)]
 
 
-async def test_the_last_run_of_an_agent_is_read_for_the_case_detail(session: AsyncSession) -> None:
+async def test_the_tool_calls_of_several_runs_are_read_at_once(session: AsyncSession) -> None:
+    """One query for the calls of a case's runs, each run's in recorded order."""
     await open_case(session, "case-1")
-    for index in (1, 2):
+    for run_id in ("case-1-triage-1", "case-1-investigation-1", "case-1-reporting-1"):
         await start_agent_run(
             session,
-            run_id=f"case-1-verification-{index}",
-            task=payloads.agent_task(case_id="case-1", agent_id="verification"),
+            run_id=run_id,
+            task=payloads.agent_task(case_id="case-1"),
             prompt_version="v1",
-            model_alias="soc-verifier",
+            model_alias="soc-fast",
             model_target="lab-model",
-            toolset_profile="qradar-verify-read",
-            started_at=T0 + timedelta(minutes=index),
+            toolset_profile="qradar-triage-read",
+            started_at=T0,
         )
+    for run_id, evidence_id in (
+        ("case-1-triage-1", "ev_1"),
+        ("case-1-investigation-1", "ev_2"),
+        ("case-1-investigation-1", "ev_3"),
+    ):
+        await record_tool_call(
+            session,
+            run_id=run_id,
+            intent=payloads.tool_intent(),
+            policy_decision=PolicyDecision.ALLOW,
+            status=ToolStatus.OK,
+            latency_ms=12,
+            evidence_id=evidence_id,
+        )
+        # One transaction per call, so `created_at` orders them.
+        await session.commit()
 
-    run = await get_last_agent_run(session, "case-1", agent_id="verification")
-    assert run is not None
-    assert run.run_id == "case-1-verification-2"
-    assert await get_last_agent_run(session, "case-1", agent_id="reporting") is None
-    assert await get_last_agent_run(session, "case-404", agent_id="verification") is None
+    calls = await list_tool_calls_of_runs(
+        session, ["case-1-triage-1", "case-1-investigation-1", "case-1-reporting-1"]
+    )
+    assert [(call.run_id, call.evidence_id) for call in calls] == [
+        ("case-1-triage-1", "ev_1"),
+        ("case-1-investigation-1", "ev_2"),
+        ("case-1-investigation-1", "ev_3"),
+    ]
+    assert [
+        call.evidence_id
+        for call in await list_tool_calls_of_runs(session, ["case-1-investigation-1"])
+    ] == ["ev_2", "ev_3"]
+    assert await list_tool_calls_of_runs(session, []) == []
 
 
 async def test_the_tool_of_an_evidence_is_read_from_its_call(session: AsyncSession) -> None:

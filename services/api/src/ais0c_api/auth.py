@@ -50,9 +50,9 @@ class Session:
     roles: frozenset[Role]
 
     @property
-    def role_names(self) -> list[str]:
+    def ranked_roles(self) -> list[Role]:
         """The roles, ordered from the most to the least, as the UI shows them."""
-        return [role.value for role in sorted(self.roles, key=lambda r: -ROLE_RANK[r])]
+        return sorted(self.roles, key=lambda role: -ROLE_RANK[role])
 
     def allows(self, lowest: Role) -> bool:
         """True when any of the user's roles covers `lowest`."""

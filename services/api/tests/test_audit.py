@@ -204,7 +204,31 @@ async def test_replacing_a_recipient_group_leaves_one_row(api: Harness) -> None:
         "notification_recipient_group",
         "operators",
     )
-    assert rows[0]["details"] == {"members": 1}
+    assert rows[0]["details"] == {"members": 1, "added": ["soc-1@example.com"], "removed": []}
+
+
+async def test_the_recipient_audit_row_names_who_was_added_and_removed(api: Harness) -> None:
+    """Who receives the alert e-mails is what an admin's change is reviewed for."""
+    await seed_for_every_change(api)
+    await api.put(
+        "/notification-recipients/operators",
+        {"emails": ["soc-1@example.com", "soc-2@example.com"]},
+        as_role="admin",
+    )
+
+    await api.put(
+        "/notification-recipients/operators",
+        {"emails": ["soc-2@example.com", "soc-3@example.com"]},
+        as_role="admin",
+    )
+
+    rows = await audit_rows(api, action="notification_recipients.replace")
+    assert len(rows) == 2
+    assert {
+        "members": 2,
+        "added": ["soc-3@example.com"],
+        "removed": ["soc-1@example.com"],
+    } in [row["details"] for row in rows]
 
 
 async def test_replacing_the_routes_leaves_one_row(api: Harness) -> None:
@@ -222,7 +246,12 @@ async def test_replacing_the_routes_leaves_one_row(api: Harness) -> None:
     rows = await audit_rows(api, action="notification_routes.replace")
     assert len(rows) == 1
     assert rows[0]["object_type"] == "notification_routes"
-    assert rows[0]["details"] == {"routes": 1}
+    details = rows[0]["details"]
+    assert details["routes"] == 1
+    # The table before (0007's seed) and after, so the change can be read back.
+    assert {"kind": "hunt_report", "level": None, "list_name": "hunters"} in details["before"]
+    assert len(details["before"]) == 9
+    assert details["after"] == [{"kind": "case_alert", "level": "high", "list_name": "operators"}]
 
 
 async def test_changing_a_platform_flag_leaves_one_row(api: Harness) -> None:

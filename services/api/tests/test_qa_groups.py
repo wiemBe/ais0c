@@ -12,6 +12,7 @@ Groups:
 - `GET /groups/{group_id}` returns the group row, the offenses in it and the group's case decision.
 """
 
+import asyncio
 import uuid
 from datetime import timedelta
 
@@ -133,6 +134,42 @@ async def test_resolving_an_item_twice_is_a_409(api: Harness) -> None:
     assert len(await api.rows("SELECT * FROM operator_feedback")) == 1
     rows = await api.rows("SELECT verdict FROM operator_feedback")
     assert [row["verdict"] for row in rows] == ["fp"]
+
+
+async def test_two_operators_resolving_one_item_at_once_leave_one_feedback(
+    api: Harness,
+) -> None:
+    """The item changes only while it is open, so the slower of two concurrent resolves is a
+    409 and writes no second feedback."""
+    await decided_case(api.sessions)
+    item = (await open_qa_items(api.sessions, reasons=[QAReason.LOW_CONFIDENCE]))[0]
+
+    responses = await asyncio.gather(
+        api.post(f"/qa/{item}/resolve", {"verdict": "fp", "reason": "correct"}),
+        api.post(f"/qa/{item}/resolve", {"verdict": "tp", "reason": "was_fp_not_tp"}),
+    )
+
+    assert sorted(response.status_code for response in responses) == [200, 409]
+    assert len(await api.rows("SELECT * FROM operator_feedback")) == 1
+    assert len(await api.rows("SELECT * FROM audit_log WHERE action = 'qa.resolve'")) == 1
+
+
+async def test_the_queue_pages_with_its_cursor(api: Harness) -> None:
+    await decided_case(api.sessions)
+    await open_qa_items(
+        api.sessions,
+        reasons=[QAReason.LOW_CONFIDENCE, QAReason.RANDOM_SAMPLE, QAReason.VERIFIER_CONFLICT],
+    )
+
+    first = await api.get("/qa", limit=2)
+    second = await api.get("/qa", limit=2, cursor=first.json()["next_cursor"])
+
+    assert second.status_code == 200
+    assert len(first.json()["items"]) == 2
+    assert len(second.json()["items"]) == 1
+    assert second.json()["next_cursor"] is None
+    ids = [row["id"] for row in first.json()["items"] + second.json()["items"]]
+    assert len(set(ids)) == 3
 
 
 async def test_resolving_an_unknown_item_is_a_404(api: Harness) -> None:

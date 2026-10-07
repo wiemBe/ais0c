@@ -166,10 +166,37 @@ async def test_a_group_is_replaced_as_a_whole(api: Harness) -> None:
     assert replaced.json()["emails"] == ["soc-3@example.com"]
     rows = await api.rows("SELECT list_name, email FROM notification_recipients ORDER BY email")
     assert rows == [{"list_name": "operators", "email": "soc-3@example.com"}]
-    # An empty list empties the group.
-    empty = await api.put("/notification-recipients/operators", {"emails": []}, as_role="admin")
+    # An empty list empties a group no route names.
+    await api.put(
+        "/notification-recipients/soc-night", {"emails": ["soc-9@example.com"]}, as_role="admin"
+    )
+    empty = await api.put("/notification-recipients/soc-night", {"emails": []}, as_role="admin")
     assert empty.json()["emails"] == []
-    assert await api.rows("SELECT * FROM notification_recipients") == []
+    assert await api.rows("SELECT list_name FROM notification_recipients") == [
+        {"list_name": "operators"}
+    ]
+
+
+async def test_a_group_a_route_names_cannot_be_emptied(api: Harness) -> None:
+    """0007 routes high alerts to `operators`: emptying it would leave the route with nobody."""
+    await api.seed("INSERT INTO allowed_email_domains (domain) VALUES ('example.com')")
+    await api.put(
+        "/notification-recipients/operators", {"emails": ["soc-1@example.com"]}, as_role="admin"
+    )
+
+    response = await api.put("/notification-recipients/operators", {"emails": []}, as_role="admin")
+
+    assert response.status_code == 409
+    assert response.json()["title"] == "notification_recipients.group_in_use"
+    assert await api.rows("SELECT email FROM notification_recipients") == [
+        {"email": "soc-1@example.com"}
+    ]
+    # Only the fill left an audit row; the refused change left none.
+    assert len(await api.rows("SELECT id FROM audit_log")) == 1
+    # Once no route names it, it can go.
+    await api.put("/notification-routes", {"routes": []}, as_role="admin")
+    emptied = await api.put("/notification-recipients/operators", {"emails": []}, as_role="admin")
+    assert emptied.status_code == 200
 
 
 async def test_the_local_part_is_kept_and_the_domain_is_lower_cased(api: Harness) -> None:
@@ -368,6 +395,31 @@ async def test_a_repeated_route_is_written_once(api: Harness) -> None:
     assert len(response.json()) == 1
 
 
+@pytest.mark.parametrize(
+    "route",
+    [
+        {"kind": "case_alert", "level": None, "list_name": "operators"},
+        {"kind": "group_alert", "list_name": "operators"},
+        {"kind": "hunt_report", "level": "high", "list_name": "operators"},
+    ],
+    ids=["case-alert-without-level", "group-alert-without-level", "hunt-report-with-level"],
+)
+async def test_a_route_that_would_never_match_an_e_mail_is_a_422(
+    api: Harness, route: dict[str, object]
+) -> None:
+    """The executor looks a case or group alert up by its level and a hunt report without one."""
+    await api.seed("INSERT INTO allowed_email_domains (domain) VALUES ('example.com')")
+    await api.put(
+        "/notification-recipients/operators", {"emails": ["soc-1@example.com"]}, as_role="admin"
+    )
+
+    response = await api.put("/notification-routes", {"routes": [route]}, as_role="admin")
+
+    assert response.status_code == 422
+    assert response.json()["title"] == "request.invalid"
+    assert len(await api.rows("SELECT * FROM notification_routes")) == 9
+
+
 async def test_a_route_with_an_unknown_kind_is_a_422(api: Harness) -> None:
     response = await api.put(
         "/notification-routes",
@@ -401,6 +453,12 @@ async def test_the_metric_counts_every_bucket_per_floor(api: Harness) -> None:
         "UPDATE cases SET status = :status WHERE case_id = :case_id RETURNING case_id",
         {"status": CaseStatus.NO_AI_DECISION.value, "case_id": "case-undecided"},
     )
+    # Closed in QRadar before the AI decided.
+    await open_case(api.sessions, case_id="case-closed", floor_level=None, verdict=None)
+    await api.rows(
+        "UPDATE cases SET status = :status WHERE case_id = :case_id RETURNING case_id",
+        {"status": CaseStatus.CLOSED.value, "case_id": "case-closed"},
+    )
     # Its deadline is outside the range.
     await decided_case(api.sessions, case_id="case-outside", sla_due_at=T1 + timedelta(days=1))
 
@@ -420,6 +478,7 @@ async def test_the_metric_counts_every_bucket_per_floor(api: Harness) -> None:
         "late": 0,
         "undecided": 0,
         "running": 0,
+        "closed": 0,
     }
     assert buckets["medium"] == {
         "floor_level": "medium",
@@ -428,19 +487,25 @@ async def test_the_metric_counts_every_bucket_per_floor(api: Harness) -> None:
         "late": 1,
         "undecided": 0,
         "running": 0,
+        "closed": 0,
     }
     assert buckets["none"] == {
         "floor_level": "none",
-        "total": 2,
+        "total": 3,
         "on_time": 0,
         "late": 0,
         "undecided": 1,
         "running": 1,
+        "closed": 1,
     }
     # Every bucket's numbers add up to its total.
     for bucket in body["buckets"]:
         assert bucket["total"] == (
-            bucket["on_time"] + bucket["late"] + bucket["undecided"] + bucket["running"]
+            bucket["on_time"]
+            + bucket["late"]
+            + bucket["undecided"]
+            + bucket["running"]
+            + bucket["closed"]
         )
 
 
@@ -456,7 +521,7 @@ async def test_the_metric_covers_the_last_day_without_a_range(api: Harness) -> N
     body = (await api.get("/metrics/sla")).json()
 
     assert sum(bucket["total"] for bucket in body["buckets"]) == 1
-    assert body["to"] > body["from_"]
+    assert body["to"] > body["from"]
 
 
 async def test_a_range_that_holds_no_deadline_answers_no_bucket(api: Harness) -> None:
@@ -471,7 +536,7 @@ async def test_a_range_that_holds_no_deadline_answers_no_bucket(api: Harness) ->
     ).json()
 
     assert body["buckets"] == []
-    assert body["from_"] == "2026-10-02T10:00:01Z"
+    assert body["from"] == "2026-10-02T10:00:01Z"
 
 
 async def test_the_metric_rejects_a_range_that_ends_before_it_starts(api: Harness) -> None:
@@ -479,7 +544,7 @@ async def test_the_metric_rejects_a_range_that_ends_before_it_starts(api: Harnes
         "/metrics/sla", **{"from": "2026-10-03T00:00:00Z", "to": "2026-10-02T00:00:00Z"}
     )
 
-    assert response.status_code == 400
+    assert response.status_code == 422
     assert response.json()["title"] == "request.invalid_range"
 
 
@@ -491,7 +556,7 @@ async def test_the_metric_echoes_the_range_it_used(api: Harness) -> None:
         )
     ).json()
 
-    assert body["from_"] == "2026-10-02T09:00:00Z"
+    assert body["from"] == "2026-10-02T09:00:00Z"
     # A time in another offset is normalized to UTC.
     assert body["to"] == "2026-10-02T20:00:00Z"
 

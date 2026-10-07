@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ais0c_contracts import QAReason
 from ais0c_storage.enums import QAStatus
 from ais0c_storage.models import QAItemRow
-from ais0c_storage.repositories._common import fetch_all, get_row, insert_row, update_one
+from ais0c_storage.repositories._common import fetch_all, get_row, insert_row
 
 
 async def add_qa_items(
@@ -59,22 +59,26 @@ async def get_qa_item(session: AsyncSession, item_id: uuid.UUID) -> QAItemRow | 
 
 async def resolve_qa_item(
     session: AsyncSession, item_id: uuid.UUID, *, resolved_by: str, resolved_at: datetime
-) -> QAItemRow:
-    """Mark the item `resolved` (`POST /qa/{id}/resolve` of the analyst API, T-028).
+) -> QAItemRow | None:
+    """Mark an open item `resolved` (`POST /qa/{id}/resolve` of the analyst API, T-028).
 
-    `resolved_by` is the operator's OIDC subject. Raises `NotFoundError` when there is no such
-    item; the caller decides what an item that is already resolved means.
+    `resolved_by` is the operator's OIDC subject. Only an `open` item changes, in one statement,
+    so of two operators resolving the same item at once exactly one gets the row back. None when
+    there is no such item or it is no longer open; the caller tells the two apart with
+    `get_qa_item`.
     """
     statement = (
         update(QAItemRow)
-        .where(QAItemRow.id == item_id)
+        .where(QAItemRow.id == item_id, QAItemRow.status == QAStatus.OPEN)
         .values(
             status=QAStatus.RESOLVED,
             resolved_by=resolved_by,
             resolved_at=resolved_at,
         )
+        .returning(QAItemRow)
     )
-    return await update_one(session, statement, QAItemRow, f"QA item {item_id}")
+    result = await session.scalars(statement, execution_options={"populate_existing": True})
+    return result.one_or_none()
 
 
 async def list_qa_queue(

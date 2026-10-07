@@ -24,9 +24,15 @@ from ais0c_api.models import (
     Page,
     SyncAccepted,
 )
-from ais0c_api.pagination import check_limit, paginate, string_cursor
+from ais0c_api.pagination import (
+    DEFAULT_LIMIT,
+    CursorParam,
+    LimitParam,
+    paginate,
+    string_cursor,
+)
 from ais0c_api.problems import Problem, invalid_cursor, not_found
-from ais0c_api.temporal import KNOWLEDGE_SYNC_SCHEDULE_ID, TemporalUnavailable
+from ais0c_api.temporal import KNOWLEDGE_SYNC_SCHEDULE_ID, ScheduleNotFound, TemporalUnavailable
 from ais0c_contracts import CatalogMode
 from ais0c_storage.errors import NotFoundError
 from ais0c_storage.models import CatalogLogSourceRow, CatalogRuleRow
@@ -44,9 +50,7 @@ router = APIRouter(prefix="/catalog", tags=["catalog"])
 
 BoolParam = Annotated[bool | None, Query()]
 ModeParam = Annotated[CatalogMode | None, Query()]
-TextParam = Annotated[str | None, Query()]
-CursorParam = Annotated[str | None, Query()]
-LimitParam = Annotated[int | None, Query()]
+TextParam = Annotated[str | None, Query(max_length=200)]
 
 
 def rule(row: CatalogRuleRow) -> CatalogRule:
@@ -98,41 +102,20 @@ def id_cursor(cursor: str | None) -> int | None:
         raise invalid_cursor() from None
 
 
-def attack_techniques(values: list[str]) -> list[str]:
-    """Only `T` followed by four digits and an optional `.nnn` (contracts `AttackTechnique`).
-
-    The column accepts any text, so the API checks the shape here: a value the skill router cannot
-    use is a 422 rather than a stored mistake.
-    """
-    for value in values:
-        head, _, tail = value.partition(".")
-        valid = len(head) == 5 and head[0] == "T" and head[1:].isdigit()
-        if valid and tail:
-            valid = len(tail) == 3 and tail.isdigit()
-        if not valid:
-            raise Problem(
-                422,
-                "catalog.invalid_attack_technique",
-                detail="an ATT&CK technique must be T#### or T####.###",
-            )
-    return values
-
-
 @router.get("/rules", response_model=Page[CatalogRule])
 async def get_rules(
-    session: ReadSession,
     _user: OPERATOR,
+    session: ReadSession,
     defined: BoolParam = None,
     mode: ModeParam = None,
     qradar_enabled: BoolParam = None,
     missing: BoolParam = None,
     q: TextParam = None,
     cursor: CursorParam = None,
-    limit: LimitParam = None,
+    limit: LimitParam = DEFAULT_LIMIT,
 ) -> Page[CatalogRule]:
     """The rules by ID. `q` matches part of the name; `missing` keeps what QRadar stopped listing
     (`missing_since` set) or only what it lists (`missing=false`) (T-37)."""
-    page_size = check_limit(limit)
     rows = await list_catalog_rules(
         session,
         defined=defined,
@@ -141,14 +124,14 @@ async def get_rules(
         missing=missing,
         search=q,
         after_rule_id=id_cursor(cursor),
-        limit=page_size + 1,
+        limit=limit + 1,
     )
-    page, next_cursor = paginate(rows, page_size, lambda row: [str(row.rule_id)])
+    page, next_cursor = paginate(rows, limit, lambda row: [str(row.rule_id)])
     return Page(items=[rule(row) for row in page], next_cursor=next_cursor)
 
 
 @router.get("/rules/{rule_id}", response_model=CatalogRule)
-async def get_rule(rule_id: int, session: ReadSession, _user: OPERATOR) -> CatalogRule:
+async def get_rule(rule_id: int, _user: OPERATOR, session: ReadSession) -> CatalogRule:
     """One catalog rule; an unknown `rule_id` is a 404."""
     row = await get_catalog_rule(session, rule_id)
     if row is None:
@@ -158,7 +141,7 @@ async def get_rule(rule_id: int, session: ReadSession, _user: OPERATOR) -> Catal
 
 @router.put("/rules/{rule_id}", response_model=CatalogRule)
 async def put_rule(
-    rule_id: int, body: CatalogRuleUpdate, session: WriteSession, user: ADMIN
+    rule_id: int, body: CatalogRuleUpdate, user: ADMIN, session: WriteSession
 ) -> CatalogRule:
     """An admin's edit of a rule. The rule becomes `defined` and the change is audited.
 
@@ -172,7 +155,7 @@ async def put_rule(
             min_level=body.min_level,
             has_automated_action=body.has_automated_action,
             context_note=body.context_note,
-            attack_techniques=attack_techniques(body.attack_techniques),
+            attack_techniques=list(body.attack_techniques),
             updated_by=user.subject,
             updated_at=now(),
         )
@@ -200,7 +183,7 @@ async def put_rule(
 
 
 @router.post("/rules/{rule_id}/accept-draft", response_model=CatalogRule)
-async def post_accept_draft(rule_id: int, session: WriteSession, user: ADMIN) -> CatalogRule:
+async def post_accept_draft(rule_id: int, user: ADMIN, session: WriteSession) -> CatalogRule:
     """Accept the note the AI suggested: it becomes the rule's `context_note` and the draft is
     cleared. A rule with no draft, or an unknown `rule_id`, is a 404."""
     try:
@@ -222,17 +205,16 @@ async def post_accept_draft(rule_id: int, session: WriteSession, user: ADMIN) ->
 
 @router.get("/log-sources", response_model=Page[CatalogLogSource])
 async def get_log_sources(
-    session: ReadSession,
     _user: OPERATOR,
+    session: ReadSession,
     defined: BoolParam = None,
     in_scope: BoolParam = None,
     missing: BoolParam = None,
     q: TextParam = None,
     cursor: CursorParam = None,
-    limit: LimitParam = None,
+    limit: LimitParam = DEFAULT_LIMIT,
 ) -> Page[CatalogLogSource]:
     """The log sources by ID. `q` matches part of the name or the type name."""
-    page_size = check_limit(limit)
     rows = await list_catalog_log_sources(
         session,
         defined=defined,
@@ -240,15 +222,15 @@ async def get_log_sources(
         missing=missing,
         search=q,
         after_log_source_id=id_cursor(cursor),
-        limit=page_size + 1,
+        limit=limit + 1,
     )
-    page, next_cursor = paginate(rows, page_size, lambda row: [str(row.log_source_id)])
+    page, next_cursor = paginate(rows, limit, lambda row: [str(row.log_source_id)])
     return Page(items=[log_source(row) for row in page], next_cursor=next_cursor)
 
 
 @router.get("/log-sources/{log_source_id}", response_model=CatalogLogSource)
 async def get_log_source(
-    log_source_id: int, session: ReadSession, _user: OPERATOR
+    log_source_id: int, _user: OPERATOR, session: ReadSession
 ) -> CatalogLogSource:
     """One catalog log source; an unknown ID is a 404."""
     row = await get_catalog_log_source(session, log_source_id)
@@ -259,7 +241,7 @@ async def get_log_source(
 
 @router.put("/log-sources/{log_source_id}", response_model=CatalogLogSource)
 async def put_log_source(
-    log_source_id: int, body: CatalogLogSourceUpdate, session: WriteSession, user: ADMIN
+    log_source_id: int, body: CatalogLogSourceUpdate, user: ADMIN, session: WriteSession
 ) -> CatalogLogSource:
     """An admin's edit of a log source. It becomes `defined` and the change is audited."""
     try:
@@ -300,16 +282,14 @@ async def put_log_source(
 
 
 @router.post("/sync", response_model=SyncAccepted, status_code=202)
-async def post_sync(session: WriteSession, trigger: Trigger, user: ADMIN) -> SyncAccepted:
+async def post_sync(user: ADMIN, trigger: Trigger, session: WriteSession) -> SyncAccepted:
     """Start the KnowledgeSync Schedule now; Temporal runs it, and 202 says it was accepted.
 
-    The API itself reads nothing from QRadar. Temporal being unreachable is a 503
-    (`temporal.unavailable`), and the audit row is not written because the sync was not started.
+    The API itself reads nothing from QRadar. The audit row is written first and committed only
+    when Temporal took the trigger, so a sync never starts without one. Temporal being
+    unreachable is a 503 (`temporal.unavailable`); a Schedule the batch worker has not created
+    yet is a 409 (`catalog.sync_not_scheduled`). Neither leaves an audit row.
     """
-    try:
-        await trigger.trigger(KNOWLEDGE_SYNC_SCHEDULE_ID)
-    except TemporalUnavailable as error:
-        raise Problem(503, "temporal.unavailable", detail=str(error)) from error
     await audit.record(
         session,
         actor_id=user.subject,
@@ -318,4 +298,14 @@ async def post_sync(session: WriteSession, trigger: Trigger, user: ADMIN) -> Syn
         object_id=KNOWLEDGE_SYNC_SCHEDULE_ID,
         details={"triggered_by": user.subject},
     )
+    try:
+        await trigger.trigger(KNOWLEDGE_SYNC_SCHEDULE_ID)
+    except ScheduleNotFound:
+        raise Problem(
+            409,
+            "catalog.sync_not_scheduled",
+            detail="the batch worker has not created the sync Schedule",
+        ) from None
+    except TemporalUnavailable:
+        raise Problem(503, "temporal.unavailable") from None
     return SyncAccepted(schedule_id=KNOWLEDGE_SYNC_SCHEDULE_ID)

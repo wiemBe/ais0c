@@ -3,11 +3,13 @@
 - `GET /cases` filters on `status`, `notify_level`, `verdict`, `source`, `rule_id`, `from` and `to`,
   and lists newest first;
 - `GET /cases/{case_id}` holds the case row, the `CaseReport`, the urgent events by rank, the
-  recommendations, the last Verification, the data gaps, the evidence (ID, source, tool,
-  `query_hash`, time window), the notes written and the e-mails (status, level, recipients, error).
-  A case without a report answers with what it has; an unknown ID is a 404;
+  recommendations, the Verification of the evaluation the case's decision comes from, the data
+  gaps (each once), the evidence (ID, source, tool, `query_hash`, time window; what the
+  evaluation collected and whether the decision cites it), the notes written and the e-mails
+  (status, level, recipients, error). A case without a report answers with what it has; an
+  unknown ID is a 404;
 - `GET /cases/{case_id}/steps` holds the agent runs in evaluation and start order with each run's
-  tool calls;
+  evaluation number and tool calls;
 - `POST /cases/{case_id}/feedback` writes `operator_feedback` with the session's subject, and the
   body's `case_id` must be the one in the path.
 """
@@ -27,12 +29,35 @@ from api_support import (
     T1,
     Harness,
     add_offense,
+    agent_task,
+    case_report,
+    data_gap,
     decided_case,
+    evidence_ref,
     open_case,
+    tool_intent,
+    verification_result,
 )
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from ais0c_contracts import CaseSource, CaseVerdict, Level
-from ais0c_storage.enums import CaseStatus, NoteStatus, NotificationStatus
+from ais0c_contracts import (
+    CaseSource,
+    CaseVerdict,
+    Confidence,
+    Level,
+    RunStatus,
+    ToolStatus,
+)
+from ais0c_storage.enums import CaseStatus, NoteStatus, NotificationStatus, PolicyDecision
+from ais0c_storage.models import AgentRunResult
+from ais0c_storage.repositories import (
+    begin_case_reevaluation,
+    finish_agent_run,
+    record_case_decision,
+    record_evidence,
+    record_tool_call,
+    start_agent_run,
+)
 
 pytestmark = pytest.mark.anyio
 
@@ -55,6 +80,7 @@ async def test_the_queue_lists_newest_first_with_the_offenses_rule_ids(api: Harn
     rows = response.json()["items"]
     assert [row["case_id"] for row in rows] == ["case-2", "case-1"]
     assert rows[0]["rule_ids"] == [100201, 100202]
+    assert rows[0]["offense_description"] == "Excessive Firewall Accepts"
     assert rows[0]["source"] == CaseSource.OFFENSE
     assert rows[0]["verdict"] == CaseVerdict.SUSPICIOUS
     assert rows[0]["notify_level"] == Level.HIGH
@@ -135,6 +161,18 @@ async def test_a_case_past_its_sla_is_marked_overdue(api: Harness) -> None:
     assert rows["case-ok"]["sla_overdue"] is False
 
 
+async def test_a_re_evaluation_past_its_deadline_is_overdue(api: Harness) -> None:
+    """A re-evaluation keeps the previous decision's `decided_at`; the clock runs all the same."""
+    await decided_case(api.sessions, sla_due_at=T0)
+    async with api.sessions.begin() as session:
+        await begin_case_reevaluation(session, CASE_ID, sla_due_at=T1)
+
+    (row,) = (await api.get("/cases")).json()["items"]
+
+    assert (row["status"], row["evaluation_no"], row["sla_overdue"]) == ("running", 2, True)
+    assert row["decided_at"] is not None
+
+
 async def test_an_unknown_case_is_a_404(api: Harness) -> None:
     response = await api.get("/cases/case-404")
 
@@ -166,6 +204,9 @@ async def test_the_detail_holds_every_part_of_the_case(api: Harness) -> None:
     # The evidence: ID, source, the tool that issued it, the query hash and the window.
     evidence = {item["evidence_id"]: item for item in body["evidence"]}
     assert set(evidence) == {EVIDENCE_ID, EVIDENCE_ID_2}
+    assert evidence[EVIDENCE_ID]["cited"] is True
+    assert evidence[EVIDENCE_ID_2]["cited"] is True
+    assert body["evaluation_no"] == 1
     assert evidence[EVIDENCE_ID]["source"] == "qradar"
     assert evidence[EVIDENCE_ID]["tool_id"] == "qradar.ariel_search"
     assert evidence[EVIDENCE_ID]["query_hash"] == "sha256:5d41402abc4b2a76"
@@ -236,6 +277,172 @@ async def test_a_case_without_a_verification_run_still_answers(api: Harness) -> 
     assert body["report"] is not None
 
 
+EVIDENCE_ID_3 = "ev_01JB3K7Q9Z"
+
+
+async def add_run(
+    sessions: async_sessionmaker[AsyncSession],
+    run_id: str,
+    agent_id: str,
+    *,
+    minute: int,
+    result: AgentRunResult | None = None,
+    evidence_id: str | None = None,
+    case_id: str = CASE_ID,
+) -> None:
+    """A finished agent run, with one tool call when `evidence_id` is given."""
+    async with sessions.begin() as session:
+        await start_agent_run(
+            session,
+            run_id=run_id,
+            task=agent_task(case_id, agent_id),
+            prompt_version="v1",
+            model_alias="soc-reasoning",
+            model_target="lab-model",
+            toolset_profile="qradar-investigate-read",
+            started_at=T0 + timedelta(minutes=minute),
+        )
+        if evidence_id is not None:
+            await record_tool_call(
+                session,
+                run_id=run_id,
+                intent=tool_intent(run_id, case_id),
+                policy_decision=PolicyDecision.ALLOW,
+                status=ToolStatus.OK,
+                latency_ms=80,
+                evidence_id=evidence_id,
+            )
+        await finish_agent_run(
+            session,
+            run_id,
+            status=RunStatus.COMPLETED,
+            result=result,
+            tokens=100,
+            tool_calls=0 if evidence_id is None else 1,
+            ended_at=T0 + timedelta(minutes=minute, seconds=30),
+        )
+
+
+async def test_the_detail_shows_the_verification_of_the_evaluation_it_decided(
+    api: Harness,
+) -> None:
+    """While a re-evaluation runs, the case still holds evaluation 1's decision and report; the
+    Verification shown is evaluation 1's, not the newer one of the evaluation still going."""
+    await decided_case(api.sessions, with_runs=True)
+    # The Reporting run of evaluation 1, whose result is the report the case holds.
+    await add_run(
+        api.sessions,
+        f"{CASE_ID}-reporting-1",
+        "reporting",
+        minute=2,
+        result=case_report(verdict=CaseVerdict.SUSPICIOUS, notify_level=Level.HIGH),
+    )
+    async with api.sessions.begin() as session:
+        await begin_case_reevaluation(session, CASE_ID, sla_due_at=T1)
+    disagreeing = verification_result(gap=False).model_copy(update={"agrees": False})
+    await add_run(
+        api.sessions, f"{CASE_ID}-verification-2", "verification", minute=10, result=disagreeing
+    )
+
+    running = (await api.get(f"/cases/{CASE_ID}")).json()
+
+    assert (running["case"]["evaluation_no"], running["evaluation_no"]) == (2, 1)
+    assert running["verification"]["agrees"] is True
+
+    # Evaluation 2 records its decision: now its own Verification is the one shown.
+    async with api.sessions.begin() as session:
+        await record_case_decision(
+            session,
+            CASE_ID,
+            verdict=CaseVerdict.SUSPICIOUS,
+            confidence=Confidence.MEDIUM,
+            ai_level=Level.HIGH,
+            notify_level=Level.HIGH,
+            floor_level=Level.HIGH,
+            decided_at=T1,
+        )
+
+    decided = (await api.get(f"/cases/{CASE_ID}")).json()
+
+    assert decided["evaluation_no"] == 2
+    assert decided["verification"]["agrees"] is False
+
+
+async def test_a_decision_without_a_report_shows_no_events_of_an_earlier_one(
+    api: Harness,
+) -> None:
+    """Evaluation 1's urgent events and recommendations stay in their tables; evaluation 2,
+    decided without a report, must not show them as its own."""
+    await decided_case(api.sessions)
+    async with api.sessions.begin() as session:
+        await begin_case_reevaluation(session, CASE_ID, sla_due_at=T1)
+        await record_case_decision(
+            session,
+            CASE_ID,
+            verdict=CaseVerdict.SUSPICIOUS,
+            confidence=Confidence.MEDIUM,
+            ai_level=Level.HIGH,
+            notify_level=Level.HIGH,
+            floor_level=Level.HIGH,
+            decided_at=T1,
+            report=None,
+        )
+
+    body = (await api.get(f"/cases/{CASE_ID}")).json()
+
+    assert (body["evaluation_no"], body["report"]) == (2, None)
+    assert body["urgent_events"] == []
+    assert body["recommendations"] == []
+    assert len(await api.rows("SELECT * FROM urgent_events WHERE evaluation_no = 1")) == 2
+
+
+async def test_a_data_gap_the_report_already_holds_is_listed_once(api: Harness) -> None:
+    """The chain hands Reporting Verification's gaps; the detail does not add them again."""
+    await decided_case(api.sessions, with_runs=True)
+    report = case_report().model_copy(
+        update={"data_gaps": [data_gap("FW-DMZ-01"), data_gap("DC-LAB-01")]}
+    )
+    async with api.sessions.begin() as session:
+        await record_case_decision(
+            session,
+            CASE_ID,
+            verdict=report.verdict,
+            confidence=report.confidence,
+            ai_level=Level.HIGH,
+            notify_level=report.notify_level,
+            floor_level=Level.HIGH,
+            decided_at=T1,
+            report=report,
+        )
+
+    body = (await api.get(f"/cases/{CASE_ID}")).json()
+
+    assert [gap["source"] for gap in body["data_gaps"]] == ["FW-DMZ-01", "DC-LAB-01"]
+
+
+async def test_the_evidence_holds_what_the_evaluation_collected_and_did_not_cite(
+    api: Harness,
+) -> None:
+    await decided_case(api.sessions, with_runs=True)
+    async with api.sessions.begin() as session:
+        await record_evidence(session, evidence_ref(EVIDENCE_ID_3))
+    # Investigation found something nothing cites; a run of another case does not count.
+    await add_run(
+        api.sessions,
+        f"{CASE_ID}-investigation-1",
+        "investigation",
+        minute=1,
+        evidence_id=EVIDENCE_ID_3,
+    )
+
+    body = (await api.get(f"/cases/{CASE_ID}")).json()
+
+    evidence = {item["evidence_id"]: item for item in body["evidence"]}
+    assert set(evidence) == {EVIDENCE_ID, EVIDENCE_ID_2, EVIDENCE_ID_3}
+    assert evidence[EVIDENCE_ID_3]["cited"] is False
+    assert evidence[EVIDENCE_ID_3]["tool_id"] == "qradar.ariel_search"
+
+
 # --- the steps -----------------------------------------------------------------------------------
 
 
@@ -256,6 +463,8 @@ async def test_the_steps_hold_every_agent_run_with_its_tool_calls(api: Harness) 
     assert triage["step"]["tool_call_count"] == 1
     assert triage["step"]["duration_seconds"] == 30.0
     assert triage["step"]["error"] is None
+    assert triage["step"]["evaluation_no"] == 1
+    assert verification["step"]["evaluation_no"] == 1
     assert triage["tool_calls"] == [
         {
             "tool_id": "qradar.ariel_search",
@@ -306,6 +515,24 @@ async def test_a_run_that_failed_carries_its_reason_and_no_duration(api: Harness
     assert steps[0]["step"]["error"] == "model unreachable"
     assert steps[0]["step"]["duration_seconds"] is None
     assert steps[0]["step"]["ended_at"] is None
+
+
+async def test_each_step_names_its_evaluation(api: Harness) -> None:
+    """The evaluation comes from the run ID (T-29); the platform's own runs have none."""
+    await open_case(api.sessions, verdict=None)
+    await add_run(api.sessions, f"{CASE_ID}-triage-1", "triage", minute=0)
+    await add_run(api.sessions, f"{CASE_ID}-investigation-2", "investigation", minute=5)
+    await add_run(api.sessions, f"{CASE_ID}-investigation-2-retry", "investigation", minute=9)
+    await add_run(api.sessions, "executor-note-7f3a9c", "executor", minute=12)
+
+    steps = (await api.get(f"/cases/{CASE_ID}/steps")).json()
+
+    assert [(step["step"]["run_id"], step["step"]["evaluation_no"]) for step in steps] == [
+        (f"{CASE_ID}-triage-1", 1),
+        (f"{CASE_ID}-investigation-2", 2),
+        (f"{CASE_ID}-investigation-2-retry", 2),
+        ("executor-note-7f3a9c", None),
+    ]
 
 
 async def test_the_steps_of_an_unknown_case_are_a_404(api: Harness) -> None:

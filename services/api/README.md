@@ -17,7 +17,9 @@ AIS0C_DATABASE_URL="postgresql+psycopg://ais0c:<password>@127.0.0.1:5432/ais0c" 
 
 It listens on `127.0.0.1:8000` by default. `uv run python -m ais0c_api.openapi
 services/api/openapi.json` regenerates the OpenAPI schema the UI's types come from; the schema can
-be built without a database, so that command needs no settings.
+be built without a database, so that command needs no settings. The running service does not
+serve the schema (no `/openapi.json`, `/docs`); the checked-in file is the one the UI uses, and it
+describes every error as the RFC 9457 `Problem` the API sends.
 
 `deploy/compose/README.md` has the dev stack's version of the above, including how the dev users
 file is made.
@@ -31,8 +33,9 @@ file is made.
 | `app.py` | The ASGI app and the RFC 9457 error handlers |
 | `problems.py` | `Problem` and the `application/problem+json` answers |
 | `pagination.py` | The opaque cursor and the page limit |
-| `dependencies.py` | The database session and the role dependencies |
+| `dependencies.py` | The database session and the role dependencies; the role comes first, the transaction ends before the answer |
 | `temporal.py` | The `ScheduleTrigger` seam and the Schedule ID (criterion 8) |
+| `run_ids.py` | The evaluation number in an agent run's ID (decision T-29), checked against the workflows in `tests/api/` |
 | `audit.py` | The `audit_log` actions this API writes |
 | `models.py` | The wire format: these models are not in `packages/contracts` |
 | `routers/` | The endpoints, under the `/api/v1` prefix |

@@ -8,6 +8,10 @@ Errors are RFC 9457 problems (`ais0c_api.problems`): a `Problem` raised in a rou
 answer, a body or query that does not parse becomes a 422 with the field paths, an unknown path a
 404, and anything else a 500 that says nothing about the failure. A database that cannot be
 reached is a 503.
+
+The running service does not serve its OpenAPI schema: the schema is the checked-in
+`services/api/openapi.json` (`ais0c_api.openapi`), and an unauthenticated route that describes
+every endpoint is one more thing to protect.
 """
 
 import logging
@@ -55,7 +59,7 @@ def build_app(
         title=OPENAPI_TITLE,
         version=OPENAPI_VERSION,
         description=API_DESCRIPTION,
-        openapi_url="/openapi.json",
+        openapi_url=None,
         docs_url=None,
         redoc_url=None,
     )
@@ -96,7 +100,10 @@ def _add_error_handlers(app: FastAPI) -> None:
         code = {404: "request.not_found", 405: "request.method_not_allowed"}.get(
             error.status_code, "request.error"
         )
-        return problem_response(error.status_code, code)
+        # A 405 keeps its `Allow` header (RFC 9110).
+        return problem_response(
+            error.status_code, code, headers=dict(error.headers) if error.headers else None
+        )
 
     @app.exception_handler(OperationalError)
     async def handle_unavailable(_request: Request, error: OperationalError) -> JSONResponse:

@@ -192,7 +192,7 @@ Aramak için `Authorization: Bearer <token>` başlığı:
 curl -sS -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8000/api/v1/me
 ```
 
-Arayüzün OpenAPI şeması `services/api/openapi.json`'dur; `uv run python -m ais0c_api.openapi services/api/openapi.json` ile yeniden üretilir ve T-029 arayüz tiplerini buradan alır.
+Arayüzün OpenAPI şeması `services/api/openapi.json`'dur; `uv run python -m ais0c_api.openapi services/api/openapi.json` ile yeniden üretilir ve T-029 arayüz tiplerini buradan alır. Çalışan servis şemayı sunmaz (`/openapi.json` ve `/docs` yoktur).
 
 ### Executor worker (QRadar notu ve e-posta)
 

@@ -10,13 +10,7 @@ import ast
 from pathlib import Path
 
 import pytest
-from api_support import Harness, add_catalog, decided_case
-from fastapi.routing import APIRoute
-from sqlalchemy.ext.asyncio import async_sessionmaker
-
-from ais0c_api.app import build_app
-from ais0c_api.auth import DevAuthenticator, DevUser, Role
-from ais0c_api.temporal import TemporalUnavailable
+from api_support import Harness, add_catalog, api_routes, decided_case
 
 pytestmark = pytest.mark.anyio
 
@@ -82,12 +76,9 @@ def test_no_module_of_the_api_names_a_security_product_or_a_model() -> None:
 
 def test_the_app_has_no_endpoint_that_acts_on_a_security_product() -> None:
     """D-02, D-19: nothing closes an offense, changes a rule or runs an action."""
-    app = build_app(
-        sessions=async_sessionmaker(),  # no engine: no route is called here
-        authenticator=_authenticator(),
-        schedule_trigger=_NoTemporal(),
-    )
-    paths = {route.path for route in app.routes if isinstance(route, APIRoute)}
+    paths = {path for path, _route in api_routes()}
+    # The check below must have something to look at.
+    assert "/api/v1/cases/{case_id}/feedback" in paths
 
     for path in paths:
         for word in ("offense", "action", "tuning", "hunt", "actor", "isolate", "contain", "block"):
@@ -111,23 +102,3 @@ async def test_every_read_endpoint_answers_from_the_platform_tables(api: Harness
     ):
         response = await api.get(path)
         assert response.status_code == 200, path
-
-
-def _authenticator() -> DevAuthenticator:
-    return DevAuthenticator(
-        [
-            DevUser(
-                token_sha256="0" * 64,
-                subject="s",
-                display_name="S",
-                roles=frozenset({Role.OPERATOR}),
-            )
-        ]
-    )
-
-
-class _NoTemporal:
-    """A trigger that always fails: building the app must not need a Temporal."""
-
-    async def trigger(self, schedule_id: str) -> None:
-        raise TemporalUnavailable("no Temporal here")

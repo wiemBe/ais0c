@@ -4,7 +4,7 @@ from collections.abc import Collection, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 
-from sqlalchemy import func, select, tuple_, update
+from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -208,9 +208,15 @@ async def list_offense_groups(
     if window_to is not None:
         statement = statement.where(OffenseGroupRow.window_start < window_to)
     if after is not None:
+        # `window_start` descending, then `group_id` ascending: see `list_cases`.
         statement = statement.where(
-            tuple_(OffenseGroupRow.window_start, OffenseGroupRow.group_id)
-            < tuple_(after.window_start, after.group_id)
+            or_(
+                OffenseGroupRow.window_start < after.window_start,
+                and_(
+                    OffenseGroupRow.window_start == after.window_start,
+                    OffenseGroupRow.group_id > after.group_id,
+                ),
+            )
         )
     statement = statement.order_by(OffenseGroupRow.window_start.desc(), OffenseGroupRow.group_id)
     return await fetch_all(session, statement.limit(limit))

@@ -3,9 +3,10 @@
     GET /cases?cursor=<opaque>&limit=50
     -> { "items": [...], "next_cursor": "<opaque>" | null }
 
-`limit` is 1 to 200, 50 by default. A cursor is this module's business: it is base64url of the
-last row's sort key plus a version tag, so a cursor the API did not write (or one from another
-version) does not parse and the request is a 400 instead of silently listing the wrong page.
+`limit` is 1 to 200, 50 by default (`LimitParam`). A cursor is this module's business: it is
+base64url of the last row's sort key plus a version tag, so a cursor the API did not write (or one
+from another version) does not parse and the request is a 400 instead of silently listing the
+wrong page.
 """
 
 import base64
@@ -13,10 +14,12 @@ import binascii
 import json
 from collections.abc import Callable, Sequence
 from datetime import datetime
-from typing import Final
+from typing import Annotated, Final
 from uuid import UUID
 
-from ais0c_api.problems import Problem, invalid_cursor
+from fastapi import Query
+
+from ais0c_api.problems import invalid_cursor
 
 DEFAULT_LIMIT: Final = 50
 MAX_LIMIT: Final = 200
@@ -25,17 +28,11 @@ MIN_LIMIT: Final = 1
 _CURSOR_VERSION: Final = 1
 
 
-def check_limit(limit: int | None) -> int:
-    """`limit` as the page size, or `DEFAULT_LIMIT`; outside 1..200 is a 400."""
-    if limit is None:
-        return DEFAULT_LIMIT
-    if not MIN_LIMIT <= limit <= MAX_LIMIT:
-        raise Problem(
-            400,
-            "pagination.invalid_limit",
-            detail=f"limit must be between {MIN_LIMIT} and {MAX_LIMIT}",
-        )
-    return limit
+# `?limit=`: the page size. Outside 1..200 is a 422 like every other query value that does not
+# validate, and the bounds are in the OpenAPI schema the UI's types come from.
+LimitParam = Annotated[int, Query(ge=MIN_LIMIT, le=MAX_LIMIT)]
+# `?cursor=`: the `next_cursor` of the previous page, as it was given.
+CursorParam = Annotated[str | None, Query()]
 
 
 def encode_cursor(key: Sequence[str]) -> str:
@@ -140,7 +137,8 @@ __all__ = [
     "DEFAULT_LIMIT",
     "MAX_LIMIT",
     "MIN_LIMIT",
-    "check_limit",
+    "CursorParam",
+    "LimitParam",
     "decode_cursor",
     "encode_cursor",
     "paginate",

@@ -5,27 +5,41 @@
 - without `AIS0C_API_AUTH`, or with a value this build does not know, the process exits with
   status 2 without binding a port;
 - errors are RFC 9457 problems whose `title` is a machine-readable code;
-- lists are cursor-paged: two pages, `next_cursor` null on the last one, a bad cursor a 400;
-- times are ISO 8601 and UTC.
+- lists are cursor-paged: two pages, `next_cursor` null on the last one, a bad cursor a 400, a
+  `limit` outside 1..200 a 422;
+- times are ISO 8601 and UTC;
+- a change is committed before its answer is sent, and every route checks the role before it
+  opens a database session.
 """
 
 import logging
 from datetime import timedelta
 from pathlib import Path
+from typing import get_args
 
 import pytest
 from api_support import (
+    ADMIN_SUBJECT,
     CASE_ID,
     T0,
     T1,
     DevUsersFile,
     Harness,
+    add_catalog,
+    api_routes,
+    build_harness,
     decided_case,
     open_case,
 )
-from sqlalchemy import URL
+from sqlalchemy import URL, event
+from sqlalchemy import text as text_
+from sqlalchemy.exc import OperationalError
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.orm import Session as OrmSession
 
 from ais0c_api.__main__ import EXIT_CONFIG_ERROR, main
+from ais0c_api.dependencies import ADMIN, HUNTER, OPERATOR, ReadSession, WriteSession
+from ais0c_api.openapi import schema
 from ais0c_api.problems import PROBLEM_MEDIA_TYPE
 from ais0c_api.service import ServiceError, build_service
 from ais0c_api.settings import AuthMode, Settings, SettingsError
@@ -155,6 +169,28 @@ async def test_an_unknown_path_and_method_are_problems(api: Harness) -> None:
         assert response.headers["content-type"] == PROBLEM_MEDIA_TYPE
     assert missing.json()["title"] == "request.not_found"
     assert wrong_method.json()["title"] == "request.method_not_allowed"
+    # RFC 9110: a 405 says which methods the path takes.
+    assert wrong_method.headers["allow"] == "GET"
+
+
+async def test_the_running_service_does_not_serve_its_schema(api: Harness) -> None:
+    """The schema is the checked-in `openapi.json`; no unauthenticated route describes the API."""
+    for path in ("/openapi.json", "/docs", "/redoc", "/api/v1/openapi.json"):
+        assert (await api.raw("GET", path)).status_code == 404
+
+
+async def test_a_body_with_a_field_the_endpoint_does_not_know_is_a_422(api: Harness) -> None:
+    """A `PUT` replaces what it is given: a misspelt field must not be dropped and clear one."""
+    await add_catalog(api.sessions, rules=[(100201, "A")])
+
+    response = await api.put(
+        "/catalog/rules/100201",
+        {"mode": "analyze", "has_automated_action": False, "contex_note": "typo"},
+        as_role="admin",
+    )
+
+    assert response.status_code == 422
+    assert [error["field"] for error in response.json()["errors"]] == ["body.contex_note"]
 
 
 async def test_a_body_that_is_not_the_contract_is_a_422_with_field_errors(api: Harness) -> None:
@@ -217,11 +253,18 @@ async def test_the_default_page_size_is_fifty(api: Harness) -> None:
 
 
 @pytest.mark.parametrize("limit", ["0", "-1", "201", "abc"])
-async def test_a_limit_outside_its_range_is_a_400(api: Harness, limit: str) -> None:
+async def test_a_limit_outside_its_range_is_a_422(api: Harness, limit: str) -> None:
+    """Like every query value that does not validate; the bounds are in the schema too."""
     response = await api.get("/cases", limit=limit)
 
-    assert response.status_code in (400, 422)
-    assert response.json()["title"] in ("pagination.invalid_limit", "request.invalid")
+    assert response.status_code == 422
+    assert response.json()["title"] == "request.invalid"
+    assert [error["field"] for error in response.json()["errors"]] == ["query.limit"]
+
+
+@pytest.mark.parametrize("limit", ["1", "200"])
+async def test_the_limits_bounds_are_accepted(api: Harness, limit: str) -> None:
+    assert (await api.get("/cases", limit=limit)).status_code == 200
 
 
 async def test_a_cursor_the_api_did_not_write_is_a_400(api: Harness) -> None:
@@ -263,10 +306,10 @@ async def test_the_from_and_to_filters_bound_created_at(api: Harness) -> None:
     assert [item["case_id"] for item in after.json()["items"]] == ["case-2"]
 
 
-async def test_a_time_filter_without_a_zone_is_a_400(api: Harness) -> None:
+async def test_a_time_filter_without_a_zone_is_a_422(api: Harness) -> None:
     response = await api.get("/cases", **{"from": "2026-10-02T09:00:00"})
 
-    assert response.status_code == 400
+    assert response.status_code == 422
     assert response.json()["title"] == "request.invalid_time"
 
 
@@ -288,3 +331,97 @@ async def test_the_database_being_unreachable_is_a_503(tmp_path: Path) -> None:
     finally:
         await harness.client.aclose()
         await engine.dispose()
+
+
+async def test_a_refused_request_is_refused_while_the_database_is_down(tmp_path: Path) -> None:
+    """With the database down, a request without a valid token or role is still a 401 or 403,
+    not a 503."""
+    from sqlalchemy.ext.asyncio import create_async_engine
+
+    from ais0c_storage import create_session_factory
+
+    engine = create_async_engine("postgresql+psycopg://ais0c_app:x@127.0.0.1:1/nowhere")
+    harness = build_harness(create_session_factory(engine), DevUsersFile.write(tmp_path))
+    try:
+        assert (await harness.raw("GET", "/api/v1/cases")).status_code == 401
+        refused = await harness.client.put(
+            "/api/v1/admin/platform-flags/writes_enabled",
+            json={"enabled": False, "reason": "stop"},
+            headers=harness.headers("operator"),
+        )
+        assert refused.status_code == 403
+    finally:
+        await harness.client.aclose()
+        await engine.dispose()
+
+
+def test_every_route_names_its_role_before_its_session() -> None:
+    """FastAPI resolves dependencies in signature order; the role must come first everywhere."""
+    roles = {dependency_of(OPERATOR), dependency_of(HUNTER), dependency_of(ADMIN)}
+    sessions = {dependency_of(ReadSession), dependency_of(WriteSession)}
+    checked = 0
+    for path, route in api_routes():
+        calls = [dependency.call for dependency in route.dependant.dependencies]
+        session_at = [index for index, call in enumerate(calls) if call in sessions]
+        if not session_at:
+            continue
+        role_at = [index for index, call in enumerate(calls) if call in roles]
+        name = f"{sorted(route.methods or ())} {path}"
+        assert role_at, f"{name} reads the database without a role"
+        assert role_at[0] < session_at[0], f"{name} opens a session before it checks the role"
+        checked += 1
+    # Every endpoint but /health and /me reads the database.
+    assert checked == len(api_routes()) - 2
+
+
+def test_the_route_list_holds_every_operation_of_the_schema() -> None:
+    """`api_routes` reads the routers, not the app; it must not miss one."""
+    operations = {
+        (method.upper(), path) for path, item in schema()["paths"].items() for method in item
+    }
+    listed = {(method, path) for path, route in api_routes() for method in route.methods or ()}
+    assert listed == operations
+
+
+def dependency_of(annotated: object) -> object:
+    """The callable behind `Annotated[..., Depends(callable)]`."""
+    return get_args(annotated)[1].dependency
+
+
+async def test_a_change_is_committed_before_its_answer_is_sent(
+    sessions: async_sessionmaker[AsyncSession], tmp_path: Path
+) -> None:
+    """A commit that fails is the client's error too: the transaction ends inside the route's
+    scope, before the response, so the client never gets a 2xx for a change that was lost."""
+    failing = async_sessionmaker(sessions.kw["bind"], sync_session_class=_FailingCommit)
+    harness = build_harness(failing, DevUsersFile.write(tmp_path))
+    try:
+        response = await harness.client.put(
+            "/api/v1/admin/platform-flags/writes_enabled",
+            json={"enabled": True, "reason": "canary"},
+            headers=harness.headers("admin"),
+        )
+        assert response.status_code == 503
+        assert response.json()["title"] == "storage.unavailable"
+    finally:
+        await harness.client.aclose()
+    async with sessions() as session:
+        rows = (
+            await session.execute(
+                text_("SELECT count(*) FROM audit_log WHERE actor_id = :actor"),
+                {"actor": ADMIN_SUBJECT},
+            )
+        ).scalar_one()
+    assert rows == 0
+
+
+class _FailingCommit(OrmSession):
+    """A session whose every commit fails the way a dropped connection does."""
+
+    def __init__(self, *args: object, **kwargs: object) -> None:
+        super().__init__(*args, **kwargs)  # type: ignore[arg-type]
+        event.listen(self, "before_commit", _refuse)
+
+
+def _refuse(_session: OrmSession) -> None:
+    raise OperationalError("COMMIT", {}, Exception("connection lost"))

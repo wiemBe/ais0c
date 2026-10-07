@@ -8,7 +8,7 @@ from collections.abc import Collection
 from dataclasses import dataclass
 from datetime import datetime
 
-from sqlalchemy import func, select, tuple_, update
+from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ais0c_contracts import CaseReport, CaseSource, CaseVerdict, Confidence, Level
@@ -188,20 +188,38 @@ async def list_cases(
     if created_to is not None:
         statement = statement.where(CaseRow.created_at < created_to)
     if after is not None:
+        # The order is `created_at` descending, then `case_id` ascending, so a row-value
+        # comparison would not follow it: a row after the cursor is older, or as old with a
+        # larger ID.
         statement = statement.where(
-            tuple_(CaseRow.created_at, CaseRow.case_id) < tuple_(after.created_at, after.case_id)
+            or_(
+                CaseRow.created_at < after.created_at,
+                and_(CaseRow.created_at == after.created_at, CaseRow.case_id > after.case_id),
+            )
         )
     statement = statement.order_by(CaseRow.created_at.desc(), CaseRow.case_id).limit(limit)
     return await fetch_all(session, statement)
+
+
+async def list_cases_by_ids(session: AsyncSession, case_ids: Collection[str]) -> dict[str, CaseRow]:
+    """The cases among `case_ids`, by case ID; unknown IDs are left out.
+
+    One query for a page of rows that point at cases (the analyst API's QA queue, T-028).
+    """
+    wanted = set(case_ids)
+    if not wanted:
+        return {}
+    statement = select(CaseRow).where(CaseRow.case_id.in_(list(wanted)))
+    return {row.case_id: row for row in await fetch_all(session, statement)}
 
 
 @dataclass(frozen=True)
 class SlaBucket:
     """The SLA outcome of one `floor_level` over a set of cases.
 
-    `floor_level` is None for the cases whose floor is empty. The five numbers are the cases
-    with that floor: how many there are, and how their decision came out. They add up to
-    `total`.
+    `floor_level` is None for the cases whose floor is empty. The numbers are the cases with that
+    floor: how many there are, and how their current evaluation came out. `on_time + late +
+    undecided + running + closed == total`.
     """
 
     floor_level: Level | None
@@ -210,6 +228,7 @@ class SlaBucket:
     late: int
     undecided: int
     running: int
+    closed: int
 
 
 async def sla_metrics(
@@ -217,14 +236,27 @@ async def sla_metrics(
 ) -> list[SlaBucket]:
     """How the cases whose SLA deadline is in `[sla_due_from, sla_due_to)` met it, per floor.
 
-    Only the case's own latest evaluation counts: `decided_at` is where the current decision was
-    recorded, and a case that is still `running` has none yet. `on_time` decided at or before
-    its deadline, `late` after it, `undecided` reached `no_ai_decision` (D-30) and `running` is
-    still going. Ordered by severity, the floor-less bucket last.
+    Only the case's latest evaluation counts (T-63 (4)), and the status says where it stands: a
+    re-evaluation keeps the previous decision's `decided_at` until it records its own
+    (`begin_case_reevaluation`), so `decided_at` alone would count a running re-evaluation as
+    decided.
+
+    - `on_time` / `late`: decided (`decided`, or `closed` after a decision) at or before / after
+      the deadline;
+    - `undecided`: `no_ai_decision` (D-30);
+    - `running`: the evaluation is still going;
+    - `closed`: the offense was closed in QRadar before the AI decided.
+
+    A re-evaluation that the offense's closing abandoned still holds the previous decision's
+    `decided_at` and is counted by it: the table keeps no evaluation start to tell them apart.
+    Ordered by severity, the floor-less bucket last.
     """
-    decided = CaseRow.decided_at.is_not(None)
+    decided = CaseRow.status.in_(
+        [CaseStatus.DECIDED, CaseStatus.CLOSED]
+    ) & CaseRow.decided_at.is_not(None)
     on_time = decided & (CaseRow.decided_at <= CaseRow.sla_due_at)
     late = decided & (CaseRow.decided_at > CaseRow.sla_due_at)
+    closed = (CaseRow.status == CaseStatus.CLOSED) & CaseRow.decided_at.is_(None)
     # `count(*) FILTER (WHERE ...)` rather than `sum(boolean)`: PostgreSQL has no sum of boolean.
     statement = (
         select(
@@ -234,6 +266,7 @@ async def sla_metrics(
             func.count().filter(late),
             func.count().filter(CaseRow.status == CaseStatus.NO_AI_DECISION),
             func.count().filter(CaseRow.status == CaseStatus.RUNNING),
+            func.count().filter(closed),
         )
         .where(CaseRow.sla_due_at >= sla_due_from, CaseRow.sla_due_at < sla_due_to)
         .group_by(CaseRow.floor_level)
@@ -243,12 +276,21 @@ async def sla_metrics(
         SlaBucket(
             floor_level=floor_level,
             total=total,
-            on_time=int(on_time or 0),
-            late=int(late or 0),
-            undecided=int(undecided or 0),
-            running=int(running or 0),
+            on_time=on_time_count,
+            late=late_count,
+            undecided=undecided_count,
+            running=running_count,
+            closed=closed_count,
         )
-        for floor_level, total, on_time, late, undecided, running in rows
+        for (
+            floor_level,
+            total,
+            on_time_count,
+            late_count,
+            undecided_count,
+            running_count,
+            closed_count,
+        ) in rows
     ]
     return sorted(buckets, key=_floor_order)
 

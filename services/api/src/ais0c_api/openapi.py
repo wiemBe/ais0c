@@ -7,6 +7,11 @@
 The command takes no database and no settings: the schema is built from the routes alone. A test
 in `tests/api/` regenerates it and compares, so the file cannot drift from the code, and T-029
 derives the UI's TypeScript types from it with `openapi-typescript`.
+
+FastAPI describes every 422 as its own `HTTPValidationError`; this API answers every error with an
+RFC 9457 problem instead (`ais0c_api.problems`). The schema says so: each operation's `default`
+response is a `Problem` in `application/problem+json`, and FastAPI's 422 entries are dropped, so
+the UI's error type is the one the API sends.
 """
 
 import json
@@ -18,6 +23,8 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from ais0c_api.app import build_app
 from ais0c_api.auth import DevAuthenticator, DevUser, Role
+from ais0c_api.models import Problem
+from ais0c_api.problems import PROBLEM_MEDIA_TYPE
 
 # The checked-in schema, next to this package's parent (services/api).
 SCHEMA_PATH: Final = Path(__file__).resolve().parents[2] / "openapi.json"
@@ -44,6 +51,34 @@ def schema() -> dict[str, Any]:
         schedule_trigger=_NoSchedule(),
     )
     document: dict[str, Any] = app.openapi()
+    return with_problems(document)
+
+
+# FastAPI's own 422 body, which this API never sends.
+_FASTAPI_ERRORS: Final = ("HTTPValidationError", "ValidationError")
+
+_PROBLEM_RESPONSE: Final = {
+    "description": (
+        "An RFC 9457 problem. `title` is a machine-readable code (`catalog.rule_not_found`); the "
+        "UI builds the message from it."
+    ),
+    "content": {PROBLEM_MEDIA_TYPE: {"schema": {"$ref": "#/components/schemas/Problem"}}},
+}
+
+
+def with_problems(document: dict[str, Any]) -> dict[str, Any]:
+    """`document` with every error answer described as the `Problem` the API sends."""
+    schemas: dict[str, Any] = document.setdefault("components", {}).setdefault("schemas", {})
+    problem = Problem.model_json_schema(ref_template="#/components/schemas/{model}")
+    schemas.update(problem.pop("$defs", {}))
+    schemas["Problem"] = problem
+    for name in _FASTAPI_ERRORS:
+        schemas.pop(name, None)
+    for operations in document.get("paths", {}).values():
+        for operation in operations.values():
+            responses: dict[str, Any] = operation.setdefault("responses", {})
+            responses.pop("422", None)
+            responses["default"] = _PROBLEM_RESPONSE
     return document
 
 

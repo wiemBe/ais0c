@@ -110,3 +110,34 @@ def test_no_schema_description_holds_turkish_user_facing_text() -> None:
                     assert text.replace("§", "").isascii(), (
                         f"{method.upper()} {path} {field} is not ASCII"
                     )
+
+
+def test_every_error_is_described_as_the_problem_the_api_sends() -> None:
+    """The UI's error type comes from here: an RFC 9457 problem, not FastAPI's 422 body."""
+    document = schema()
+    schemas = document["components"]["schemas"]
+
+    assert "HTTPValidationError" not in schemas
+    assert {"title", "status"} <= set(schemas["Problem"]["required"])
+    for path, operations in document["paths"].items():
+        for method, operation in operations.items():
+            responses = operation["responses"]
+            assert "422" not in responses, f"{method} {path}"
+            assert responses["default"]["content"] == {
+                "application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}
+            }, f"{method} {path}"
+
+
+def test_the_page_size_bounds_are_in_the_schema() -> None:
+    parameters = schema()["paths"]["/api/v1/cases"]["get"]["parameters"]
+    (limit,) = [parameter for parameter in parameters if parameter["name"] == "limit"]
+
+    assert (limit["schema"]["minimum"], limit["schema"]["maximum"]) == (1, 200)
+    assert limit["schema"]["default"] == 50
+
+
+def test_the_sla_range_is_named_from_on_the_wire() -> None:
+    metrics = schema()["components"]["schemas"]["SLAMetrics"]
+
+    assert "from" in metrics["properties"]
+    assert "from_" not in metrics["properties"]

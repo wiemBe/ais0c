@@ -10,11 +10,18 @@ written by `set_platform_flag`, in one transaction, so this module writes no sec
 """
 
 from datetime import UTC, datetime, timedelta
-from typing import Annotated
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter
 
-from ais0c_api.dependencies import ADMIN, OPERATOR, ReadSession, WriteSession, aware
+from ais0c_api.dependencies import (
+    ADMIN,
+    OPERATOR,
+    FromParam,
+    ReadSession,
+    ToParam,
+    WriteSession,
+    aware,
+)
 from ais0c_api.models import (
     Health,
     Me,
@@ -34,9 +41,6 @@ router = APIRouter(tags=["monitoring"])
 # Without a range, the metric covers the last day.
 DEFAULT_SLA_WINDOW = timedelta(days=1)
 
-FromParam = Annotated[datetime | None, Query(alias="from")]
-ToParam = Annotated[datetime | None, Query()]
-
 
 @router.get("/health", response_model=Health)
 async def health() -> Health:
@@ -47,13 +51,13 @@ async def health() -> Health:
 @router.get("/me", response_model=Me)
 async def me(user: OPERATOR) -> Me:
     """The session's subject, display name and roles, most privileged first."""
-    return Me(subject=user.subject, display_name=user.display_name, roles=user.role_names)
+    return Me(subject=user.subject, display_name=user.display_name, roles=user.ranked_roles)
 
 
 @router.get("/metrics/sla", response_model=SLAMetrics)
 async def get_sla(
-    session: ReadSession,
     _user: OPERATOR,
+    session: ReadSession,
     from_: FromParam = None,
     to: ToParam = None,
 ) -> SLAMetrics:
@@ -61,13 +65,15 @@ async def get_sla(
 
     `from` is inclusive and `to` exclusive; both are ISO 8601 with a time zone. Without a range the
     last day is used. The cases with no floor are the `none` bucket, and only a case's latest
-    evaluation counts (T-63 (4)): there is no evaluation history yet.
+    evaluation counts (T-63 (4)): there is no evaluation history yet. Each bucket's numbers add up
+    to its total: on time, late, undecided (`no_ai_decision`), running, and closed in QRadar
+    before the AI decided.
     """
     # `aware` returns a UTC datetime or raises, so neither of these can be None here.
     end = aware(to, "to") or datetime.now(UTC)
     start = aware(from_, "from") or end - DEFAULT_SLA_WINDOW
     if start >= end:
-        raise Problem(400, "request.invalid_range", detail="from must be before to")
+        raise Problem(422, "request.invalid_range", detail="from must be before to")
     buckets = await sla_metrics(session, sla_due_from=start, sla_due_to=end)
     return SLAMetrics(
         from_=start,
@@ -80,6 +86,7 @@ async def get_sla(
                 late=bucket.late,
                 undecided=bucket.undecided,
                 running=bucket.running,
+                closed=bucket.closed,
             )
             for bucket in buckets
         ],
@@ -100,7 +107,7 @@ def flag_state(name: PlatformFlag, row: PlatformFlagRow | None) -> PlatformFlagS
 
 
 @router.get("/admin/platform-flags", response_model=list[PlatformFlagState])
-async def get_flags(session: ReadSession, _user: OPERATOR) -> list[PlatformFlagState]:
+async def get_flags(_user: OPERATOR, session: ReadSession) -> list[PlatformFlagState]:
     """Every flag the platform knows, on or off. A flag with no row is off and `changed_by` empty.
 
     Today the only flag is the kill switch `writes_enabled` (T-23).
@@ -111,7 +118,7 @@ async def get_flags(session: ReadSession, _user: OPERATOR) -> list[PlatformFlagS
 
 @router.put("/admin/platform-flags/{name}", response_model=PlatformFlagState)
 async def put_flag(
-    name: str, body: PlatformFlagUpdate, session: WriteSession, user: ADMIN
+    name: str, body: PlatformFlagUpdate, user: ADMIN, session: WriteSession
 ) -> PlatformFlagState:
     """Switch a platform flag (admin). `reason` is required and may not be blank. An unknown flag
     name is a 404 and nothing is written."""

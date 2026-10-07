@@ -60,6 +60,17 @@
             ],
             "title": "Error"
           },
+          "evaluation_no": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Evaluation No"
+          },
           "model_alias": {
             "title": "Model Alias",
             "type": "string"
@@ -125,6 +136,10 @@
             "title": "Data Gaps",
             "type": "array"
           },
+          "evaluation_no": {
+            "title": "Evaluation No",
+            "type": "integer"
+          },
           "evidence": {
             "items": {
               "$ref": "#/components/schemas/EvidenceItem"
@@ -182,7 +197,8 @@
           }
         },
         "required": [
-          "case"
+          "case",
+          "evaluation_no"
         ],
         "title": "CaseDetail",
         "type": "object"
@@ -400,6 +416,17 @@
               }
             ]
           },
+          "offense_description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Offense Description"
+          },
           "offense_id": {
             "anyOf": [
               {
@@ -577,6 +604,7 @@
         "type": "object"
       },
       "CatalogLogSourceUpdate": {
+        "additionalProperties": false,
         "description": "`PUT /catalog/log-sources/{log_source_id}` (admin). The log source becomes defined.",
         "properties": {
           "context_note": {
@@ -748,10 +776,12 @@
         "type": "object"
       },
       "CatalogRuleUpdate": {
+        "additionalProperties": false,
         "description": "`PUT /catalog/rules/{rule_id}` (admin). The rule becomes defined.",
         "properties": {
           "attack_techniques": {
             "items": {
+              "pattern": "^T[0-9]{4}(\\.[0-9]{3})?$",
               "type": "string"
             },
             "maxItems": 32,
@@ -864,6 +894,7 @@
         "type": "object"
       },
       "CriticalAssetAdd": {
+        "additionalProperties": false,
         "description": "`POST /critical-assets` (admin). Storage normalizes and validates the value.",
         "properties": {
           "kind": {
@@ -978,6 +1009,10 @@
         "additionalProperties": false,
         "description": "One evidence row of the case detail: where to find the event at the source.",
         "properties": {
+          "cited": {
+            "title": "Cited",
+            "type": "boolean"
+          },
           "evidence_id": {
             "title": "Evidence Id",
             "type": "string"
@@ -1024,6 +1059,7 @@
         "required": [
           "evidence_id",
           "source",
+          "cited",
           "query_hash",
           "query_text",
           "identifiers",
@@ -1098,6 +1134,25 @@
         ],
         "title": "FeedbackReason",
         "type": "string"
+      },
+      "FieldError": {
+        "additionalProperties": false,
+        "properties": {
+          "field": {
+            "title": "Field",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "field",
+          "message"
+        ],
+        "title": "FieldError",
+        "type": "object"
       },
       "GroupDetail": {
         "additionalProperties": false,
@@ -1274,19 +1329,6 @@
         "title": "GroupSummary",
         "type": "object"
       },
-      "HTTPValidationError": {
-        "properties": {
-          "detail": {
-            "items": {
-              "$ref": "#/components/schemas/ValidationError"
-            },
-            "title": "Detail",
-            "type": "array"
-          }
-        },
-        "title": "HTTPValidationError",
-        "type": "object"
-      },
       "Health": {
         "additionalProperties": false,
         "description": "`GET /health`: liveness only. No version, no database detail, no settings.",
@@ -1322,7 +1364,7 @@
           },
           "roles": {
             "items": {
-              "type": "string"
+              "$ref": "#/components/schemas/Role"
             },
             "title": "Roles",
             "type": "array"
@@ -1466,6 +1508,7 @@
         "type": "object"
       },
       "NotificationRoute": {
+        "additionalProperties": false,
         "description": "One `notification_routes` row: an alert kind and level go to these groups.",
         "properties": {
           "kind": {
@@ -1493,13 +1536,44 @@
         "title": "NotificationRoute",
         "type": "object"
       },
+      "NotificationRouteEntry": {
+        "additionalProperties": false,
+        "description": "One route of `PUT /notification-routes`.\n\nA case or group alert is routed by its level, a hunt report without one. A route that breaks\nthis would never match an e-mail the executor sends, so it is a 422 rather than a dead row.\nThe check is on the request only: a row already stored is shown as it is, so an admin can\nsee and replace it.",
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/EmailKind"
+          },
+          "level": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Level"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "list_name": {
+            "title": "List Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "list_name"
+        ],
+        "title": "NotificationRouteEntry",
+        "type": "object"
+      },
       "NotificationRoutesUpdate": {
+        "additionalProperties": false,
         "description": "`PUT /notification-routes` (admin): the whole table, every kind and level included.",
         "properties": {
           "routes": {
             "items": {
-              "$ref": "#/components/schemas/NotificationRoute"
+              "$ref": "#/components/schemas/NotificationRouteEntry"
             },
+            "maxItems": 200,
             "title": "Routes",
             "type": "array"
           }
@@ -1769,6 +1843,7 @@
         "type": "object"
       },
       "PlatformFlagUpdate": {
+        "additionalProperties": false,
         "description": "`PUT /admin/platform-flags/{name}` (admin). `reason` is required and may not be blank.",
         "properties": {
           "enabled": {
@@ -1796,6 +1871,87 @@
         ],
         "title": "PolicyDecision",
         "type": "string"
+      },
+      "Problem": {
+        "description": "The shape of an RFC 9457 answer, for the UI's own error handling.\n\nNot a response model of any route: `ais0c_api.openapi` makes it every operation's `default`\nresponse in the schema. `errors`, `domains` and `list_names` appear only on the problems that\ncarry them.",
+        "properties": {
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Detail"
+          },
+          "domains": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Domains"
+          },
+          "errors": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/FieldError"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Errors"
+          },
+          "list_names": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "List Names"
+          },
+          "status": {
+            "title": "Status",
+            "type": "integer"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "type": {
+            "default": "about:blank",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "status"
+        ],
+        "title": "Problem",
+        "type": "object"
       },
       "QAItemSummary": {
         "additionalProperties": false,
@@ -1989,12 +2145,15 @@
         "type": "object"
       },
       "RecipientGroupUpdate": {
+        "additionalProperties": false,
         "description": "`PUT /notification-recipients/{list_name}` (admin): the group's whole membership.",
         "properties": {
           "emails": {
             "items": {
+              "maxLength": 254,
               "type": "string"
             },
+            "maxItems": 200,
             "title": "Emails",
             "type": "array"
           }
@@ -2065,6 +2224,16 @@
         "title": "Recommendation",
         "type": "object"
       },
+      "Role": {
+        "description": "`api.md`'s three roles, least to most.",
+        "enum": [
+          "operator",
+          "hunter",
+          "admin"
+        ],
+        "title": "Role",
+        "type": "string"
+      },
       "RunStatus": {
         "enum": [
           "completed",
@@ -2085,7 +2254,7 @@
             "title": "Buckets",
             "type": "array"
           },
-          "from_": {
+          "from": {
             "format": "date-time",
             "title": "From",
             "type": "string"
@@ -2097,7 +2266,7 @@
           }
         },
         "required": [
-          "from_",
+          "from",
           "to",
           "buckets"
         ],
@@ -2108,6 +2277,10 @@
         "additionalProperties": false,
         "description": "One `floor_level` bucket of `GET /metrics/sla`; the numbers add up to `total`.",
         "properties": {
+          "closed": {
+            "title": "Closed",
+            "type": "integer"
+          },
           "floor_level": {
             "anyOf": [
               {
@@ -2147,7 +2320,8 @@
           "on_time",
           "late",
           "undecided",
-          "running"
+          "running",
+          "closed"
         ],
         "title": "SlaRow",
         "type": "object"
@@ -2373,46 +2547,6 @@
         "title": "Usage",
         "type": "object"
       },
-      "ValidationError": {
-        "properties": {
-          "ctx": {
-            "title": "Context",
-            "type": "object"
-          },
-          "input": {
-            "title": "Input"
-          },
-          "loc": {
-            "items": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "integer"
-                }
-              ]
-            },
-            "title": "Location",
-            "type": "array"
-          },
-          "msg": {
-            "title": "Message",
-            "type": "string"
-          },
-          "type": {
-            "title": "Error Type",
-            "type": "string"
-          }
-        },
-        "required": [
-          "loc",
-          "msg",
-          "type"
-        ],
-        "title": "ValidationError",
-        "type": "object"
-      },
       "VerificationResult": {
         "additionalProperties": false,
         "properties": {
@@ -2513,6 +2647,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "An RFC 9457 problem. `title` is a machine-readable code (`catalog.rule_not_found`); the UI builds the message from it."
           }
         },
         "summary": "Get Flags",
@@ -2557,15 +2701,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "default": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "An RFC 9457 problem. `title` is a machine-readable code (`catalog.rule_not_found`); the UI builds the message from it."
           }
         },
         "summary": "Put Flag",
@@ -2729,15 +2873,11 @@
             "name": "limit",
             "required": false,
             "schema": {
-              "anyOf": [
-                {
-                  "type": "integer"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Limit"
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
             }
           }
         ],
@@ -2752,15 +2892,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "default": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "An RFC 9457 problem. `title` is a machine-readable code (`catalog.rule_not_found`); the UI builds the message from it."
           }
         },
         "summary": "Get Cases",
@@ -2771,7 +2911,7 @@
     },
     "/api/v1/cases/{case_id}": {
       "get": {
-        "description": "The whole case: the report, the urgent events by rank, the recommendations, the last\nVerification, the data gaps, the evidence, the notes written and the e-mails sent.\n\nA case with no report answers with what it has; an unknown `case_id` is a 404.",
+        "description": "The whole case: the report, the urgent events by rank, the recommendations, the\nVerification, the data gaps, the evidence, the notes written and the e-mails sent.\n\nThe report, the Verification and the evidence are those of the evaluation whose decision the\ncase holds (`evaluation_no` of the answer). It is the case's own number unless a\nre-evaluation is running or ended without a decision. A case with no report answers with\nwhat it has; an unknown `case_id` is a 404.",
         "operationId": "get_case_detail_api_v1_cases__case_id__get",
         "parameters": [
           {
@@ -2795,15 +2935,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "default": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "An RFC 9457 problem. `title` is a machine-readable code (`catalog.rule_not_found`); the UI builds the message from it."
           }
         },
         "summary": "Get Case Detail",
@@ -2842,15 +2982,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "default": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "An RFC 9457 problem. `title` is a machine-readable code (`catalog.rule_not_found`); the UI builds the message from it."
           }
         },
         "summary": "Get Feedback",
@@ -2893,15 +3033,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "default": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "An RFC 9457 problem. `title` is a machine-readable code (`catalog.rule_not_found`); the UI builds the message from it."
           }
         },
         "summary": "Post Feedback",
@@ -2912,7 +3052,7 @@
     },
     "/api/v1/cases/{case_id}/steps": {
       "get": {
-        "description": "The case's agent runs, evaluation by evaluation and in start order, with their tool calls.\n\nAn unknown `case_id` is a 404.",
+        "description": "The case's agent runs in start order (so evaluation by evaluation), each with its\nevaluation number and its tool calls.\n\nAn unknown `case_id` is a 404.",
         "operationId": "get_case_steps_api_v1_cases__case_id__steps_get",
         "parameters": [
           {
@@ -2940,15 +3080,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "default": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "An RFC 9457 problem. `title` is a machine-readable code (`catalog.rule_not_found`); the UI builds the message from it."
           }
         },
         "summary": "Get Case Steps",
@@ -3017,6 +3157,7 @@
             "schema": {
               "anyOf": [
                 {
+                  "maxLength": 200,
                   "type": "string"
                 },
                 {
@@ -3047,15 +3188,11 @@
             "name": "limit",
             "required": false,
             "schema": {
-              "anyOf": [
-                {
-                  "type": "integer"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Limit"
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
             }
           }
         ],
@@ -3070,15 +3207,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "default": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "An RFC 9457 problem. `title` is a machine-readable code (`catalog.rule_not_found`); the UI builds the message from it."
           }
         },
         "summary": "Get Log Sources",
@@ -3113,15 +3250,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "default": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "An RFC 9457 problem. `title` is a machine-readable code (`catalog.rule_not_found`); the UI builds the message from it."
           }
         },
         "summary": "Get Log Source",
@@ -3164,15 +3301,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "default": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "An RFC 9457 problem. `title` is a machine-readable code (`catalog.rule_not_found`); the UI builds the message from it."
           }
         },
         "summary": "Put Log Source",
@@ -3257,6 +3394,7 @@
             "schema": {
               "anyOf": [
                 {
+                  "maxLength": 200,
                   "type": "string"
                 },
                 {
@@ -3287,15 +3425,11 @@
             "name": "limit",
             "required": false,
             "schema": {
-              "anyOf": [
-                {
-                  "type": "integer"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Limit"
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
             }
           }
         ],
@@ -3310,15 +3444,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "default": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "An RFC 9457 problem. `title` is a machine-readable code (`catalog.rule_not_found`); the UI builds the message from it."
           }
         },
         "summary": "Get Rules",
@@ -3353,15 +3487,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "default": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "An RFC 9457 problem. `title` is a machine-readable code (`catalog.rule_not_found`); the UI builds the message from it."
           }
         },
         "summary": "Get Rule",
@@ -3404,15 +3538,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "default": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "An RFC 9457 problem. `title` is a machine-readable code (`catalog.rule_not_found`); the UI builds the message from it."
           }
         },
         "summary": "Put Rule",
@@ -3447,15 +3581,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "default": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "An RFC 9457 problem. `title` is a machine-readable code (`catalog.rule_not_found`); the UI builds the message from it."
           }
         },
         "summary": "Post Accept Draft",
@@ -3466,7 +3600,7 @@
     },
     "/api/v1/catalog/sync": {
       "post": {
-        "description": "Start the KnowledgeSync Schedule now; Temporal runs it, and 202 says it was accepted.\n\nThe API itself reads nothing from QRadar. Temporal being unreachable is a 503\n(`temporal.unavailable`), and the audit row is not written because the sync was not started.",
+        "description": "Start the KnowledgeSync Schedule now; Temporal runs it, and 202 says it was accepted.\n\nThe API itself reads nothing from QRadar. The audit row is written first and committed only\nwhen Temporal took the trigger, so a sync never starts without one. Temporal being\nunreachable is a 503 (`temporal.unavailable`); a Schedule the batch worker has not created\nyet is a 409 (`catalog.sync_not_scheduled`). Neither leaves an audit row.",
         "operationId": "post_sync_api_v1_catalog_sync_post",
         "responses": {
           "202": {
@@ -3478,6 +3612,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "An RFC 9457 problem. `title` is a machine-readable code (`catalog.rule_not_found`); the UI builds the message from it."
           }
         },
         "summary": "Post Sync",
@@ -3504,6 +3648,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "An RFC 9457 problem. `title` is a machine-readable code (`catalog.rule_not_found`); the UI builds the message from it."
           }
         },
         "summary": "Get Critical Assets",
@@ -3535,15 +3689,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "default": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "An RFC 9457 problem. `title` is a machine-readable code (`catalog.rule_not_found`); the UI builds the message from it."
           }
         },
         "summary": "Post Critical Asset",
@@ -3572,15 +3726,15 @@
           "204": {
             "description": "Successful Response"
           },
-          "422": {
+          "default": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "An RFC 9457 problem. `title` is a machine-readable code (`catalog.rule_not_found`); the UI builds the message from it."
           }
         },
         "summary": "Delete Asset",
@@ -3668,15 +3822,11 @@
             "name": "limit",
             "required": false,
             "schema": {
-              "anyOf": [
-                {
-                  "type": "integer"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Limit"
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
             }
           }
         ],
@@ -3691,15 +3841,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "default": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "An RFC 9457 problem. `title` is a machine-readable code (`catalog.rule_not_found`); the UI builds the message from it."
           }
         },
         "summary": "Get Groups",
@@ -3734,15 +3884,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "default": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "An RFC 9457 problem. `title` is a machine-readable code (`catalog.rule_not_found`); the UI builds the message from it."
           }
         },
         "summary": "Get Group",
@@ -3765,6 +3915,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "An RFC 9457 problem. `title` is a machine-readable code (`catalog.rule_not_found`); the UI builds the message from it."
           }
         },
         "summary": "Health",
@@ -3787,6 +3947,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "An RFC 9457 problem. `title` is a machine-readable code (`catalog.rule_not_found`); the UI builds the message from it."
           }
         },
         "summary": "Me",
@@ -3797,7 +3967,7 @@
     },
     "/api/v1/metrics/sla": {
       "get": {
-        "description": "How the cases whose SLA deadline falls in the range met it, per `floor_level`.\n\n`from` is inclusive and `to` exclusive; both are ISO 8601 with a time zone. Without a range the\nlast day is used. The cases with no floor are the `none` bucket, and only a case's latest\nevaluation counts (T-63 (4)): there is no evaluation history yet.",
+        "description": "How the cases whose SLA deadline falls in the range met it, per `floor_level`.\n\n`from` is inclusive and `to` exclusive; both are ISO 8601 with a time zone. Without a range the\nlast day is used. The cases with no floor are the `none` bucket, and only a case's latest\nevaluation counts (T-63 (4)): there is no evaluation history yet. Each bucket's numbers add up\nto its total: on time, late, undecided (`no_ai_decision`), running, and closed in QRadar\nbefore the AI decided.",
         "operationId": "get_sla_api_v1_metrics_sla_get",
         "parameters": [
           {
@@ -3846,15 +4016,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "default": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "An RFC 9457 problem. `title` is a machine-readable code (`catalog.rule_not_found`); the UI builds the message from it."
           }
         },
         "summary": "Get Sla",
@@ -3877,6 +4047,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "An RFC 9457 problem. `title` is a machine-readable code (`catalog.rule_not_found`); the UI builds the message from it."
           }
         },
         "summary": "Get Recipients",
@@ -3887,7 +4067,7 @@
     },
     "/api/v1/notification-recipients/{list_name}": {
       "put": {
-        "description": "Replace a recipient group's whole membership (admin). A new group name creates the group.\n\nOne address whose domain is not on the allowlist refuses the whole request: nothing is\nwritten, and the group keeps the members it had. The address's local part is kept and its\ndomain is lowercased, so `Soc-1@EXAMPLE.COM` is stored as `Soc-1@example.com`.",
+        "description": "Replace a recipient group's whole membership (admin). A new group name creates the group.\n\nOne address whose domain is not on the allowlist refuses the whole request: nothing is\nwritten, and the group keeps the members it had. The address's local part is kept and its\ndomain is lowercased, so `Soc-1@EXAMPLE.COM` is stored as `Soc-1@example.com`. An empty list\nremoves the group, unless a route names it (409 `notification_recipients.group_in_use`).",
         "operationId": "put_recipients_api_v1_notification_recipients__list_name__put",
         "parameters": [
           {
@@ -3921,15 +4101,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "default": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "An RFC 9457 problem. `title` is a machine-readable code (`catalog.rule_not_found`); the UI builds the message from it."
           }
         },
         "summary": "Put Recipients",
@@ -3956,6 +4136,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "An RFC 9457 problem. `title` is a machine-readable code (`catalog.rule_not_found`); the UI builds the message from it."
           }
         },
         "summary": "Get Routes",
@@ -3964,7 +4154,7 @@
         ]
       },
       "put": {
-        "description": "Replace the whole routing table (admin).\n\nA route to a group that has no members is refused (422) and the table keeps what it had. The\nreplacement is one transaction, so the executor never reads a half-written table.",
+        "description": "Replace the whole routing table (admin).\n\nA route to a group that has no members is refused (422) and the table keeps what it had. A\ncase or group alert names a level and a hunt report none; another route would never match an\ne-mail and is a 422 as well. The replacement is one transaction, so the executor never reads a\nhalf-written table.",
         "operationId": "put_routes_api_v1_notification_routes_put",
         "requestBody": {
           "content": {
@@ -3991,15 +4181,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "default": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "An RFC 9457 problem. `title` is a machine-readable code (`catalog.rule_not_found`); the UI builds the message from it."
           }
         },
         "summary": "Put Routes",
@@ -4072,15 +4262,11 @@
             "name": "limit",
             "required": false,
             "schema": {
-              "anyOf": [
-                {
-                  "type": "integer"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Limit"
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
             }
           }
         ],
@@ -4095,15 +4281,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "default": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "An RFC 9457 problem. `title` is a machine-readable code (`catalog.rule_not_found`); the UI builds the message from it."
           }
         },
         "summary": "Get Qa Queue",
@@ -4149,15 +4335,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "default": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "An RFC 9457 problem. `title` is a machine-readable code (`catalog.rule_not_found`); the UI builds the message from it."
           }
         },
         "summary": "Resolve Qa Item Route",

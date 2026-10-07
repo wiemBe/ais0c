@@ -13,9 +13,11 @@ from datetime import datetime
 from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
+from ais0c_api.auth import Role
 from ais0c_contracts import (
+    AttackTechnique,
     CaseReport,
     CaseSource,
     CaseVerdict,
@@ -47,7 +49,12 @@ from ais0c_storage.enums import (
 
 
 class ApiModel(BaseModel):
-    """Base of every response model: unknown fields never come back."""
+    """Base of every model here: a response never carries a field the schema does not name, and
+    a request body with a field the endpoint does not know is a 422.
+
+    The second matters for the `PUT`s, which replace what they are given: a misspelt
+    `contex_note` must not be dropped silently and clear the note.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -65,13 +72,24 @@ class FieldError(ApiModel):
 
 
 class Problem(BaseModel):
-    """The shape of an RFC 9457 answer, for the UI's own error handling."""
+    """The shape of an RFC 9457 answer, for the UI's own error handling.
+
+    Not a response model of any route: `ais0c_api.openapi` makes it every operation's `default`
+    response in the schema. `errors`, `domains` and `list_names` appear only on the problems that
+    carry them.
+    """
 
     type: str = "about:blank"
+    # A machine-readable code, such as `qa.already_resolved`.
     title: str
     status: int
     detail: str | None = None
+    # A body or query that does not validate: the field paths, never the rejected values.
     errors: list[FieldError] | None = None
+    # `notification_recipients.domain_not_allowed`: the domains outside the allowlist.
+    domains: list[str] | None = None
+    # `notification_routes.unknown_group`: the groups that have no members.
+    list_names: list[str] | None = None
 
 
 # --- session and health -----------------------------------------------------------------------
@@ -82,7 +100,8 @@ class Me(ApiModel):
 
     subject: str
     display_name: str
-    roles: list[str]
+    # Most privileged first.
+    roles: list[Role]
 
 
 class Health(ApiModel):
@@ -110,11 +129,13 @@ class CaseSummary(ApiModel):
     decided_at: datetime | None
     created_at: datetime
     offense_id: int | None = None
+    # The offense's QRadar description, as the intake recorded it; None for a hunt or a group case.
+    offense_description: str | None = None
     hunt_id: str | None = None
     group_id: str | None = None
     # The offense's rule IDs; empty for a hunt or a group case.
     rule_ids: list[int] = Field(default_factory=list)
-    # True when the case is past its SLA deadline and has no decision yet.
+    # True when the current evaluation has no decision and its SLA deadline has passed.
     sla_overdue: bool = False
 
 
@@ -125,6 +146,9 @@ class EvidenceItem(ApiModel):
     source: EvidenceSource
     # The gateway tool that issued the query; empty when no call carries the ID.
     tool_id: str = ""
+    # True when the report, its urgent events and recommendations or Verification cite it; the
+    # rest is what the evaluation's agents collected and did not cite.
+    cited: bool
     query_hash: str
     query_text: str
     identifiers: dict[str, str]
@@ -161,6 +185,9 @@ class AgentStep(ApiModel):
 
     run_id: str
     agent_id: str
+    # The evaluation the run belongs to, read from its run ID (decision T-29); None for a run the
+    # platform's own code made, such as the executor's note run.
+    evaluation_no: int | None = None
     agent_version: str
     prompt_version: str
     model_alias: str
@@ -196,11 +223,15 @@ class CaseDetail(ApiModel):
     """`GET /cases/{case_id}`: the whole case, as architecture §24's detail screen shows it."""
 
     case: CaseSummary
+    # The evaluation the report, the Verification and the evidence come from: the case's own
+    # `evaluation_no`, or an earlier one while a re-evaluation runs or after it ended without a
+    # decision (the case keeps the last decision it has).
+    evaluation_no: int
     # None for a case that has not been decided, or was decided without a report.
     report: CaseReport | None = None
     urgent_events: list[UrgentEvent] = Field(default_factory=list)
     recommendations: list[Recommendation] = Field(default_factory=list)
-    # The last Verification of the current evaluation; None when it did not run.
+    # The last Verification of that evaluation that gave a result; None when none did.
     verification: VerificationResult | None = None
     data_gaps: list[DataGap] = Field(default_factory=list)
     evidence: list[EvidenceItem] = Field(default_factory=list)
@@ -316,14 +347,15 @@ class CatalogRule(ApiModel):
     updated_at: datetime
 
 
-class CatalogRuleUpdate(BaseModel):
+class CatalogRuleUpdate(ApiModel):
     """`PUT /catalog/rules/{rule_id}` (admin). The rule becomes defined."""
 
     mode: CatalogMode
     min_level: Level | None = None
     has_automated_action: bool
     context_note: Annotated[str, StringConstraints(max_length=600)] | None = None
-    attack_techniques: list[str] = Field(default_factory=list, max_length=32)
+    # `T1003` or `T1003.006` (contracts `AttackTechnique`), the form the skill router reads.
+    attack_techniques: list[AttackTechnique] = Field(default_factory=list, max_length=32)
 
 
 class CatalogLogSource(ApiModel):
@@ -343,7 +375,7 @@ class CatalogLogSource(ApiModel):
     updated_at: datetime
 
 
-class CatalogLogSourceUpdate(BaseModel):
+class CatalogLogSourceUpdate(ApiModel):
     """`PUT /catalog/log-sources/{log_source_id}` (admin). The log source becomes defined."""
 
     description: Annotated[str, StringConstraints(max_length=300)] | None = None
@@ -373,7 +405,7 @@ class CriticalAsset(ApiModel):
     level: Level
 
 
-class CriticalAssetAdd(BaseModel):
+class CriticalAssetAdd(ApiModel):
     """`POST /critical-assets` (admin). Storage normalizes and validates the value."""
 
     kind: CriticalAssetKind
@@ -396,13 +428,17 @@ class RecipientsView(ApiModel):
     allowed_domains: list[str]
 
 
-class RecipientGroupUpdate(BaseModel):
+class RecipientGroupUpdate(ApiModel):
     """`PUT /notification-recipients/{list_name}` (admin): the group's whole membership."""
 
-    emails: list[str]
+    emails: list[Annotated[str, StringConstraints(max_length=254)]] = Field(max_length=200)
 
 
-class NotificationRoute(BaseModel):
+# The alert kinds whose route names a level; a hunt report has none (`level` NULL, D-41).
+LEVELLED_KINDS = frozenset({EmailKind.CASE_ALERT, EmailKind.GROUP_ALERT})
+
+
+class NotificationRoute(ApiModel):
     """One `notification_routes` row: an alert kind and level go to these groups."""
 
     kind: EmailKind
@@ -410,10 +446,26 @@ class NotificationRoute(BaseModel):
     list_name: str
 
 
-class NotificationRoutesUpdate(BaseModel):
+class NotificationRouteEntry(NotificationRoute):
+    """One route of `PUT /notification-routes`.
+
+    A case or group alert is routed by its level, a hunt report without one. A route that breaks
+    this would never match an e-mail the executor sends, so it is a 422 rather than a dead row.
+    The check is on the request only: a row already stored is shown as it is, so an admin can
+    see and replace it.
+    """
+
+    @model_validator(mode="after")
+    def _level_fits_the_kind(self) -> "NotificationRouteEntry":
+        if (self.kind in LEVELLED_KINDS) != (self.level is not None):
+            raise ValueError("a case or group alert needs a level and a hunt report has none")
+        return self
+
+
+class NotificationRoutesUpdate(ApiModel):
     """`PUT /notification-routes` (admin): the whole table, every kind and level included."""
 
-    routes: list[NotificationRoute]
+    routes: list[NotificationRouteEntry] = Field(max_length=200)
 
 
 # --- metrics and administration ----------------------------------------------------------------
@@ -429,12 +481,15 @@ class SlaRow(ApiModel):
     late: int
     undecided: int
     running: int
+    # Closed in QRadar before the AI decided.
+    closed: int
 
 
 class SLAMetrics(ApiModel):
     """`GET /metrics/sla`: how the cases with a deadline in the range met it."""
 
-    from_: datetime
+    # `from` on the wire; a Python name cannot be a keyword.
+    from_: datetime = Field(serialization_alias="from")
     to: datetime
     buckets: list[SlaRow]
 
@@ -450,7 +505,7 @@ class PlatformFlagState(ApiModel):
     changed_at: datetime | None = None
 
 
-class PlatformFlagUpdate(BaseModel):
+class PlatformFlagUpdate(ApiModel):
     """`PUT /admin/platform-flags/{name}` (admin). `reason` is required and may not be blank."""
 
     enabled: bool

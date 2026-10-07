@@ -10,9 +10,7 @@ transaction, or the transaction is rolled back (criterion 3).
 
 from typing import Any, Final
 
-from fastapi import Request
 from fastapi.responses import JSONResponse
-from pydantic import ValidationError
 
 PROBLEM_MEDIA_TYPE: Final = "application/problem+json"
 # RFC 9457's default for a code-only answer.
@@ -89,32 +87,3 @@ def invalid_cursor() -> Problem:
 def invalid_request(detail: str, *, title: str = "request.invalid") -> Problem:
     """The body or the query does not parse or breaks a rule; nothing was written."""
     return Problem(422, title, detail=detail)
-
-
-def field_errors(title: str, error: ValidationError) -> Problem:
-    """A Pydantic error as `errors`: field paths and messages, without the rejected values."""
-    return Problem(
-        422,
-        title,
-        detail="the request does not match the contract",
-        extra={
-            "errors": [
-                {
-                    "field": ".".join(str(part) for part in item["loc"]) or "body",
-                    "message": item["msg"],
-                }
-                for item in error.errors(
-                    include_url=False, include_input=False, include_context=False
-                )
-            ]
-        },
-    )
-
-
-def storage_unavailable() -> Problem:
-    return Problem(503, "storage.unavailable")
-
-
-async def unhandled_problem(request: Request, error: Exception) -> JSONResponse:
-    """Last resort: a 500 whose body says nothing about the failure."""
-    return problem_response(500, "internal.error")

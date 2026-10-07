@@ -325,7 +325,7 @@ def test_a_session_with_several_roles_lists_them_most_privileged_first() -> None
     session = authenticator.authenticate(f"Bearer {ADMIN_TOKEN}")
 
     assert session is not None
-    assert session.role_names == ["admin", "operator"]
+    assert session.ranked_roles == ["admin", "operator"]
     assert session.allows(Role.OPERATOR)
 
 

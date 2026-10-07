@@ -5,14 +5,13 @@ The deterministic summary of a group comes with T-027; this task returns the gro
 offenses and whatever the group's own case holds.
 """
 
-from datetime import datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Query
 
-from ais0c_api.dependencies import OPERATOR, ReadSession, aware
+from ais0c_api.dependencies import OPERATOR, FromParam, ReadSession, ToParam, aware
 from ais0c_api.models import GroupDetail, GroupOffense, GroupSummary, Page
-from ais0c_api.pagination import check_limit, paginate, timestamp_cursor
+from ais0c_api.pagination import DEFAULT_LIMIT, CursorParam, LimitParam, paginate, timestamp_cursor
 from ais0c_api.problems import not_found
 from ais0c_storage.enums import GroupStatus
 from ais0c_storage.models import OffenseGroupRow, OffenseSeenRow
@@ -27,10 +26,6 @@ from ais0c_storage.repositories.offenses import GroupCursor
 router = APIRouter(prefix="/groups", tags=["groups"])
 
 StatusFilter = Annotated[list[GroupStatus] | None, Query()]
-FromParam = Annotated[datetime | None, Query(alias="from")]
-ToParam = Annotated[datetime | None, Query()]
-CursorParam = Annotated[str | None, Query()]
-LimitParam = Annotated[int | None, Query()]
 
 
 def group_cursor(cursor: str | None) -> GroupCursor | None:
@@ -66,32 +61,31 @@ def offense_row(row: OffenseSeenRow) -> GroupOffense:
 
 @router.get("", response_model=Page[GroupSummary])
 async def get_groups(
-    session: ReadSession,
     _user: OPERATOR,
+    session: ReadSession,
     status: StatusFilter = None,
     from_: FromParam = None,
     to: ToParam = None,
     cursor: CursorParam = None,
-    limit: LimitParam = None,
+    limit: LimitParam = DEFAULT_LIMIT,
 ) -> Page[GroupSummary]:
     """The groups, newest window first. `from` and `to` bound `window_start`."""
-    page_size = check_limit(limit)
     rows = await list_offense_groups(
         session,
         statuses=set(status) if status else None,
         window_from=aware(from_, "from"),
         window_to=aware(to, "to"),
         after=group_cursor(cursor),
-        limit=page_size + 1,
+        limit=limit + 1,
     )
     page, next_cursor = paginate(
-        rows, page_size, lambda row: [row.window_start.isoformat(), row.group_id]
+        rows, limit, lambda row: [row.window_start.isoformat(), row.group_id]
     )
     return Page(items=[summary(row) for row in page], next_cursor=next_cursor)
 
 
 @router.get("/{group_id}", response_model=GroupDetail)
-async def get_group(group_id: str, session: ReadSession, _user: OPERATOR) -> GroupDetail:
+async def get_group(group_id: str, _user: OPERATOR, session: ReadSession) -> GroupDetail:
     """The group, the offenses it holds and the decision of its own case.
 
     A group with no case yet (still being filled) answers with the group and its offenses; an

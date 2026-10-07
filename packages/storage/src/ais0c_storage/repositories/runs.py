@@ -14,7 +14,6 @@ from ais0c_storage.enums import PolicyDecision
 from ais0c_storage.models import AGENT_RUN_RESULT, AgentRunResult, AgentRunRow, ToolCallRow
 from ais0c_storage.repositories._common import (
     fetch_all,
-    fetch_one,
     get_row,
     insert_new,
     insert_row,
@@ -116,24 +115,6 @@ async def get_agent_run(session: AsyncSession, run_id: str) -> AgentRunRow | Non
     return await get_row(session, AgentRunRow, run_id)
 
 
-async def get_last_agent_run(
-    session: AsyncSession, case_id: str, *, agent_id: str
-) -> AgentRunRow | None:
-    """The newest run of `agent_id` for a case, newest first by start time then run ID.
-
-    For the analyst API's case detail (T-028): the last Verification of the current evaluation is
-    the one the queue shows, and a case that has none (no plan step, or a run that never got to
-    it) returns None rather than an error.
-    """
-    statement = (
-        select(AgentRunRow)
-        .where(AgentRunRow.case_id == case_id, AgentRunRow.agent_id == agent_id)
-        .order_by(AgentRunRow.started_at.desc(), AgentRunRow.run_id.desc())
-        .limit(1)
-    )
-    return await fetch_one(session, statement)
-
-
 async def list_agent_runs(
     session: AsyncSession, *, case_id: str | None = None, hunt_id: str | None = None
 ) -> list[AgentRunRow]:
@@ -194,6 +175,25 @@ async def list_tool_calls(session: AsyncSession, run_id: str) -> list[ToolCallRo
     statement = (
         select(ToolCallRow)
         .where(ToolCallRow.run_id == run_id)
+        .order_by(ToolCallRow.created_at, ToolCallRow.id)
+    )
+    return await fetch_all(session, statement)
+
+
+async def list_tool_calls_of_runs(
+    session: AsyncSession, run_ids: Collection[str]
+) -> list[ToolCallRow]:
+    """The tool calls of several runs in one query, each run's in the order they were recorded.
+
+    For the analyst API's case steps and evidence list (T-028), which would otherwise read the
+    calls run by run.
+    """
+    wanted = set(run_ids)
+    if not wanted:
+        return []
+    statement = (
+        select(ToolCallRow)
+        .where(ToolCallRow.run_id.in_(list(wanted)))
         .order_by(ToolCallRow.created_at, ToolCallRow.id)
     )
     return await fetch_all(session, statement)

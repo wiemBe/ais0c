@@ -2,13 +2,25 @@
 
 The dependencies take the `Request` FastAPI hands them, so a test can build the app with its own
 database and its own `DevAuthenticator` and exercise the real routes.
+
+Two rules every route follows:
+
+- The role dependency (`OPERATOR`, `HUNTER`, `ADMIN`) comes before the database session in the
+  signature. FastAPI resolves dependencies in that order, so a request without a valid token or
+  role is refused before any session exists. A session connects lazily today, so this is not
+  what keeps such a request off the database; the order makes sure it never depends on that. A
+  test checks it on every route.
+- The database sessions are `scope="function"`: the transaction ends when the route returns,
+  before the answer is sent. With FastAPI's default scope the commit would run after the client
+  already has its 2xx, so a failed commit would be invisible to it and a read right after the
+  answer could miss the change.
 """
 
 from collections.abc import AsyncIterator, Awaitable, Callable
 from datetime import UTC, datetime
 from typing import Annotated
 
-from fastapi import Depends, Request
+from fastapi import Depends, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from ais0c_api.auth import DevAuthenticator, Role, Session
@@ -70,32 +82,23 @@ def require(lowest: Role) -> SessionDependency:
     return dependency
 
 
-ReadSession = Annotated[AsyncSession, Depends(read_session)]
-WriteSession = Annotated[AsyncSession, Depends(write_session)]
+ReadSession = Annotated[AsyncSession, Depends(read_session, scope="function")]
+WriteSession = Annotated[AsyncSession, Depends(write_session, scope="function")]
 Trigger = Annotated[ScheduleTrigger, Depends(trigger_of)]
 
 OPERATOR = Annotated[Session, Depends(require(Role.OPERATOR))]
 HUNTER = Annotated[Session, Depends(require(Role.HUNTER))]
 ADMIN = Annotated[Session, Depends(require(Role.ADMIN))]
 
-
-def query_datetime(value: str | None, field: str) -> datetime | None:
-    """A `?from=`/`?to=` value as an aware UTC datetime; a value that is not one is a 400."""
-    if value is None or not value.strip():
-        return None
-    try:
-        parsed = datetime.fromisoformat(value.strip())
-    except ValueError:
-        raise Problem(
-            400, "request.invalid_time", detail=f"{field} must be an ISO 8601 timestamp"
-        ) from None
-    return aware(parsed, field)
+# `?from=` and `?to=`: ISO 8601 with a time zone; `aware` turns them into UTC.
+FromParam = Annotated[datetime | None, Query(alias="from")]
+ToParam = Annotated[datetime | None, Query()]
 
 
 def aware(value: datetime | None, field: str) -> datetime | None:
-    """`value` in UTC; a naive timestamp is a 400, as every time of the API is aware (api.md)."""
+    """`value` in UTC; a naive timestamp is a 422, as every time of the API is aware (api.md)."""
     if value is None:
         return None
     if value.tzinfo is None or value.utcoffset() is None:
-        raise Problem(400, "request.invalid_time", detail=f"{field} must carry a time zone")
+        raise Problem(422, "request.invalid_time", detail=f"{field} must carry a time zone")
     return value.astimezone(UTC)

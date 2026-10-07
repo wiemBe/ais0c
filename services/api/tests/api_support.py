@@ -18,12 +18,13 @@ from pathlib import Path
 from typing import Any, TypedDict, Unpack
 
 import httpx2
+from fastapi.routing import APIRoute
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from ais0c_api.app import build_app
 from ais0c_api.auth import DevAuthenticator, token_sha256
-from ais0c_api.temporal import TemporalUnavailable
+from ais0c_api.temporal import ScheduleNotFound, TemporalUnavailable
 from ais0c_contracts import (
     ActionType,
     AgentTask,
@@ -323,15 +324,20 @@ class DevUsersFile:
 class FakeScheduleTrigger:
     """A `ScheduleTrigger` that records what it was asked to trigger.
 
-    `unavailable` makes it fail, so the 503 path runs without a Temporal server.
+    `unavailable` and `missing` make it fail, so the 503 and 409 paths run without a Temporal
+    server.
     """
 
     triggered: list[str] = field(default_factory=list)
     unavailable: bool = False
+    # Temporal answers, but the batch worker never created the Schedule.
+    missing: bool = False
 
     async def trigger(self, schedule_id: str) -> None:
         if self.unavailable:
             raise TemporalUnavailable("cannot reach Temporal at 127.0.0.1:7233")
+        if self.missing:
+            raise ScheduleNotFound(f"Temporal has no {schedule_id} Schedule")
         self.triggered.append(schedule_id)
 
 
@@ -426,6 +432,26 @@ def build_harness(sessions: async_sessionmaker[AsyncSession], users_file: DevUse
         trigger=trigger,
         users_file=users_file,
     )
+
+
+# --- the routes ---------------------------------------------------------------------------------
+
+
+def api_routes() -> list[tuple[str, APIRoute]]:
+    """Every endpoint of the API as (full path, route).
+
+    FastAPI 0.142 keeps an included router as one entry of `app.routes`, so a test that looks
+    for `APIRoute`s there finds none. The routers `ais0c_api.routers` includes are read instead,
+    and `test_service_and_problems.py` checks that they hold every operation of the schema.
+    """
+    from ais0c_api.routers import API_PREFIX, administration, cases, catalog, groups, monitoring, qa
+
+    return [
+        (API_PREFIX + route.path, route)
+        for module in (cases, qa, groups, catalog, administration, monitoring)
+        for route in module.router.routes
+        if isinstance(route, APIRoute)
+    ]
 
 
 # --- seeding through the repository functions ----------------------------------------------------
