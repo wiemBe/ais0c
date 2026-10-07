@@ -7,6 +7,7 @@ IDs derived from a workflow are text (`case-12345`); every other ID is a UUIDv7
 import secrets
 import time
 import uuid
+from datetime import datetime
 
 _UNIX_MS_MASK = (1 << 48) - 1
 _RAND_B_BITS = 62
@@ -23,3 +24,10 @@ def new_uuid7() -> uuid.UUID:
     # unix_ts_ms (48) | version 7 (4) | rand_a (12) | variant 0b10 (2) | rand_b (62)
     value = (unix_ms << 80) | (0x7 << 76) | (rand_a << 64) | (0b10 << 62) | rand_b
     return uuid.UUID(int=value)
+
+
+def uuid7_floor(moment: datetime) -> uuid.UUID:
+    """The smallest UUIDv7 created at `moment` or later: every ID `new_uuid7` makes from that
+    millisecond on is greater or equal. For a row's creation time, which a UUIDv7 key carries."""
+    unix_ms = int(moment.timestamp() * 1000) & _UNIX_MS_MASK
+    return uuid.UUID(int=unix_ms << 80)

@@ -67,6 +67,8 @@ from ais0c_storage.enums import (
     FullAnalysisReason,
     GroupStatus,
     GroupValueKind,
+    HealthAlarmKind,
+    HealthAlarmStatus,
     HuntPackStatus,
     HuntStatus,
     NoteStatus,
@@ -632,6 +634,38 @@ class PlatformFlagRow(Base):
     reason: Mapped[str | None]
     changed_by: Mapped[str]
     changed_at: Mapped[datetime]
+
+
+class HealthAlarmRow(Base):
+    """A health alarm of the platform (T-032, migration 0010). Not in data-model.md.
+
+    At most one `open` row per kind and subject (a partial unique index); a resolved row stays
+    as history, and the same subject opening again is a new row.
+    """
+
+    __tablename__ = "health_alarms"
+    __table_args__ = (
+        Index(
+            "uq_health_alarms_open_kind_subject",
+            "kind",
+            "subject",
+            unique=True,
+            postgresql_where=text("status = 'open'"),
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    kind: Mapped[HealthAlarmKind] = mapped_column(EnumText(HealthAlarmKind))
+    # What the alarm is about: a log source's ID, the queue, `intake`, `qradar_unreachable`.
+    subject: Mapped[str]
+    status: Mapped[HealthAlarmStatus] = mapped_column(EnumText(HealthAlarmStatus))
+    opened_at: Mapped[datetime]
+    last_seen_at: Mapped[datetime]
+    resolved_at: Mapped[datetime | None]
+    # When the alarm was last announced (opened, reminder); empty until the first one.
+    last_notified_at: Mapped[datetime | None]
+    # Numbers and names the notification shows, and `notifications`, how many went out.
+    details: Mapped[JsonValue] = _json()
 
 
 # --- Kullanıcılar ve audit ------------------------------------------------------------------

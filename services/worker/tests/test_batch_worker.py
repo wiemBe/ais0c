@@ -21,6 +21,7 @@ import asyncio
 import logging
 import signal
 from collections.abc import Iterator
+from datetime import timedelta
 from pathlib import Path
 
 import pytest
@@ -66,7 +67,13 @@ from ais0c_worker.main import (
     run_batch_worker,
 )
 from ais0c_workflows import KnowledgeSync, KnowledgeSyncResult
-from ais0c_workflows.names import BATCH_TASK_QUEUE, KNOWLEDGE_SYNC, KNOWLEDGE_SYNC_SCHEDULE_ID
+from ais0c_workflows.names import (
+    BATCH_TASK_QUEUE,
+    HEALTH_CHECK,
+    HEALTH_CHECK_SCHEDULE_ID,
+    KNOWLEDGE_SYNC,
+    KNOWLEDGE_SYNC_SCHEDULE_ID,
+)
 from ais0c_workflows.schedules import SOC_TIME_ZONE
 
 pytestmark = pytest.mark.anyio
@@ -109,10 +116,22 @@ def secrets_dir(tmp_path: Path) -> Path:
 def environ(
     database_url: URL, gateway: StubGateway, secrets_dir: Path, **extra: str
 ) -> dict[str, str]:
-    """The batch worker's environment: the test database, the stand-in gateway, its token."""
+    """The batch worker's environment: the test database, the stand-in gateway, its token, and a
+    syslog server for the health alarms (nothing listens on UDP; the worker only warns when
+    there is none)."""
     return batch_environ(
-        gateway, database_url.render_as_string(hide_password=False), secrets_dir, **extra
+        gateway,
+        database_url.render_as_string(hide_password=False),
+        secrets_dir,
+        **{"AIS0C_ALARM_SYSLOG_HOST": "127.0.0.1", **extra},
     )
+
+
+async def until_logged(caplog: pytest.LogCaptureFixture, message: str) -> None:
+    """Wait until the worker's own logger has said `message`."""
+    async with asyncio.timeout(30):
+        while message not in worker_messages(caplog):  # noqa: ASYNC110 - polls the log
+            await asyncio.sleep(0.05)
 
 
 def worker_messages(caplog: pytest.LogCaptureFixture) -> list[str]:
@@ -144,6 +163,7 @@ async def test_the_batch_worker_syncs_the_catalog(
                 TEMPORAL_ADDRESS=temporal_address(env),
                 # The time-skipping test server has no Schedules.
                 AIS0C_KNOWLEDGE_SYNC_SCHEDULE="off",
+                AIS0C_HEALTH_SCHEDULE="off",
             ),
         )
     )
@@ -216,6 +236,7 @@ async def test_the_batch_worker_process_syncs_and_stops_on_a_signal(
             secrets_dir,
             TEMPORAL_ADDRESS=temporal_address(dev_server),
             AIS0C_KNOWLEDGE_SYNC_SCHEDULE="off",
+            AIS0C_HEALTH_SCHEDULE="off",
         ),
         tmp_path,
         BATCH_COMMAND,
@@ -254,6 +275,7 @@ async def test_the_worker_creates_the_schedule_and_a_second_one_keeps_its_state(
     )
     first = WorkerProcess("batch-worker-1", worker_environ, tmp_path, BATCH_COMMAND)
     second: WorkerProcess | None = None
+    await delete_schedule(client, HEALTH_CHECK_SCHEDULE_ID)
     try:
         await until_started(first)
         handle = client.get_schedule_handle(KNOWLEDGE_SYNC_SCHEDULE_ID)
@@ -282,6 +304,92 @@ async def test_the_worker_creates_the_schedule_and_a_second_one_keeps_its_state(
             second.stop()
         first.stop()
         await delete_schedule(client)
+        await delete_schedule(client, HEALTH_CHECK_SCHEDULE_ID)
+
+
+async def test_the_worker_creates_the_health_schedule_and_updates_it_in_place(
+    dev_server: WorkflowEnvironment,
+    database_url: URL,
+    gateway: StubGateway,
+    secrets_dir: Path,
+    tmp_path: Path,
+) -> None:
+    """T-032 criterion 1: `HealthCheck` every `AIS0C_HEALTH_INTERVAL_MINUTES` (5 by default),
+    created at start-up, updated in place by the next start-up with its state kept, and a run
+    that is still going makes Temporal skip the next start."""
+    client = await connect(temporal_address(dev_server))
+    await delete_schedule(client, HEALTH_CHECK_SCHEDULE_ID)
+    base = environ(
+        database_url,
+        gateway,
+        secrets_dir,
+        TEMPORAL_ADDRESS=temporal_address(dev_server),
+        AIS0C_KNOWLEDGE_SYNC_SCHEDULE="off",
+    )
+    first = WorkerProcess("batch-health-1", base, tmp_path, BATCH_COMMAND)
+    second: WorkerProcess | None = None
+    try:
+        await until_started(first)
+        handle = client.get_schedule_handle(HEALTH_CHECK_SCHEDULE_ID)
+        schedule = (await schedule_of(client, HEALTH_CHECK_SCHEDULE_ID)).schedule
+        action = schedule.action
+        assert isinstance(action, ScheduleActionStartWorkflow)
+        assert (action.workflow, action.task_queue) == (HEALTH_CHECK, BATCH_TASK_QUEUE)
+        assert [interval.every for interval in schedule.spec.intervals] == [timedelta(minutes=5)]
+        assert schedule.policy.overlap is ScheduleOverlapPolicy.SKIP
+
+        await handle.pause()
+        every_two = {**base, "AIS0C_HEALTH_INTERVAL_MINUTES": "2"}
+        second = WorkerProcess("batch-health-2", every_two, tmp_path, BATCH_COMMAND)
+        await until_started(second)
+        updated = await handle.describe()
+        assert [interval.every for interval in updated.schedule.spec.intervals] == [
+            timedelta(minutes=2)
+        ]
+        assert updated.schedule.state.paused is True
+    finally:
+        if second is not None:
+            second.stop()
+        first.stop()
+        await delete_schedule(client, HEALTH_CHECK_SCHEDULE_ID)
+
+
+async def test_the_worker_warns_at_start_up_when_syslog_is_not_set(
+    env: WorkflowEnvironment,
+    database_url: URL,
+    gateway: StubGateway,
+    secrets_dir: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """T-032 criterion 7: without `AIS0C_ALARM_SYSLOG_HOST` syslog is off and the batch worker
+    says so when it starts; with it set there is no such warning."""
+    schedules_off = {
+        "TEMPORAL_ADDRESS": temporal_address(env),
+        "AIS0C_KNOWLEDGE_SYNC_SCHEDULE": "off",
+        "AIS0C_HEALTH_SCHEDULE": "off",
+    }
+
+    async def start_and_stop(extra: dict[str, str]) -> list[str]:
+        stop = asyncio.Event()
+        caplog.clear()
+        base = environ(database_url, gateway, secrets_dir, **schedules_off)
+        if "AIS0C_ALARM_SYSLOG_HOST" not in extra:
+            del base["AIS0C_ALARM_SYSLOG_HOST"]
+        running = asyncio.create_task(run_batch_worker(stop, {**base, **extra}))
+        try:
+            with caplog.at_level(logging.INFO, logger="ais0c.worker"):
+                await until_logged(caplog, RUNNING)
+        finally:
+            stop.set()
+            await running
+        return worker_messages(caplog)
+
+    without = await start_and_stop({})
+    with_host = await start_and_stop({"AIS0C_ALARM_SYSLOG_HOST": "syslog.example.com"})
+
+    assert any("AIS0C_ALARM_SYSLOG_HOST is not set" in message for message in without)
+    assert RUNNING in without
+    assert not any("AIS0C_ALARM_SYSLOG_HOST" in message for message in with_host)
 
 
 async def test_the_worker_leaves_the_schedule_alone_when_it_is_off(
@@ -302,18 +410,21 @@ async def test_the_worker_leaves_the_schedule_alone_when_it_is_off(
             secrets_dir,
             TEMPORAL_ADDRESS=temporal_address(dev_server),
             AIS0C_KNOWLEDGE_SYNC_SCHEDULE="off",
+            AIS0C_HEALTH_SCHEDULE="off",
         ),
         tmp_path,
         BATCH_COMMAND,
     )
     try:
         await until_started(worker)
-        with pytest.raises(RPCError) as error:
-            await client.get_schedule_handle(KNOWLEDGE_SYNC_SCHEDULE_ID).describe()
-        assert error.value.status is RPCStatusCode.NOT_FOUND
+        for schedule_id in (KNOWLEDGE_SYNC_SCHEDULE_ID, HEALTH_CHECK_SCHEDULE_ID):
+            with pytest.raises(RPCError) as error:
+                await client.get_schedule_handle(schedule_id).describe()
+            assert error.value.status is RPCStatusCode.NOT_FOUND
     finally:
         worker.stop()
         await delete_schedule(client)
+        await delete_schedule(client, HEALTH_CHECK_SCHEDULE_ID)
 
 
 # --- criterion 3: the start-up check -------------------------------------------------------------
@@ -353,7 +464,7 @@ def test_the_command_line_names_the_worker_and_reports_a_bad_start_up(
     gateway.served = inventory_profile("qradar-hunt-read")
     assert main([BATCH_COMMAND], worker_environ) == EXIT_CONFIG_ERROR
     error = capsys.readouterr().err
-    assert error.startswith("error: the catalog sync needs qradar-inventory-read")
+    assert error.startswith("error: the batch worker needs qradar-inventory-read")
     assert "the gateway serves qradar-hunt-read" in error
 
     # T-045: `executor` selects the executor worker, which stops without its own secrets.

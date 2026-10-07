@@ -155,6 +155,12 @@ async def count_offenses(
     return await session.scalar(statement) or 0
 
 
+async def latest_offense_update(session: AsyncSession) -> datetime | None:
+    """The newest `last_updated_at` of any recorded offense, the platform's own view of how
+    current its intake is (T-032); None when no offense was recorded."""
+    return await session.scalar(select(func.max(OffenseSeenRow.last_updated_at)))
+
+
 def _reason_in(reasons: Collection[FullAnalysisReason | None]) -> ColumnElement[bool]:
     column = OffenseSeenRow.full_analysis_reason
     named = [reason for reason in reasons if reason is not None]

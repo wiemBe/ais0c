@@ -29,10 +29,16 @@ from temporalio.client import (
 
 from ais0c_workflows.names import (
     CASE_TASK_QUEUE,
+    HEALTH_CHECK_SCHEDULE_ID,
     KNOWLEDGE_SYNC_SCHEDULE_ID,
     OFFENSE_INTAKE,
 )
-from ais0c_workflows.schedules import KNOWLEDGE_SYNC_HOUR, knowledge_sync_schedule
+from ais0c_workflows.schedules import (
+    HEALTH_CHECK_INTERVAL,
+    KNOWLEDGE_SYNC_HOUR,
+    health_check_schedule,
+    knowledge_sync_schedule,
+)
 
 INTAKE_SCHEDULE_ID: Final = "offense-intake"
 INTAKE_INTERVAL: Final = timedelta(minutes=1)
@@ -71,6 +77,20 @@ async def ensure_knowledge_sync_schedule(
     """
     return await _ensure_schedule(
         client, KNOWLEDGE_SYNC_SCHEDULE_ID, knowledge_sync_schedule(hour=hour)
+    )
+
+
+async def ensure_health_check_schedule(
+    client: Client, *, every: timedelta = HEALTH_CHECK_INTERVAL
+) -> ScheduleHandle:
+    """Create the Schedule that starts HealthCheck on the `soc-batch` queue, or update the
+    existing one in place, keeping its state.
+
+    The Schedule is the one `ais0c_workflows.schedules.health_check_schedule` describes: every
+    `every`, a run that is still going makes Temporal skip the next start (T-032).
+    """
+    return await _ensure_schedule(
+        client, HEALTH_CHECK_SCHEDULE_ID, health_check_schedule(every=every)
     )
 
 

@@ -42,6 +42,8 @@ class Table:
     unique: set[tuple[str, ...]] = field(default_factory=set[tuple[str, ...]])
     # (column, referenced "table.column")
     foreign_keys: set[tuple[str, str]] = field(default_factory=set[tuple[str, str]])
+    # Names of unique indexes that are no constraint (a partial unique index).
+    unique_indexes: set[str] = field(default_factory=set[str])
 
 
 def table(
@@ -49,12 +51,13 @@ def table(
     pk: tuple[str, ...],
     unique: tuple[tuple[str, ...], ...] = (),
     fk: tuple[tuple[str, str], ...] = (),
+    unique_indexes: tuple[str, ...] = (),
 ) -> Table:
     parsed: dict[str, tuple[str, bool]] = {}
     for spec in columns:
         name, doc_type = spec.split(" ", 1)
         parsed[name] = (doc_type.removesuffix("?"), doc_type.endswith("?"))
-    return Table(parsed, pk, set(unique), set(fk))
+    return Table(parsed, pk, set(unique), set(fk), set(unique_indexes))
 
 
 CASES_FK = (("case_id", "cases.case_id"),)
@@ -437,6 +440,21 @@ DOC: dict[str, Table] = {
         "changed_at timestamptz",
         pk=("name",),
     ),
+    # Not in data-model.md (T-032): the platform's health alarms; one open row per kind and
+    # subject (a partial unique index, which this table does not list).
+    "health_alarms": table(
+        "id uuid",
+        "kind text",
+        "subject text",
+        "status text",
+        "opened_at timestamptz",
+        "last_seen_at timestamptz",
+        "resolved_at timestamptz?",
+        "last_notified_at timestamptz?",
+        "details jsonb",
+        pk=("id",),
+        unique_indexes=("uq_health_alarms_open_kind_subject",),
+    ),
     # --- Kullanıcılar ve audit
     "users": table("subject text", "display_name text", "roles text[]", pk=("subject",)),
     "audit_log": table(
@@ -551,7 +569,7 @@ def test_primary_key_matches_the_document(schema: Schema, name: str) -> None:
 @pytest.mark.parametrize("name", sorted(DOC))
 def test_unique_constraints_match_the_document(schema: Schema, name: str) -> None:
     assert schema.unique[name] == DOC[name].unique
-    assert schema.unique_indexes[name] == set()
+    assert schema.unique_indexes[name] == DOC[name].unique_indexes
 
 
 @pytest.mark.parametrize("name", sorted(DOC))

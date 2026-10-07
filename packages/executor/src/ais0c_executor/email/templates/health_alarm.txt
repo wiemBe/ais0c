@@ -1,0 +1,20 @@
+{#- The e-mail of a platform health alarm (T-23, T-68): what is wrong (or no longer wrong), what it
+    is about and the numbers it was raised with. Every field is one cleaned line built by
+    ais0c_executor.email.render; the subject name is QRadar's text, cleaned and cut there. -#}
+AI-SOC platform sağlık alarmı: {{ fields.state }}
+
+Alarm: {{ fields.alarm_kind }}
+Konu: {{ fields.subject_line }}
+
+Açılış: {{ fields.opened_at }} · Bildirim: #{{ fields.notification_no }}
+{% for n in range(1, 7) if ("count_" ~ n) in fields %}
+{{ fields["count_" ~ n] }}
+{% endfor %}
+
+{% if fields.is_resolved %}
+Alarmın nedeni ortadan kalktı.
+{% else %}
+Platformun kendi sağlığı bozuldu; AI değerlendirmeleri etkilenmiş olabilir. İlgili bileşeni kontrol edin.
+{% endif %}
+
+Bu e-postayı AI-SOC platformu otomatik olarak gönderdi; yanıtlamayın.

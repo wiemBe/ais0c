@@ -53,6 +53,9 @@ RECORD_PLAN: Final = "record_plan"
 CASE_URL: Final = "case_url"
 WRITE_OFFENSE_NOTE: Final = "write_offense_note"
 SEND_EMAIL: Final = "send_email"
+# A note or e-mail the case gave up on (the executor was away for the whole hour): the case
+# queue records it as failed (T-032, T-59 (7)).
+RECORD_EXECUTOR_FAILURE: Final = "record_executor_failure"
 
 # Group case activities (GroupCaseWorkflow, T-027). The group case also calls `case_url`,
 # `fetch_offense`, `evaluation_window`, `record_decision`, `mark_no_ai_decision` and
@@ -76,3 +79,12 @@ FINISH_AGENT_RUN: Final = "finish_agent_run"
 
 # KnowledgeSync activities (the `soc-batch` task queue).
 SYNC_ANALYSIS_CATALOG: Final = "sync_analysis_catalog"
+
+# HealthCheck activities (the `soc-batch` task queue, T-032): the four checks, the syslog
+# channel and the record that a notification went out.
+CHECK_INTAKE: Final = "check_intake"
+CHECK_LOG_SOURCES: Final = "check_log_sources"
+CHECK_WRITE_FAILURES: Final = "check_write_failures"
+CHECK_EXECUTOR_WORKER: Final = "check_executor_worker"
+SEND_ALARM_SYSLOG: Final = "send_alarm_syslog"
+MARK_ALARM_NOTIFIED: Final = "mark_alarm_notified"

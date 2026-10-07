@@ -7,17 +7,22 @@ notify level: a re-evaluated case is e-mailed again only above the levels alread
 
 from datetime import datetime
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ais0c_contracts import EmailKind, EmailMessage, Level
 from ais0c_storage.columns import revalidate
 from ais0c_storage.enums import NotificationStatus
+from ais0c_storage.ids import uuid7_floor
 from ais0c_storage.models import NotificationRow
 from ais0c_storage.repositories._common import fetch_all, fetch_one, insert_new, update_one
 
 # The statuses whose record says why the e-mail was not sent (T-37).
 _STATUSES_WITH_ERROR = frozenset({NotificationStatus.FAILED, NotificationStatus.REJECTED})
+
+
+# The kinds without a notify level.
+_LEVELLESS_KINDS = frozenset({EmailKind.HUNT_REPORT, EmailKind.HEALTH_ALARM})
 
 
 def _check_sent_at(status: NotificationStatus, sent_at: datetime | None) -> None:
@@ -55,9 +60,10 @@ async def record_notification(
         EmailKind.GROUP_ALERT: group_id,
         EmailKind.HUNT_REPORT: hunt_id,
     }
-    if subject_ids[message.kind] is None:
+    # A health alarm is about the platform, not a case, a group or a hunt (T-032).
+    if message.kind is not EmailKind.HEALTH_ALARM and subject_ids[message.kind] is None:
         raise ValueError(f"a {message.kind.value} needs the ID of what it reports on")
-    if (level is None) != (message.kind is EmailKind.HUNT_REPORT):
+    if (level is None) != (message.kind in _LEVELLESS_KINDS):
         raise ValueError("a case or group alert needs its notify level, and only an alert has one")
     _check_sent_at(status, sent_at)
     _check_error(status, error)
@@ -121,3 +127,21 @@ async def list_notifications(
         statement = statement.where(NotificationRow.group_id == group_id)
     statement = statement.order_by(NotificationRow.sent_at.nulls_last(), NotificationRow.id)
     return await fetch_all(session, statement)
+
+
+async def count_failed_notifications(session: AsyncSession, *, since: datetime) -> int:
+    """How many e-mails were first recorded at or after `since` and are `failed` or `rejected`
+    now (T-032 criterion 4). `disabled` is never counted (T-37).
+
+    `notifications` has no creation time; the ID is a UUIDv7, which carries it. A row that
+    failed again on a later attempt counts from its first record.
+    """
+    statement = (
+        select(func.count())
+        .select_from(NotificationRow)
+        .where(
+            NotificationRow.status.in_(_STATUSES_WITH_ERROR),
+            NotificationRow.id >= uuid7_floor(since),
+        )
+    )
+    return int(await session.scalar(statement) or 0)

@@ -267,6 +267,7 @@ def test_every_template_compiles_and_is_clean() -> None:
     assert EMAIL_TEMPLATES.check() == [
         "case_alert.txt",
         "group_alert.txt",
+        "health_alarm.txt",
         "parts/actions.txt",
         "parts/data_gaps.txt",
         "parts/event.txt",
@@ -274,6 +275,7 @@ def test_every_template_compiles_and_is_clean() -> None:
         "parts/footer.txt",
         "subject/case_alert.txt",
         "subject/group_alert.txt",
+        "subject/health_alarm.txt",
     ]
 
 

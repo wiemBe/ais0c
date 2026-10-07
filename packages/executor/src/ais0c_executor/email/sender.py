@@ -25,6 +25,12 @@
    succeed, the error is raised after the record is committed, so Temporal retries the
    activity.
 
+A health alarm (`HealthAlarm`, T-032) is not an AI output and follows a shorter path: no level
+rule, and no kill switch. An intake that stopped has to reach the team exactly when the kill
+switch is off after an AI incident, so this one kind is exempt from the check (decision T-68
+(6)); notes and the other e-mails keep it. Its recipients come from the route of the kind
+`health_alarm` without a level, and its record in `notifications` has no case, group or level.
+
 Every record carries the alert's recipients, subject and level; a `failed` or `rejected` one
 also says why in `error`. Only `sent` counts as sent: a key recorded as `disabled`, `rejected`
 or `failed` is tried again by a later attempt, and the level rule counts none of them.
@@ -50,11 +56,13 @@ from ais0c_executor.email.errors import EmailTransportError
 from ais0c_executor.email.levels import alert_needed
 from ais0c_executor.email.render import alert_message, render_body
 from ais0c_executor.email.request import (
+    AlertRequest,
     CaseAlert,
     EmailOutcome,
     EmailRequest,
     EmailResult,
     GroupAlert,
+    HealthAlarm,
     validated,
 )
 from ais0c_executor.email.smtp import SendReceipt
@@ -73,6 +81,7 @@ EMAIL_REJECT_ACTION: Final = "email.reject"
 # The audit entry's object: the case of a case alert, the group of a group alert.
 CASE_OBJECT_TYPE: Final = "case"
 GROUP_OBJECT_TYPE: Final = "offense_group"
+HEALTH_ALARM_OBJECT_TYPE: Final = "health_alarm"
 MAX_ERROR_LENGTH: Final = 500
 _MAX_AUDIT_ADDRESS_LENGTH: Final = 320
 
@@ -123,15 +132,60 @@ class EmailSender:
         good is recorded and returned as `failed`.
         """
         request = validated(request)
+        turn = (
+            f"health_alarm:{request.alarm_id}"
+            if isinstance(request, HealthAlarm)
+            else request.case_id
+        )
         async with self._sessions.begin() as session:
-            await _take_turn(session, request.case_id)
-            outcome, failure = await self._attempt(session, request)
+            await _take_turn(session, turn)
+            if isinstance(request, HealthAlarm):
+                outcome, failure = await self._attempt_health_alarm(session, request)
+            else:
+                outcome, failure = await self._attempt(session, request)
         if failure is not None and failure.retryable:
             raise failure
         return outcome
 
+    async def _attempt_health_alarm(
+        self, session: AsyncSession, request: HealthAlarm
+    ) -> tuple[EmailOutcome, EmailTransportError | None]:
+        """A health alarm: the recipients' checks of an alert, then the relay, without the kill
+        switch (T-68 (6))."""
+        row = await get_notification(session, request.idempotency_key)
+        if row is not None and row.status is NotificationStatus.SENT:
+            return _outcome(request, EmailResult.ALREADY_SENT), None
+        groups, recipients = await _recipients(session, request)
+        message = alert_message(request, recipients)
+        if not recipients:
+            error = _no_recipients_error(request, groups)
+            outcome = _outcome(request, EmailResult.FAILED, error)
+            await _save(session, request, message, NotificationStatus.FAILED, error=outcome.error)
+            return outcome, None
+        refused = refused_recipients(recipients, await _allowed_domains(session))
+        if refused:
+            error = (
+                f"{len(refused)} of {len(recipients)} recipients are not plain addresses in the "
+                "allowed domains; the e-mail went to nobody"
+            )
+            outcome = _outcome(request, EmailResult.REJECTED, error)
+            await _save(session, request, message, NotificationStatus.REJECTED, error=outcome.error)
+            await _audit(session, request, message, EMAIL_REJECT_ACTION, refused=refused)
+            return outcome, None
+        body = render_body(message)
+        try:
+            async with self._transport.connect() as connection:
+                receipt = await connection.send(message, body)
+        except EmailTransportError as error:
+            outcome = _outcome(request, EmailResult.FAILED, str(error))
+            await _save(session, request, message, NotificationStatus.FAILED, error=outcome.error)
+            return outcome, error
+        await _save(session, request, message, NotificationStatus.SENT, sent_at=self._clock())
+        await _audit(session, request, message, EMAIL_SEND_ACTION, receipt=receipt)
+        return _outcome(request, EmailResult.SENT), None
+
     async def _attempt(
-        self, session: AsyncSession, request: EmailRequest
+        self, session: AsyncSession, request: AlertRequest
     ) -> tuple[EmailOutcome, EmailTransportError | None]:
         row = await get_notification(session, request.idempotency_key)
         if row is not None and row.status is NotificationStatus.SENT:
@@ -190,7 +244,7 @@ async def _take_turn(session: AsyncSession, case_id: str) -> None:
     await session.execute(select(func.pg_advisory_xact_lock(key)))
 
 
-async def _sent_levels(session: AsyncSession, request: EmailRequest) -> list[Level]:
+async def _sent_levels(session: AsyncSession, request: AlertRequest) -> list[Level]:
     """The levels of the alerts sent about the same case or group (D-42).
 
     A case alert counts the `sent` case alerts of its case; a group alert the `sent` group alerts
@@ -220,9 +274,8 @@ async def _recipients(session: AsyncSession, request: EmailRequest) -> tuple[lis
     Every address of every routed group, each one once: two routed groups may share a member,
     and the address is written to the envelope a single time.
     """
-    groups = await list_notification_route_groups(
-        session, kind=request.email_kind, level=request.level
-    )
+    level = None if isinstance(request, HealthAlarm) else request.level
+    groups = await list_notification_route_groups(session, kind=request.email_kind, level=level)
     if not groups:
         return [], []
     statement = (
@@ -237,7 +290,10 @@ async def _recipients(session: AsyncSession, request: EmailRequest) -> tuple[lis
 def _no_recipients_error(request: EmailRequest, groups: Sequence[str]) -> str:
     """Why nobody was found for `request`: either no group is routed to it, or the routed
     groups hold no member. Both are the admin's routing table and groups to fix."""
-    routed = f"a {request.level.value} {request.email_kind.value}"
+    if isinstance(request, HealthAlarm):
+        routed = "a health alarm"
+    else:
+        routed = f"a {request.level.value} {request.email_kind.value}"
     if not groups:
         return f"no recipient group is routed to {routed}"
     return f"the recipient groups routed to {routed} ({', '.join(groups)}) have no members"
@@ -261,14 +317,15 @@ async def _save(
     An update rewrites the recipients, the subject and the error too: the list may have changed
     since, and only the latest attempt's reason holds.
     """
+    level = None if isinstance(request, HealthAlarm) else request.level
     if await get_notification(session, message.idempotency_key) is None:
         group_id = request.group_id if isinstance(request, GroupAlert) else None
         await record_notification(
             session,
             message,
             status=status,
-            level=request.level,
-            case_id=request.case_id,
+            level=level,
+            case_id=None if isinstance(request, HealthAlarm) else request.case_id,
             group_id=group_id,
             sent_at=sent_at,
             error=error,
@@ -278,7 +335,7 @@ async def _save(
         update(NotificationRow)
         .where(NotificationRow.idempotency_key == message.idempotency_key)
         .values(
-            level=request.level,
+            level=level,
             recipients=list(message.recipients),
             subject=message.subject,
             status=status,
@@ -298,6 +355,17 @@ async def _audit(
     receipt: SendReceipt | None = None,
     refused: list[RefusedRecipient] | None = None,
 ) -> None:
+    if isinstance(request, HealthAlarm):
+        await append_audit(
+            session,
+            actor_kind=ActorKind.SYSTEM,
+            actor_id=EXECUTOR_ID,
+            action=action,
+            object_type=HEALTH_ALARM_OBJECT_TYPE,
+            object_id=request.alarm_id,
+            details=_alarm_details(request, message, receipt=receipt, refused=refused),
+        )
+        return
     details: dict[str, JsonValue] = {
         "kind": message.kind.value,
         "idempotency_key": message.idempotency_key,
@@ -329,3 +397,30 @@ async def _audit(
         object_id=object_id,
         details=details,
     )
+
+
+def _alarm_details(
+    request: HealthAlarm,
+    message: EmailMessage,
+    *,
+    receipt: SendReceipt | None,
+    refused: list[RefusedRecipient] | None,
+) -> dict[str, JsonValue]:
+    details: dict[str, JsonValue] = {
+        "kind": message.kind.value,
+        "idempotency_key": message.idempotency_key,
+        "alarm_kind": request.alarm_kind,
+        "subject": clean_text(request.subject, 200),
+        "status": request.status,
+        "subject_line": message.subject,
+        "recipients": list(message.recipients),
+    }
+    if receipt is not None:
+        details["message_id"] = receipt.message_id
+        details["refused_by_relay"] = list(receipt.refused)
+    if refused:
+        details["refused"] = [
+            {"address": item.address[:_MAX_AUDIT_ADDRESS_LENGTH], "reason": item.reason.value}
+            for item in refused
+        ]
+    return details

@@ -6,6 +6,7 @@ stand-in gateway serves a profile's tools over HTTP, as `GET /v1/tools` does.
 
 import threading
 from collections.abc import Iterator
+from datetime import timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -16,12 +17,22 @@ from ais0c_activities import (
     INVENTORY_PROFILE,
     BatchRuntime,
     CatalogSyncActivities,
+    HealthSettings,
     RuntimeConfigError,
     load_batch_runtime,
 )
-from ais0c_activities.names import SYNC_ANALYSIS_CATALOG
+from ais0c_activities.names import (
+    CHECK_EXECUTOR_WORKER,
+    CHECK_INTAKE,
+    CHECK_LOG_SOURCES,
+    CHECK_WRITE_FAILURES,
+    MARK_ALARM_NOTIFIED,
+    SEND_ALARM_SYSLOG,
+    SYNC_ANALYSIS_CATALOG,
+)
 from ais0c_agents import ToolsetProfile, ToolSpec
 from ais0c_contracts import CostClass
+from ais0c_executor.syslog import SyslogProtocol, SyslogSettings
 from ais0c_storage import ConfigurationError
 
 pytestmark = pytest.mark.anyio
@@ -31,7 +42,13 @@ TOKEN_FILE = f"gateway-token-{INVENTORY_PROFILE}"
 
 
 def profile(name: str = INVENTORY_PROFILE, *tool_ids: str) -> ToolsetProfile:
-    ids = tool_ids or ("list_rules", "get_rule", "list_log_sources", "list_log_source_types")
+    ids = tool_ids or (
+        "list_offenses",
+        "list_rules",
+        "get_rule",
+        "list_log_sources",
+        "list_log_source_types",
+    )
     return ToolsetProfile(
         name=name,
         connector="qradar",
@@ -131,7 +148,9 @@ async def test_a_profile_without_a_list_stops_the_runtime(
 ) -> None:
     gateway.served = profile(INVENTORY_PROFILE, "list_log_sources", "list_log_source_types")
 
-    with pytest.raises(RuntimeConfigError, match="serves qradar-inventory-read without list_rules"):
+    with pytest.raises(
+        RuntimeConfigError, match="serves qradar-inventory-read without list_offenses, list_rules"
+    ):
         await load_batch_runtime(environ)
 
 
@@ -153,4 +172,86 @@ async def test_a_missing_token_stops_the_runtime(environ: dict[str, str], tmp_pa
     (tmp_path / TOKEN_FILE).unlink()
 
     with pytest.raises(RuntimeConfigError, match=TOKEN_FILE):
+        await load_batch_runtime(environ)
+
+
+async def test_a_profile_without_list_offenses_stops_the_runtime(
+    environ: dict[str, str], gateway: StubGateway
+) -> None:
+    """The health check of the intake reads QRadar's offenses (T-032 criterion 10)."""
+    gateway.served = profile(
+        INVENTORY_PROFILE, "list_rules", "list_log_sources", "list_log_source_types"
+    )
+
+    with pytest.raises(
+        RuntimeConfigError, match=r"serves qradar-inventory-read without list_offenses$"
+    ):
+        await load_batch_runtime(environ)
+
+
+class NoPollers:
+    async def count(self, task_queue: str) -> int:
+        return 1
+
+
+async def test_the_runtime_has_the_health_checks_when_it_can_ask_temporal(
+    environ: dict[str, str],
+) -> None:
+    runtime = await load_batch_runtime(environ)
+    try:
+        names = {
+            getattr(activity, "__temporal_activity_definition").name
+            for activity in runtime.activities(pollers=NoPollers())
+        }
+        assert names == {
+            SYNC_ANALYSIS_CATALOG,
+            CHECK_INTAKE,
+            CHECK_LOG_SOURCES,
+            CHECK_WRITE_FAILURES,
+            CHECK_EXECUTOR_WORKER,
+            SEND_ALARM_SYSLOG,
+            MARK_ALARM_NOTIFIED,
+        }
+        assert runtime.health == HealthSettings()
+        assert runtime.syslog is None  # AIS0C_ALARM_SYSLOG_HOST is unset: syslog is off
+    finally:
+        await runtime.close()
+
+
+async def test_the_health_and_syslog_settings_come_from_the_environment(
+    environ: dict[str, str],
+) -> None:
+    environ |= {
+        "AIS0C_HEALTH_INTAKE_LAG_MINUTES": "20",
+        "AIS0C_HEALTH_RENOTIFY_HOURS": "2",
+        "AIS0C_ALARM_SYSLOG_HOST": "syslog.example.com",
+        "AIS0C_ALARM_SYSLOG_PORT": "5514",
+        "AIS0C_ALARM_SYSLOG_PROTOCOL": "TCP",
+    }
+
+    runtime = await load_batch_runtime(environ)
+    try:
+        assert runtime.health.intake_lag == timedelta(minutes=20)
+        assert runtime.health.renotify == timedelta(hours=2)
+        assert runtime.syslog == SyslogSettings(
+            host="syslog.example.com", port=5514, protocol=SyslogProtocol.TCP
+        )
+    finally:
+        await runtime.close()
+
+
+@pytest.mark.parametrize(
+    ("name", "value", "message"),
+    [
+        ("AIS0C_HEALTH_INTAKE_LAG_MINUTES", "0", "AIS0C_HEALTH_INTAKE_LAG_MINUTES"),
+        ("AIS0C_HEALTH_WRITE_FAILURES", "many", "AIS0C_HEALTH_WRITE_FAILURES"),
+        ("AIS0C_ALARM_SYSLOG_PROTOCOL", "tls", "udp or tcp"),
+    ],
+)
+async def test_an_invalid_health_setting_stops_the_runtime(
+    environ: dict[str, str], name: str, value: str, message: str
+) -> None:
+    environ |= {"AIS0C_ALARM_SYSLOG_HOST": "syslog.example.com", name: value}
+
+    with pytest.raises(RuntimeConfigError, match=message):
         await load_batch_runtime(environ)

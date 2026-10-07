@@ -20,9 +20,10 @@ offense source reads with as well, `qradar-investigate-read` and `qradar-verify-
 token must serve its profile. Skills are loaded from `skills/` (T-21). A missing or invalid
 manifest, prompt, token or skill stops the worker at start-up with a RuntimeConfigError.
 
-The batch worker (`load_batch_runtime`, T-022) runs KnowledgeSync's catalog sync. It needs the
-database, the gateway and the token of the `qradar-inventory-read` profile; the root, the
-model registry and LiteLLM are not used.
+The batch worker (`load_batch_runtime`, T-022) runs KnowledgeSync's catalog sync and, since
+T-032, the HealthCheck workflow's checks and syslog channel. It needs the database, the gateway
+and the token of the `qradar-inventory-read` profile; the root, the model registry and LiteLLM
+are not used. The health settings and the alarm syslog's are in `ais0c_activities.health`.
 
 The tools, their descriptions and schemas come from the gateway (`GET /v1/tools`), which reads
 them from the platform's registry, never from the MCP server (architecture §13.3).
@@ -31,7 +32,7 @@ them from the platform's registry, never from the MCP server (architecture §13.
 import os
 import re
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Final
 
@@ -50,6 +51,14 @@ from ais0c_activities.catalog import INVENTORY_PROFILE, INVENTORY_TOOLS, Catalog
 from ais0c_activities.db import SessionFactory
 from ais0c_activities.enrichment import IocMatcher
 from ais0c_activities.gateway_source import GatewayOffenseSource
+from ais0c_activities.health import (
+    HEALTH_TOOLS,
+    HealthActivities,
+    HealthSettings,
+    HealthSettingsError,
+    TaskQueuePollers,
+    load_syslog_settings,
+)
 from ais0c_activities.model_release import load_model_releases
 from ais0c_activities.offense_source import OffenseSource
 from ais0c_activities.settings import CaseSettings
@@ -65,6 +74,7 @@ from ais0c_agents import (
 )
 from ais0c_agents.gateway_http import HttpGatewayClient
 from ais0c_contracts import ModelRelease
+from ais0c_executor.syslog import SyslogSender, SyslogSettings
 from ais0c_knowledge.skills import Mode, SkillError, load_skills
 from ais0c_storage import create_engine, create_session_factory, database_url
 
@@ -253,16 +263,40 @@ def _skills_mode(env: Mapping[str, str]) -> Mode:
 
 @dataclass(frozen=True)
 class BatchRuntime:
-    """What the `soc-batch` worker runs with: KnowledgeSync's catalog sync."""
+    """What the `soc-batch` worker runs with: KnowledgeSync's catalog sync and HealthCheck's
+    checks."""
 
     sessions: SessionFactory
     catalog_sync: CatalogSyncActivities
+    health: HealthSettings = field(default_factory=HealthSettings)
+    syslog: SyslogSettings | None = None
+    """Where health alarms go as syslog; None turns syslog off (the worker warns at start-up)."""
+    gateway: HttpGatewayClient | None = None
+    profile: ToolsetProfile | None = None
     engine: AsyncEngine | None = None
     """The database engine behind `sessions`, when the runtime created it."""
 
-    def activities(self) -> list[Callable[..., object]]:
-        """Every activity of the `soc-batch` task queue, ready to register on a worker."""
-        return self.catalog_sync.activities()
+    def health_activities(self, pollers: TaskQueuePollers) -> HealthActivities:
+        """The health checks, asking Temporal about the executor queue through `pollers`."""
+        if self.gateway is None or self.profile is None:
+            raise RuntimeConfigError("this runtime has no gateway to run the health checks with")
+        return HealthActivities(
+            sessions=self.sessions,
+            gateway=self.gateway,
+            profile=self.profile,
+            pollers=pollers,
+            settings=self.health,
+            syslog=None if self.syslog is None else SyslogSender(self.syslog),
+        )
+
+    def activities(self, pollers: TaskQueuePollers | None = None) -> list[Callable[..., object]]:
+        """Every activity of the `soc-batch` task queue, ready to register on a worker: the
+        catalog sync, and with `pollers` (Temporal's view of the executor queue) the health
+        checks too."""
+        found = self.catalog_sync.activities()
+        if pollers is not None:
+            found.extend(self.health_activities(pollers).activities())
+        return found
 
     async def close(self) -> None:
         if self.engine is not None:
@@ -273,30 +307,45 @@ async def load_batch_runtime(environ: Mapping[str, str] | None = None) -> BatchR
     """Build the batch worker's runtime from `environ` (default `os.environ`).
 
     Asks the gateway for the tools of the token's profile, so the gateway must be up; fails
-    unless the token is one of `qradar-inventory-read` with the lists the sync reads.
+    unless the token is one of `qradar-inventory-read` with the lists the sync reads and the
+    reads of the health checks (`list_offenses`). Invalid health settings fail it too.
     """
     env = os.environ if environ is None else environ
     url = database_url(env)
+    health = _configured(lambda: HealthSettings.from_env(env))
+    syslog = _syslog_settings(env)
     secrets_dir = Path(env.get(SECRETS_DIR_ENV, "/run/secrets") or "/run/secrets")
     gateway = HttpGatewayClient(
         _required(env, GATEWAY_URL_ENV),
         read_token(secrets_dir / f"gateway-token-{INVENTORY_PROFILE}"),
     )
     profile = await gateway.fetch_toolset()
-    missing = INVENTORY_TOOLS - {tool.id for tool in profile.tools}
+    needed = INVENTORY_TOOLS | HEALTH_TOOLS
+    missing = needed - {tool.id for tool in profile.tools}
     if profile.name != INVENTORY_PROFILE or missing:
         lacking = f" without {', '.join(sorted(missing))}" if missing else ""
         raise RuntimeConfigError(
-            f"the catalog sync needs {INVENTORY_PROFILE} with "
-            f"{', '.join(sorted(INVENTORY_TOOLS))}; the gateway serves {profile.name}{lacking}"
+            f"the batch worker needs {INVENTORY_PROFILE} with "
+            f"{', '.join(sorted(needed))}; the gateway serves {profile.name}{lacking}"
         )
     engine = create_engine(url)
     sessions = create_session_factory(engine)
     return BatchRuntime(
         sessions=sessions,
         catalog_sync=CatalogSyncActivities(sessions=sessions, gateway=gateway, profile=profile),
+        health=health,
+        syslog=syslog,
+        gateway=gateway,
+        profile=profile,
         engine=engine,
     )
+
+
+def _syslog_settings(env: Mapping[str, str]) -> SyslogSettings | None:
+    try:
+        return load_syslog_settings(env)
+    except HealthSettingsError as error:
+        raise RuntimeConfigError(str(error)) from None
 
 
 def read_token(path: Path) -> SecretStr:

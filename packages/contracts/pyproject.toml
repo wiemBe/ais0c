@@ -1,6 +1,6 @@
 [project]
 name = "ais0c-contracts"
-version = "0.4.0"
+version = "0.5.0"
 description = "Pydantic schemas shared by every ais0c package."
 requires-python = ">=3.12"
 dependencies = [

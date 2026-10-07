@@ -20,9 +20,13 @@ TRIAGE_WORKFLOW: Final = "TriageWorkflow"
 # One run of a chain agent: Orchestrator, Investigation, Verification or Reporting.
 AGENT_WORKFLOW: Final = "AgentWorkflow"
 KNOWLEDGE_SYNC: Final = "KnowledgeSync"
+# The platform's health alarms (T-032), on the `soc-batch` queue.
+HEALTH_CHECK: Final = "HealthCheck"
 
 # The Schedule that starts KnowledgeSync; its runs' workflow IDs begin with it.
 KNOWLEDGE_SYNC_SCHEDULE_ID: Final = "knowledge-sync"
+# The Schedule that starts HealthCheck.
+HEALTH_CHECK_SCHEDULE_ID: Final = "health-check"
 
 # CaseWorkflow signals and query.
 OFFENSE_UPDATED: Final = "offense_updated"
@@ -85,6 +89,8 @@ RECORD_PLAN: Final = "record_plan"
 CASE_URL: Final = "case_url"
 WRITE_OFFENSE_NOTE: Final = "write_offense_note"
 SEND_EMAIL: Final = "send_email"
+# A note or e-mail the case gave up on, recorded as failed (T-032, T-59 (7)).
+RECORD_EXECUTOR_FAILURE: Final = "record_executor_failure"
 
 # GroupCaseWorkflow activities (T-027). It also calls `case_url`, `fetch_offense`,
 # `evaluation_window`, `record_decision`, `mark_no_ai_decision`, `agent_retry_delay` and
@@ -107,6 +113,14 @@ FINISH_AGENT_RUN: Final = "finish_agent_run"
 
 # KnowledgeSync activities.
 SYNC_ANALYSIS_CATALOG: Final = "sync_analysis_catalog"
+
+# HealthCheck activities (T-032).
+CHECK_INTAKE: Final = "check_intake"
+CHECK_LOG_SOURCES: Final = "check_log_sources"
+CHECK_WRITE_FAILURES: Final = "check_write_failures"
+CHECK_EXECUTOR_WORKER: Final = "check_executor_worker"
+SEND_ALARM_SYSLOG: Final = "send_alarm_syslog"
+MARK_ALARM_NOTIFIED: Final = "mark_alarm_notified"
 
 ACTIVITY_NAMES: Final = frozenset(
     {
@@ -143,5 +157,12 @@ ACTIVITY_NAMES: Final = frozenset(
         LOAD_EVIDENCE,
         FINISH_AGENT_RUN,
         SYNC_ANALYSIS_CATALOG,
+        CHECK_INTAKE,
+        CHECK_LOG_SOURCES,
+        CHECK_WRITE_FAILURES,
+        CHECK_EXECUTOR_WORKER,
+        SEND_ALARM_SYSLOG,
+        MARK_ALARM_NOTIFIED,
+        RECORD_EXECUTOR_FAILURE,
     }
 )

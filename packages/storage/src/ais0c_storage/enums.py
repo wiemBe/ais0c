@@ -169,6 +169,26 @@ class PlatformFlag(StrEnum):
     WRITES_ENABLED = "writes_enabled"
 
 
+class HealthAlarmKind(StrEnum):
+    """`health_alarms.kind`: the platform's own health alarms (T-23, T-68)."""
+
+    # QRadar has an offense update the platform has not seen, or QRadar cannot be reached.
+    INTAKE_STOPPED = "intake_stopped"
+    # A log source in the catalog's scope sends no events.
+    LOG_SOURCE_SILENT = "log_source_silent"
+    # Failed notes or e-mails in the last window went over the threshold.
+    WRITE_FAILURES = "write_failures"
+    # No worker listens on the `soc-executor` task queue.
+    EXECUTOR_ABSENT = "executor_absent"
+
+
+class HealthAlarmStatus(StrEnum):
+    """`health_alarms.status`: at most one `open` alarm per kind and subject."""
+
+    OPEN = "open"
+    RESOLVED = "resolved"
+
+
 class ActorKind(StrEnum):
     """`audit_log.actor_kind`."""
 

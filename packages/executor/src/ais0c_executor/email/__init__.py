@@ -6,6 +6,7 @@ never a model:
 
 - `alert_message`, `render_body`: the subject, the template fields and the body of a
   `CaseAlert` or a `GroupAlert`.
+- `HealthAlarm`: the platform's own health alarm, e-mailed whether writes are on or not (T-032).
 - `alert_needed`: the level rule. After a re-evaluation of a case or a group, an e-mail goes
   out only if the level went up (D-42).
 - `refused_recipients`: the allowed domain check. One address outside the allowed domains
@@ -41,6 +42,7 @@ from ais0c_executor.email.request import (
     EmailRequest,
     EmailResult,
     GroupAlert,
+    HealthAlarm,
 )
 from ais0c_executor.email.sender import (
     EMAIL_REJECT_ACTION,
@@ -77,6 +79,7 @@ __all__ = [
     "EmailTransport",
     "EmailTransportError",
     "GroupAlert",
+    "HealthAlarm",
     "InvalidEmail",
     "RefusalReason",
     "RefusedRecipient",

@@ -7,7 +7,7 @@ Verification and Reporting). The Action Executor's note and e-mail activities
 (`NoteActivities`, `EmailActivities`) run in their own process on the `soc-executor` task queue,
 from `ExecutorRuntime` (T-33 (1), T-045); the case queue has the rest, including `case_url`. The
 `soc-batch` task queue has KnowledgeSync's catalog sync (`CatalogSyncActivities`,
-`BatchRuntime.activities`). The case of an offense group in storm (`GroupCaseActivities`,
+`BatchRuntime.activities`) and the HealthCheck workflow's checks (`HealthActivities`, T-032). The case of an offense group in storm (`GroupCaseActivities`,
 T-027) runs on the case queue too.
 """
 
@@ -51,6 +51,7 @@ from ais0c_activities.enrichment import (
     floor_level,
     match_critical_assets,
 )
+from ais0c_activities.executor_failure import AbandonedCall, ExecutorFailureActivities
 from ais0c_activities.executor_runtime import ExecutorRuntime, load_executor_runtime
 from ais0c_activities.gateway import (
     GatewayProfile,
@@ -78,6 +79,15 @@ from ais0c_activities.grouping import (
     rule_set_hash,
     sample_chosen,
 )
+from ais0c_activities.health import (
+    HealthActivities,
+    HealthSettings,
+    HealthSettingsError,
+    TaskQueuePollers,
+    TemporalPollers,
+    load_syslog_settings,
+)
+from ais0c_activities.health_state import Finding, reconcile
 from ais0c_activities.intake import CaseLauncher, IntakeActivities
 from ais0c_activities.model_release import (
     ModelReleaseChange,
@@ -138,6 +148,7 @@ def case_queue_activities(
         sessions=sessions, source=source, settings=settings, ioc_matcher=ioc_matcher
     )
     groups = GroupCaseActivities(sessions=sessions, settings=settings, ioc_matcher=ioc_matcher)
+    failures = ExecutorFailureActivities(sessions=sessions)
     runs = TriageRunActivities(sessions=sessions, runtime=triage)
     chain_runs = ChainActivities.of(chain, sessions=sessions, settings=settings)
     return [
@@ -146,6 +157,7 @@ def case_queue_activities(
         launcher.wake_group_cases,
         *case.activities(),
         *groups.activities(),
+        *failures.activities(),
         *runs.activities(),
         *triage.temporal_activities,
         *chain_runs.activities(),
@@ -168,6 +180,7 @@ __all__ = [
     "SEND_EMAIL",
     "SOURCE_AGENT_ID",
     "WRITE_OFFENSE_NOTE",
+    "AbandonedCall",
     "BatchRuntime",
     "CaseActivities",
     "CaseLauncher",
@@ -179,8 +192,10 @@ __all__ = [
     "ChainRuntime",
     "EmailActivities",
     "EmailRuntime",
+    "ExecutorFailureActivities",
     "ExecutorRuntime",
     "FakeOffenseSource",
+    "Finding",
     "GatewayOffenseNotes",
     "GatewayOffenseSource",
     "GatewayProfile",
@@ -190,6 +205,9 @@ __all__ = [
     "GroupState",
     "GroupingDecision",
     "GroupingOutcome",
+    "HealthActivities",
+    "HealthSettings",
+    "HealthSettingsError",
     "IntakeActivities",
     "InvestigationRuntime",
     "IocMatcher",
@@ -210,6 +228,8 @@ __all__ = [
     "SessionFactory",
     "SystemRun",
     "SystemRunError",
+    "TaskQueuePollers",
+    "TemporalPollers",
     "TriageRunActivities",
     "TriageRuntime",
     "VerificationRuntime",
@@ -232,6 +252,7 @@ __all__ = [
     "load_model_releases",
     "load_note_runtime",
     "load_smtp_settings",
+    "load_syslog_settings",
     "match_critical_assets",
     "model_release_changes",
     "novelty_values",
@@ -239,6 +260,7 @@ __all__ = [
     "orchestrator_task",
     "parse_model_releases",
     "pre_priority",
+    "reconcile",
     "reporting_task",
     "rule_set_hash",
     "sample_applies",

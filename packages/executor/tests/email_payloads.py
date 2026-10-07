@@ -20,7 +20,13 @@ from ais0c_contracts import (
     NoteContent,
     UrgentEvent,
 )
-from ais0c_executor.email import CaseAlert, EmailTransportError, GroupAlert, SendReceipt
+from ais0c_executor.email import (
+    CaseAlert,
+    EmailTransportError,
+    GroupAlert,
+    HealthAlarm,
+    SendReceipt,
+)
 from ais0c_storage import ActorKind, PlatformFlag
 from ais0c_storage.models import (
     AllowedEmailDomainRow,
@@ -122,6 +128,23 @@ def group_alert(**changes: object) -> GroupAlert:
         "case_url": f"https://ais0c.example.com/cases/group-{GROUP_ID}",
     }
     return GroupAlert.model_validate(values | changes)
+
+
+ALARM_ID = "0193a5c2-7b4e-7d1a-8c3f-5e2b9a1d4f60"
+
+
+def health_alarm(**changes: object) -> HealthAlarm:
+    values: dict[str, object] = {
+        "alarm_id": ALARM_ID,
+        "alarm_kind": "log_source_silent",
+        "subject": "17",
+        "subject_name": "FW-DMZ-01",
+        "status": "open",
+        "notification_no": 1,
+        "opened_at": T0,
+        "counts": {"silent_minutes": 75, "threshold": 60},
+    }
+    return HealthAlarm.model_validate(values | changes)
 
 
 # --- database --------------------------------------------------------------------------------

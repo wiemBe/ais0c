@@ -250,7 +250,7 @@ async def test_replacing_the_routes_leaves_one_row(api: Harness) -> None:
     assert details["routes"] == 1
     # The table before (0007's seed) and after, so the change can be read back.
     assert {"kind": "hunt_report", "level": None, "list_name": "hunters"} in details["before"]
-    assert len(details["before"]) == 9
+    assert len(details["before"]) == 10
     assert details["after"] == [{"kind": "case_alert", "level": "high", "list_name": "operators"}]
 
 

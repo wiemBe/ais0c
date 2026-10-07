@@ -123,7 +123,7 @@ Action Executor yalnızca `deploy/compose/secrets/executor` dizinini alır; not 
 
 ### Batch worker (katalog senkronu)
 
-Analiz Kataloğu senkronunu çalıştıran worker ayrı bir süreçtir ([T-037](../../docs/impl/tasks/T-037-knowledge-sync-worker.md)): `uv run python -m ais0c_worker batch`. Argümansız `python -m ais0c_worker` case worker'ıdır.
+Analiz Kataloğu senkronunu ve sağlık alarmlarını ([T-032](../../docs/impl/tasks/T-032-saglik-alarmlari.md)) çalıştıran worker ayrı bir süreçtir ([T-037](../../docs/impl/tasks/T-037-knowledge-sync-worker.md)): `uv run python -m ais0c_worker batch`. Argümansız `python -m ais0c_worker` case worker'ıdır.
 
 | Değişken | Anlamı | Varsayılan |
 |---|---|---|
@@ -133,8 +133,9 @@ Analiz Kataloğu senkronunu çalıştıran worker ayrı bir süreçtir ([T-037](
 | `TEMPORAL_ADDRESS` | Temporal frontend | `127.0.0.1:7233` |
 | `TEMPORAL_NAMESPACE` | Namespace | `default` |
 | `AIS0C_KNOWLEDGE_SYNC_SCHEDULE` | `off` Schedule'a dokunmaz, örneğin ikinci bir batch worker'da | `on` |
+| `AIS0C_HEALTH_SCHEDULE` | `off` `health-check` Schedule'ına dokunmaz, aynı şekilde | `on` |
 
-Envanter token'ı `make_secrets.py` üretir (`deploy/compose/secrets/agents/gateway-token-qradar-inventory-read`) ve gateway'e verilir; worker aynı dosyayı okur. Gateway `qradar-inventory-read` profilini sunmuyorsa veya token yoksa worker açılışta `RuntimeConfigError` ile durur. Senkron model çağırmadığı için model registry'sine ve LiteLLM'e gerek yoktur.
+Envanter token'ı `make_secrets.py` üretir (`deploy/compose/secrets/agents/gateway-token-qradar-inventory-read`) ve gateway'e verilir; worker aynı dosyayı okur. Gateway `qradar-inventory-read` profilini (sağlık alarmları için `list_offenses` dahil) sunmuyorsa veya token yoksa worker açılışta `RuntimeConfigError` ile durur. Senkron model çağırmadığı için model registry'sine ve LiteLLM'e gerek yoktur.
 
 ```bash
 set -a; . deploy/compose/.env; set +a
@@ -145,6 +146,34 @@ AIS0C_WORKER_SECRETS_DIR=deploy/compose/secrets/agents \
 ```
 
 Açılışta `knowledge-sync` Schedule'ını kurar: her gün 03:00 Europe/Istanbul'da `soc-batch` kuyruğunda bir `KnowledgeSync` başlatır. Aynı Schedule'ı elle tetiklemek `POST /catalog/sync`'in (T-028) yapacağı gibidir; süren bir koşunun üstüne ikinci bir koşu başlatmaz. `Ctrl-C` veya `SIGTERM` ile düzgünce durur; yarım kalan işi bir sonraki worker tarihinden devam ettirir.
+
+#### Sağlık alarmları (T-032)
+
+Batch worker açılışta `health-check` Schedule'ını da kurar; her `AIS0C_HEALTH_INTERVAL_MINUTES` dakikada bir `soc-batch` kuyruğunda `HealthCheck` başlar (çakışan koşu atlanır). Dört kontrol vardır: intake durdu, log source sustu, not/e-posta hataları arttı, `soc-executor` kuyruğunda worker yok. Her alarm `health_alarms` tablosunda tutulur; açılınca bir kez bildirilir, açık kaldıkça `AIS0C_HEALTH_RENOTIFY_HOURS` saatte bir hatırlatılır, kapanınca "düzeldi" gider.
+
+| Değişken | Anlamı | Varsayılan |
+|---|---|---|
+| `AIS0C_HEALTH_INTERVAL_MINUTES` | Kontrollerin koşma aralığı (Schedule) | `5` |
+| `AIS0C_HEALTH_INTAKE_LAG_MINUTES` | QRadar'ın en yeni açık offense güncellemesi platformunkinden bu kadar ileriyse alarm | `15` |
+| `AIS0C_HEALTH_LOG_SOURCE_SILENT_MINUTES` | Kapsamdaki bir log source bu kadar süredir event göndermiyorsa alarm | `60` |
+| `AIS0C_HEALTH_WRITE_FAILURES` | Pencerede bundan **fazla** `failed` not (ya da `failed`/`rejected` e-posta) alarm açar | `3` |
+| `AIS0C_HEALTH_WRITE_FAILURE_WINDOW_MINUTES` | Hata sayımının penceresi | `60` |
+| `AIS0C_HEALTH_EXECUTOR_ABSENT_MINUTES` | `soc-executor` kuyruğu bu kadar süredir workersiz ise bildirim | `5` |
+| `AIS0C_HEALTH_RENOTIFY_HOURS` | Açık kalan alarmın hatırlatma aralığı | `6` |
+| `AIS0C_ALARM_SYSLOG_HOST` | Alarmların syslog ile gideceği sunucu; boşsa syslog kapalıdır ve worker açılışta bunu uyarı olarak loglar | yok |
+| `AIS0C_ALARM_SYSLOG_PORT` | Syslog portu | `514` |
+| `AIS0C_ALARM_SYSLOG_PROTOCOL` | `udp` veya `tcp` (TCP'de octet-counting çerçevesi) | `udp` |
+
+Alarm iki kanaldan gider: RFC 5424 syslog (uygulama adı `ais0c`, mesaj kimliği alarm türü, sabit şablon; QRadar'daki bir kural bunu yakalar, kuralı kullanıcı kurar) ve `analyst-eng` grubuna `health_alarm` e-postası. E-postayı executor gönderir ve kill switch kapalıyken de gider; syslog executor olmadan da gider.
+
+Dev'de syslog'u denemek için yerel bir dinleyici yeterlidir; lab QRadar'a syslog göndermek paylaşılan bir kaynağa yazmaktır ve yalnızca planner'ın onayıyla yapılır:
+
+```bash
+nc -klu 5514 &                                  # UDP dinleyici
+AIS0C_ALARM_SYSLOG_HOST=127.0.0.1 AIS0C_ALARM_SYSLOG_PORT=5514 \
+AIS0C_HEALTH_INTERVAL_MINUTES=1 AIS0C_HEALTH_EXECUTOR_ABSENT_MINUTES=1 \
+  uv run python -m ais0c_worker batch              # executor worker'ı kapalıyken bir dakika sonra alarm
+```
 
 ### API (arayüz servisi)
 

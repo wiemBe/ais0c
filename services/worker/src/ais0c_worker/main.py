@@ -6,11 +6,13 @@
 | `TEMPORAL_NAMESPACE` | Namespace | `default` |
 | `AIS0C_INTAKE_SCHEDULE` | `off` leaves the intake Schedule alone, e.g. on a second worker | `on` |
 | `AIS0C_KNOWLEDGE_SYNC_SCHEDULE` | `off` leaves the KnowledgeSync Schedule alone | `on` |
+| `AIS0C_HEALTH_SCHEDULE` | `off` leaves the HealthCheck Schedule alone, e.g. on a second batch worker | `on` |
 
 Without a command the process is the case worker, as it has been: `run_case_worker` reads the
 offenses and runs the agent chain of each case (`ais0c_worker.case_worker`). With the command `batch` it is
 the batch worker of the `soc-batch` queue, `run_batch_worker`, which runs KnowledgeSync's
-catalog sync. With the command `executor` it is the executor worker of the `soc-executor` queue,
+catalog sync and the HealthCheck workflow's checks (T-032), and warns at start-up when
+`AIS0C_ALARM_SYSLOG_HOST` is unset, so alarms reach QRadar by no syslog. With the command `executor` it is the executor worker of the `soc-executor` queue,
 `run_executor_worker`, which runs only the QRadar note and the alert e-mail, with the executor's
 own secrets (T-33 (1), T-045): no agent token, no model, no Schedule.
 
@@ -48,12 +50,17 @@ from ais0c_activities import (
 from ais0c_worker.batch_worker import build_batch_worker
 from ais0c_worker.case_worker import build_case_worker, connect
 from ais0c_worker.executor_worker import build_executor_worker
-from ais0c_worker.schedule import ensure_intake_schedule, ensure_knowledge_sync_schedule
+from ais0c_worker.schedule import (
+    ensure_health_check_schedule,
+    ensure_intake_schedule,
+    ensure_knowledge_sync_schedule,
+)
 
 TEMPORAL_ADDRESS_ENV: Final = "TEMPORAL_ADDRESS"
 TEMPORAL_NAMESPACE_ENV: Final = "TEMPORAL_NAMESPACE"
 INTAKE_SCHEDULE_ENV: Final = "AIS0C_INTAKE_SCHEDULE"
 KNOWLEDGE_SYNC_SCHEDULE_ENV: Final = "AIS0C_KNOWLEDGE_SYNC_SCHEDULE"
+HEALTH_SCHEDULE_ENV: Final = "AIS0C_HEALTH_SCHEDULE"
 
 CASE_COMMAND: Final = "case"
 BATCH_COMMAND: Final = "batch"
@@ -97,15 +104,22 @@ async def run_batch_worker(stop: asyncio.Event, environ: Mapping[str, str] | Non
     """Run the `soc-batch` worker until `stop` is set; `environ` defaults to `os.environ`.
 
     Raises `RuntimeConfigError` before it runs anything when the runtime cannot be built: the
-    inventory token is missing, or the gateway serves another profile than the catalog sync
-    reads with.
+    inventory token is missing, the gateway serves another profile than the sync and the health
+    checks read with, or a health setting is invalid.
     """
     env = os.environ if environ is None else environ
     runtime = await load_batch_runtime(env)
     try:
+        if runtime.syslog is None:
+            logger.warning(
+                "health alarms go out by e-mail only: AIS0C_ALARM_SYSLOG_HOST is not set, so no "
+                "syslog message reaches QRadar (T-23, T-032)"
+            )
         client = await connect(_address(env), namespace=_namespace(env))
         if not _schedule_left_alone(env, KNOWLEDGE_SYNC_SCHEDULE_ENV):
             await ensure_knowledge_sync_schedule(client)
+        if not _schedule_left_alone(env, HEALTH_SCHEDULE_ENV):
+            await ensure_health_check_schedule(client, every=runtime.health.interval)
         async with build_batch_worker(client, runtime):
             logger.info("batch worker running")
             await stop.wait()

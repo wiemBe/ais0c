@@ -1,4 +1,5 @@
-"""CaseWorkflow's calls to the Action Executor's activities (T-045 criteria 2-6 and 8).
+"""CaseWorkflow's calls to the Action Executor's activities (T-045 criteria 2-6 and 8) and what
+becomes of a call the case gave up on (T-032 criterion 9, T-59 (7)).
 
 The executor's activities are fakes on their own `soc-executor` queue, as the real worker runs
 them (criterion 2); the tests read the requests the workflow built. The real activities run in
@@ -10,12 +11,13 @@ import asyncio
 import hashlib
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import AsyncExitStack, asynccontextmanager
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Never
 
 import pytest
 from temporalio.api.enums.v1 import EventType
 from temporalio.client import WorkflowHandle
+from temporalio.contrib.pydantic import pydantic_data_converter
 from temporalio.exceptions import ApplicationError
 from temporalio.testing import WorkflowEnvironment
 from temporalio.worker import Worker
@@ -30,11 +32,13 @@ from workflow_fakes import (
     ChainResult,
     ExecutorBehavior,
     ExecutorRequest,
+    GroupFakes,
     TriageCall,
     TriageStub,
     agent_failure,
     answer_agents,
     executor_worker,
+    group_summary,
     offense,
     report_of,
     triage_failure,
@@ -52,11 +56,19 @@ from ais0c_contracts import (
     TriageResult,
     UrgentEvent,
 )
-from ais0c_workflows import CaseStatus, CaseView, CaseWorkflow, TriageFailure
+from ais0c_workflows import (
+    CaseStatus,
+    CaseView,
+    CaseWorkflow,
+    GroupCaseWorkflow,
+    TriageFailure,
+    evaluation,
+)
 from ais0c_workflows.names import (
     CASE_TASK_QUEUE,
     CASE_URL,
     EXECUTOR_TASK_QUEUE,
+    GROUP_UPDATED,
     OFFENSE_CLOSED,
     OFFENSE_UPDATED,
     SEND_EMAIL,
@@ -66,6 +78,7 @@ from ais0c_workflows.notify import (
     EXECUTOR_TOTAL_TIMEOUT,
     NO_REPORT_SUMMARY_TR,
     SUMMARY_MAX,
+    AbandonedCall,
     EvaluationNoteRequest,
     NoDecisionNoteRequest,
     run_marker,
@@ -607,3 +620,183 @@ async def test_a_failure_that_stays_leaves_the_case_and_the_e_mail_alone(
     assert view.status is CaseStatus.DECIDED
     assert result.status is CaseStatus.CLOSED
     assert len(fakes.chain_decisions) == 1
+
+
+# --- T-032 criterion 9: a call given up is written down as failed --------------------------------
+#
+# The Temporal test server skips time only while every activity it scheduled has a worker to run
+# on, so the hour-long tests have an executor worker whose activities fail the whole hour; the
+# case gives the calls up exactly as it does when no worker answers at all, which the last test
+# shows in real time with a short timeout.
+
+GROUP_ID = "G-0123456789ab-20261007T090000Z"
+GROUP_CASE_ID = f"group-{GROUP_ID}"
+AFTER_THE_HOUR = EXECUTOR_TOTAL_TIMEOUT + timedelta(minutes=5)
+
+
+async def test_a_note_and_an_email_the_executor_kept_failing_are_recorded_as_failed(
+    env: WorkflowEnvironment,
+) -> None:
+    """The executor fails every attempt for the whole hour: the case gives the calls up and
+    records them (T-59 (7)), and goes on."""
+    fakes = CaseFakes(
+        offense(OFFENSE_ID, start=await env.get_current_time()),
+        triage_behavior=deciding(Level.HIGH),
+        note_behavior=unreachable,
+        email_behavior=unreachable,
+    )
+    async with running_case(env, fakes) as handle:
+        await fakes.events.wait_for("decided", 1)
+        # Within the hour the call may still succeed, so nothing is recorded.
+        await env.sleep(EXECUTOR_TOTAL_TIMEOUT - timedelta(minutes=5))
+        assert fakes.abandoned == []
+        await env.sleep(timedelta(minutes=10))
+        await fakes.events.wait_for("abandoned", 2)
+        view = await state_when(handle, CaseStatus.DECIDED)
+        await handle.signal(OFFENSE_CLOSED)
+        result = await handle.result()
+
+    assert (view.status, result.status) == (CaseStatus.DECIDED, CaseStatus.CLOSED)
+    email, note = sorted(fakes.abandoned, key=lambda call: call.kind)
+    assert note == AbandonedCall(
+        kind="note",
+        case_id=CASE_ID,
+        evaluation_no=1,
+        offense_id=OFFENSE_ID,
+        run_marker=MARKER,
+    )
+    assert email == AbandonedCall(
+        kind="email",
+        case_id=CASE_ID,
+        evaluation_no=1,
+        email_kind="case_alert",
+        level=Level.HIGH,
+        idempotency_key=f"case_alert:{CASE_ID}:1",
+    )
+
+
+async def test_a_no_decision_note_is_recorded_with_its_own_marker(
+    env: WorkflowEnvironment,
+) -> None:
+    fakes = CaseFakes(
+        offense(OFFENSE_ID, start=await env.get_current_time()),
+        triage_behavior=first_undecided,
+        note_behavior=unreachable,
+    )
+    async with running_case(env, fakes) as handle:
+        await state_when(handle, CaseStatus.NO_AI_DECISION)
+        await env.sleep(AFTER_THE_HOUR)
+        await fakes.events.wait_for("abandoned", 1)
+        await handle.signal(OFFENSE_CLOSED)
+        await handle.result()
+
+    [call] = fakes.abandoned
+    assert call == AbandonedCall(
+        kind="note",
+        case_id=CASE_ID,
+        evaluation_no=1,
+        offense_id=OFFENSE_ID,
+        run_marker=NO_DECISION_MARKER,
+    )
+
+
+async def test_a_call_the_retries_got_past_is_not_recorded(env: WorkflowEnvironment) -> None:
+    async def recovers_after_two_tries(request: ExecutorRequest, attempt: int) -> dict[str, object]:
+        if attempt < 3:
+            raise ApplicationError("the gateway is unreachable")
+        return {"result": "written"}
+
+    fakes = CaseFakes(
+        offense(OFFENSE_ID, start=await env.get_current_time()),
+        triage_behavior=deciding(Level.MEDIUM),
+        note_behavior=recovers_after_two_tries,
+    )
+    async with running_case(env, fakes) as handle:
+        await fakes.executor_events.wait_for("note", 1)
+        await env.sleep(AFTER_THE_HOUR)
+        await handle.signal(OFFENSE_CLOSED)
+        await handle.result()
+
+    assert fakes.note_attempts[-1] == 3
+    assert fakes.abandoned == []
+
+
+async def test_a_group_note_and_a_group_alert_the_executor_kept_failing_are_recorded(
+    env: WorkflowEnvironment,
+) -> None:
+    """T-65 (6): the group case's calls are given up and recorded as the offense case's are."""
+    now = await env.get_current_time()
+    fakes = GroupFakes(
+        offense(201, start=now),
+        summary=group_summary(6, at=now),
+        grouped=[201],
+        window_end=now + timedelta(hours=10),
+        triage_behavior=deciding(Level.HIGH),
+        note_behavior=unreachable,
+        email_behavior=unreachable,
+    )
+    async with (
+        executor_worker(env, fakes),
+        Worker(
+            env.client,
+            task_queue=CASE_TASK_QUEUE,
+            workflows=[GroupCaseWorkflow, TriageStub, AgentStub],
+            activities=fakes.activities(),
+        ),
+    ):
+        handle = await env.client.start_workflow(
+            GroupCaseWorkflow.run,
+            args=[GROUP_ID],
+            id=GROUP_CASE_ID,
+            task_queue=CASE_TASK_QUEUE,
+            start_signal=GROUP_UPDATED,
+        )
+        await env.sleep(timedelta(minutes=10))
+        await fakes.events.wait_for("decided", 1)
+        await env.sleep(AFTER_THE_HOUR)
+        await fakes.events.wait_for("abandoned", 2)
+        await handle.terminate()
+
+    email, note = sorted(fakes.abandoned, key=lambda call: call.kind)
+    assert (note.kind, note.case_id, note.offense_id, note.evaluation_no) == (
+        "note",
+        GROUP_CASE_ID,
+        201,
+        1,
+    )
+    assert note.run_marker == run_marker(GROUP_CASE_ID, 1, "group")
+    assert email == AbandonedCall(
+        kind="email",
+        case_id=GROUP_CASE_ID,
+        evaluation_no=1,
+        email_kind="group_alert",
+        level=Level.HIGH,
+        group_id=GROUP_ID,
+        idempotency_key=f"group_alert:{GROUP_ID}:1",
+    )
+
+
+async def test_with_no_executor_worker_at_all_the_call_is_given_up_and_recorded(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Nothing polls the `soc-executor` queue. The workflow's hour is shortened to seconds (the
+    sandbox runs this process's `evaluation` module, which holds the constant), and the test
+    server runs in real time because the time-skipping one cannot skip past an activity no
+    worker has picked up."""
+    monkeypatch.setattr(evaluation, "EXECUTOR_TOTAL_TIMEOUT", timedelta(seconds=3))
+    async with await WorkflowEnvironment.start_local(
+        data_converter=pydantic_data_converter
+    ) as local:
+        fakes = CaseFakes(
+            offense(OFFENSE_ID, start=datetime.now(UTC)),
+            triage_behavior=deciding(Level.HIGH),
+        )
+        async with running_case(local, fakes, executor=False) as handle:
+            async with asyncio.timeout(60):
+                while len(fakes.abandoned) < 2:  # noqa: ASYNC110 - Events.wait_for gives up at 10 s
+                    await asyncio.sleep(0.2)
+            await handle.signal(OFFENSE_CLOSED)
+            await handle.result()
+
+    assert {call.kind for call in fakes.abandoned} == {"note", "email"}
+    assert (fakes.note_attempts, fakes.email_attempts) == ([], [])

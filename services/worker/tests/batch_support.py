@@ -49,8 +49,10 @@ STOPPED: Final = "batch worker stopped"
 # Long enough for a worker process to import, load its runtime and start polling.
 STARTUP_SECONDS: Final = 90.0
 
-# The tools of `qradar-inventory-read` (config/connectors/qradar.yaml); the sync reads three.
+# The tools of `qradar-inventory-read` (config/connectors/qradar.yaml); the sync reads three and
+# the health checks `list_offenses` and `list_log_sources` (T-032).
 INVENTORY_TOOL_IDS: Final = (
+    "list_offenses",
     "list_rules",
     "get_rule",
     "list_log_sources",

@@ -69,7 +69,13 @@ DOCUMENTED_MODELS: dict[str, object] = {
     "audit_log.details": dict[str, JsonValue],
 }
 # JSON columns for which data-model.md names no model.
-UNMODELED = {"hunt_packs.content", "hunt_schedules.scope", "actors.sources", "fp_clusters.pattern"}
+UNMODELED = {
+    "hunt_packs.content",
+    "hunt_schedules.scope",
+    "actors.sources",
+    "fp_clusters.pattern",
+    "health_alarms.details",
+}
 
 VALID: dict[str, object] = {
     "cases.report": payloads.case_report(),

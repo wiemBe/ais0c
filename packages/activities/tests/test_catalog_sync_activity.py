@@ -116,7 +116,9 @@ def test_the_inventory_profile_reads_lists_and_has_no_ariel_search() -> None:
     """Criterion 1, in the configuration the gateway loads."""
     profile = load_registry(CONFIG_DIR, ["qradar"]).profiles[INVENTORY_PROFILE]
 
+    # `list_offenses` is the health check's (T-032), not the sync's; the sync still reads lists.
     assert set(profile.tools) == {
+        "list_offenses",
         "list_rules",
         "get_rule",
         "list_log_sources",

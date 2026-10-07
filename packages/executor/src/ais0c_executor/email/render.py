@@ -6,6 +6,8 @@ fields. Raw log text never goes in. Every field is one cleaned line (`clean_text
 length, so text from a log cannot add a line of its own, fake a header or hide characters; the
 templates in `templates/` alone decide the layout.
 
+- A health alarm (T-032) has a subject and a body of its own: the alarm's kind, state and
+  subject, the numbers it was raised with and when it opened; nothing of a model's.
 - Subject: the level, the AI's verdict and the offense's name (a group's title), at most 150
   characters. The name is cleaned and cut until the subject fits.
 - Body: the fields of the case's QRadar note (summary, urgent events, recommended actions, data
@@ -32,7 +34,13 @@ from pydantic import ValidationError
 from ais0c_contracts import ActionType, CaseVerdict, DataGap, EmailKind, EmailMessage, UrgentEvent
 from ais0c_executor.common import FieldValue, TemplateError, Templates, clean_text, is_clean, label
 from ais0c_executor.email.errors import InvalidEmail
-from ais0c_executor.email.request import CaseAlert, EmailRequest, GroupAlert, validated
+from ais0c_executor.email.request import (
+    CaseAlert,
+    EmailRequest,
+    GroupAlert,
+    HealthAlarm,
+    validated,
+)
 
 EMAIL_TEMPLATES: Final = Templates(Path(__file__).parent / "templates")
 EMAIL_TIME_ZONE: Final = ZoneInfo("Europe/Istanbul")
@@ -41,7 +49,11 @@ MAX_SUBJECT_LENGTH: Final = 150
 # A body this long means something upstream went wrong; no alert comes near it.
 MAX_BODY_LENGTH: Final = 20_000
 # The template of each kind of e-mail; a hunt report (phase 3) has none yet.
-TEMPLATE_IDS: Final = {EmailKind.CASE_ALERT: "case_alert", EmailKind.GROUP_ALERT: "group_alert"}
+TEMPLATE_IDS: Final = {
+    EmailKind.CASE_ALERT: "case_alert",
+    EmailKind.GROUP_ALERT: "group_alert",
+    EmailKind.HEALTH_ALARM: "health_alarm",
+}
 MAX_EVENTS: Final = 5
 MAX_GAPS: Final = 5
 QID_LENGTH: Final = 12
@@ -56,6 +68,25 @@ _ADDRESS: Final = 100
 _USERNAME: Final = 100
 _REASON: Final = 300
 _GAP_SOURCE: Final = 80
+_SUBJECT_NAME: Final = 120
+
+# The Turkish words of a health alarm: what it is about, its state and its numbers.
+_ALARM_KINDS: Final = {
+    "intake_stopped": "Offense akışı durdu",
+    "log_source_silent": "Log source sustu",
+    "write_failures": "Not/e-posta hataları arttı",
+    "executor_absent": "Executor worker'ı yok",
+}
+_ALARM_STATES: Final = {"open": "AÇILDI", "reminder": "HATIRLATMA", "resolved": "DÜZELDİ"}
+_COUNT_LABELS: Final = {
+    "lag_minutes": "Gecikme (dk)",
+    "silent_minutes": "Sessizlik (dk)",
+    "absent_minutes": "Yokluk (dk)",
+    "failures": "Hata sayısı",
+    "threshold": "Eşik",
+    "window_minutes": "Pencere (dk)",
+    "pollers": "Worker sayısı",
+}
 
 
 def alert_message(request: EmailRequest, recipients: Sequence[str]) -> EmailMessage:
@@ -65,7 +96,16 @@ def alert_message(request: EmailRequest, recipients: Sequence[str]) -> EmailMess
     Raises `InvalidEmail` if the request is invalid or its e-mail cannot be built.
     """
     request = validated(request)
-    if isinstance(request, CaseAlert):
+    if isinstance(request, HealthAlarm):
+        fields = _health_fields(request)
+        subject = _subject(
+            "subject/health_alarm.txt",
+            name_field="subject",
+            name=request.subject,
+            state=_ALARM_STATES[request.status],
+            kind=_ALARM_KINDS[request.alarm_kind],
+        )
+    elif isinstance(request, CaseAlert):
         content = request.content
         fields = _case_fields(request)
         subject = _subject(
@@ -153,6 +193,30 @@ def _render_subject(template_id: str, fields: dict[str, FieldValue]) -> str:
         return EMAIL_TEMPLATES.render(template_id, **fields)
     except TemplateError as error:
         raise InvalidEmail(f"the subject cannot be built: {error}") from None
+
+
+def _health_fields(request: HealthAlarm) -> dict[str, str]:
+    """The fields of a health alarm's e-mail: `count_1`, `count_2`, ... one line each, as the
+    events of an alert are."""
+    subject_name = _optional(request.subject_name, _SUBJECT_NAME)
+    return {
+        "alarm_kind": _ALARM_KINDS[request.alarm_kind],
+        "state": _ALARM_STATES[request.status],
+        "is_resolved": "yes" if request.status == "resolved" else "",
+        "subject_line": _alarm_subject(request, subject_name),
+        "opened_at": f"{_local(request.opened_at):%Y-%m-%d %H:%M}",
+        "notification_no": str(request.notification_no),
+        **{
+            f"count_{number}": f"{_COUNT_LABELS.get(name, clean_text(name, 40))}: {value}"
+            for number, (name, value) in enumerate(sorted(request.counts.items()), start=1)
+        },
+    }
+
+
+def _alarm_subject(request: HealthAlarm, subject_name: str | None) -> str:
+    """What the alarm is about on one line: the subject, then its name when it has one."""
+    subject = clean_text(request.subject, _NAME) or "-"
+    return subject if subject_name is None else f"{subject} · {subject_name}"
 
 
 def _case_fields(request: CaseAlert) -> dict[str, str]:

@@ -1,5 +1,5 @@
 """Temporal workflows: OffenseIntake, CaseWorkflow, GroupCaseWorkflow, HuntWorkflow,
-TuningWorkflow, KnowledgeSync.
+TuningWorkflow, KnowledgeSync, HealthCheck (the platform's health alarms, T-032).
 
 CaseWorkflow runs each evaluation's agents as child workflows: TriageWorkflow, then AgentWorkflow
 for the Orchestrator, the plan's steps and Reporting. GroupCaseWorkflow runs the same chain for
@@ -23,6 +23,7 @@ from ais0c_workflows.chain import ChainDecision
 from ais0c_workflows.evaluation import AgentChain, ExecutorCalls
 from ais0c_workflows.group import GroupCarry, GroupCaseWorkflow, GroupDecision, GroupView
 from ais0c_workflows.group_summary import GroupSummary
+from ais0c_workflows.health import HealthCheck, HealthCheckResult
 from ais0c_workflows.intake import IntakeCheckpoint, OffenseIntake
 from ais0c_workflows.knowledge_sync import KnowledgeSync, KnowledgeSyncResult
 from ais0c_workflows.reevaluation import reevaluation_due, should_reevaluate
@@ -43,7 +44,7 @@ CASE_QUEUE_WORKFLOWS: Final = (
     AgentWorkflow,
 )
 # Workflows of the `soc-batch` task queue.
-BATCH_QUEUE_WORKFLOWS: Final = (KnowledgeSync,)
+BATCH_QUEUE_WORKFLOWS: Final = (KnowledgeSync, HealthCheck)
 
 __all__ = [
     "BATCH_QUEUE_WORKFLOWS",
@@ -66,6 +67,8 @@ __all__ = [
     "GroupDecision",
     "GroupSummary",
     "GroupView",
+    "HealthCheck",
+    "HealthCheckResult",
     "IntakeCheckpoint",
     "KnowledgeSync",
     "KnowledgeSyncResult",

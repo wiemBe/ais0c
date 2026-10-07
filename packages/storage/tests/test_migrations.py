@@ -1,7 +1,7 @@
 """`alembic upgrade head` and `alembic downgrade base` on an empty database (T-004 criterion
 1), revision 0002 on a database that holds runs (T-016 criterion 2), and revisions 0003
 (T-017 criterion 1), 0004 (T-020), 0005 (T-021), 0006 (T-041 criterion 3), 0007 (T-036
-criterion 1), 0008 (T-57) and 0009 (T-027) on one that holds data.
+criterion 1), 0008 (T-57), 0009 (T-027) and 0010 (T-032) on one that holds data.
 
 The tests run the real `alembic` command in packages/storage, so alembic.ini, env.py and the
 AIS0C_DATABASE_URL lookup are covered too.
@@ -65,7 +65,7 @@ def test_upgrade_head_then_downgrade_base(server: Server, empty_database: str) -
     upgraded = alembic("upgrade", "head", url=url)
     assert upgraded.returncode == 0, upgraded.stderr
     current = alembic("current", url=url)
-    assert "0009 (head)" in current.stdout
+    assert "0010 (head)" in current.stdout
     objects = public_objects(url)
     assert set(Base.metadata.tables) <= objects["relations"]
     assert objects["functions"] == {"audit_log_append_only"}
@@ -340,6 +340,7 @@ def test_revision_0007_names_the_groups_and_routes_each_alert(
                 ("group_alert", "critical", "exec"),
                 ("group_alert", "critical", "operators"),
                 ("group_alert", "high", "operators"),
+                ("health_alarm", None, "analyst-eng"),
                 ("hunt_report", None, "hunters"),
             ]
             assert [tuple(row) for row in connection.execute(recipients)] == RECIPIENTS_AT_0007
@@ -381,7 +382,7 @@ def test_revision_0007_names_the_groups_and_routes_each_alert(
         again = alembic("upgrade", "head", url=url)
         assert again.returncode == 0, again.stderr
         with engine.connect() as connection:
-            assert connection.scalar(text("SELECT count(*) FROM notification_routes")) == 9
+            assert connection.scalar(text("SELECT count(*) FROM notification_routes")) == 10
             assert [tuple(row) for row in connection.execute(recipients)] == RECIPIENTS_AT_0007
     finally:
         engine.dispose()
@@ -653,3 +654,43 @@ def test_without_a_database_url_nothing_connects() -> None:
 
     assert result.returncode != 0
     assert f"{DATABASE_URL_ENV} is not set" in result.stderr
+
+
+def test_revision_0010_adds_health_alarms_and_their_route(
+    server: Server, empty_database: str
+) -> None:
+    """0010 (T-032): `health_alarms` allows one open alarm per kind and subject, the seed route
+    sends health alarms to `analyst-eng`, and the downgrade removes both and nothing else."""
+    url = server.app_url(empty_database)
+    first = alembic("upgrade", "0009", url=url)
+    assert first.returncode == 0, first.stderr
+    engine = create_sync_engine(url)
+    insert = text(
+        "INSERT INTO health_alarms (id, kind, subject, status, opened_at, last_seen_at, details)"
+        " VALUES (gen_random_uuid(), 'log_source_silent', '7', :status, now(), now(), '{}')"
+    )
+    try:
+        upgraded = alembic("upgrade", "head", url=url)
+        assert upgraded.returncode == 0, upgraded.stderr
+        with engine.begin() as connection:
+            connection.execute(insert, {"status": "open"})
+            # A resolved alarm is history; the same subject may have any number of them.
+            connection.execute(insert, {"status": "resolved"})
+            connection.execute(insert, {"status": "resolved"})
+        with engine.begin() as connection, pytest.raises(IntegrityError):
+            connection.execute(insert, {"status": "open"})
+        with engine.connect() as connection:
+            route = connection.execute(
+                text("SELECT list_name FROM notification_routes WHERE kind = 'health_alarm'")
+            ).all()
+        assert [tuple(row) for row in route] == [("analyst-eng",)]
+
+        downgraded = alembic("downgrade", "0009", url=url)
+        assert downgraded.returncode == 0, downgraded.stderr
+        with engine.connect() as connection:
+            assert "health_alarms" not in inspect(connection).get_table_names()
+            assert connection.scalar(text("SELECT count(*) FROM notification_routes")) == 9
+        again = alembic("upgrade", "head", url=url)
+        assert again.returncode == 0, again.stderr
+    finally:
+        engine.dispose()

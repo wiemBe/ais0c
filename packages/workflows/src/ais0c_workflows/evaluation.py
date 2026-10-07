@@ -27,7 +27,10 @@ after Triage get the same structured results as in an offense case.
 `ExecutorCalls` starts the executor's note and e-mail calls of a case on the `soc-executor`
 queue, beside the case (T-59 (1)): each call runs after the earlier calls of the same activity,
 so an offense's notes reach QRadar in order, and the case waits for them only when it closes or
-continues as new. A failure that stays after the retries is logged and changes nothing else.
+continues as new. A failure that stays after the retries is logged and, for the platform's own records, written
+down: the case queue's `record_executor_failure` stores the note or e-mail as `failed` with the
+error `executor_unavailable` (T-032, T-59 (7)), so the write-failure alarm and the analyst UI
+see it. Nothing else of the case changes.
 """
 
 import asyncio
@@ -52,6 +55,7 @@ from ais0c_workflows.names import (
     EVALUATION_WINDOW,
     EXECUTOR_TASK_QUEUE,
     PLAN_BUDGETS,
+    RECORD_EXECUTOR_FAILURE,
     RECORD_PLAN,
     TRIAGE_WORKFLOW,
     agent_workflow_id,
@@ -101,6 +105,7 @@ with workflow.unsafe.imports_passed_through():
         EvaluationNoteRequest,
         GroupAlertRequest,
         NoDecisionNoteRequest,
+        abandoned_call,
     )
     from ais0c_workflows.plan import (
         INVESTIGATION,
@@ -109,6 +114,9 @@ with workflow.unsafe.imports_passed_through():
         PlanDecision,
         validate_plan,
     )
+
+# Writing a given-up call down is one database insert on the case queue.
+RECORD_FAILURE_TIMEOUT = timedelta(minutes=10)
 
 type ExecutorRequest = (
     EvaluationNoteRequest | NoDecisionNoteRequest | CaseAlertRequest | GroupAlertRequest
@@ -493,6 +501,22 @@ class ExecutorCalls:
             )
         except ActivityError as error:
             workflow.logger.warning("%s of case %s failed: %s", name, self._case_id, error)
+            await self._record_failure(name, request)
+
+    async def _record_failure(self, name: str, request: ExecutorRequest) -> None:
+        """Write the given-up call down as `failed`/`executor_unavailable` (T-032); a row the
+        executor made itself stays as it is. A failure of this is logged too."""
+        try:
+            await call(
+                RECORD_EXECUTOR_FAILURE,
+                abandoned_call(request),
+                result_type=bool,
+                total_timeout=RECORD_FAILURE_TIMEOUT,
+            )
+        except ActivityError as error:
+            workflow.logger.warning(
+                "the failure of %s of case %s could not be recorded: %s", name, self._case_id, error
+            )
 
     def writing(self) -> bool:
         return any(not task.done() for task in self._writes.values())

@@ -21,7 +21,10 @@ Also here, all deterministic (criteria 3, 4 and 8):
   keeps `notes_written` unique per offense and marker);
 - the group's alert e-mail, built from the group's decision as a case alert is from a case's;
 - the levels that get an alert e-mail, and the retry policy and timeouts of the executor's
-  activities.
+  activities;
+- the notification of a health alarm (`HealthAlarmNotice`, T-032), which HealthCheck hands the
+  executor's e-mail and the syslog channel, and `AbandonedCall`, what a case tells the case
+  queue about a note or e-mail it gave up on (`abandoned_call`).
 """
 
 import hashlib
@@ -54,6 +57,7 @@ GROUP_NOTE_KIND: Final = "group"
 type NoteKind = Literal["evaluation", "no_ai_decision", "group"]
 CASE_ALERT_KIND: Final = "case_alert"
 GROUP_ALERT_KIND: Final = "group_alert"
+HEALTH_ALARM_KIND: Final = "health_alarm"
 
 # The levels whose evaluation is e-mailed (architecture §9, D-22). Whether a re-evaluation is
 # e-mailed again is the executor's rule (D-42): only above the levels already sent.
@@ -306,4 +310,90 @@ def group_alert(
         urgent_events=list(decision.urgent_events),
         recommended_actions=list(decision.recommended_actions),
         case_url=decision.case_url,
+    )
+
+
+type HealthAlarmKindName = Literal[
+    "intake_stopped", "log_source_silent", "write_failures", "executor_absent"
+]
+type HealthAlarmState = Literal["open", "reminder", "resolved"]
+
+
+class HealthAlarmNotice(BaseModel):
+    """One notification of a health alarm, as the checks return it and the executor's
+    `HealthAlarm` takes it (the e-mail) and the syslog activity (T-032)."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    kind: Literal["health_alarm"] = HEALTH_ALARM_KIND
+    alarm_id: str
+    alarm_kind: HealthAlarmKindName
+    subject: str
+    subject_name: str | None = None
+    status: HealthAlarmState
+    notification_no: int
+    opened_at: UtcDatetime
+    counts: dict[str, int] = Field(default_factory=dict[str, int])
+
+
+class AbandonedCall(BaseModel):
+    """A note or e-mail the case gave up on, as `record_executor_failure` takes it; it mirrors
+    `ais0c_activities.executor_failure.AbandonedCall` (T-032, T-59 (7))."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    kind: Literal["note", "email"]
+    case_id: str
+    evaluation_no: int
+    offense_id: int | None = None
+    run_marker: str | None = None
+    email_kind: Literal["case_alert", "group_alert"] | None = None
+    level: Level | None = None
+    group_id: str | None = None
+    idempotency_key: str | None = None
+
+
+def abandoned_call(
+    request: "EvaluationNoteRequest | NoDecisionNoteRequest | CaseAlertRequest | GroupAlertRequest",
+) -> AbandonedCall:
+    """What the executor's record of the call needs, from the request the case gave up on.
+
+    The e-mail key is the executor's own: `case_alert:<case_id>:<evaluation_no>` and
+    `group_alert:<group_id>:<evaluation_no>`, so a row the executor wrote itself is the same row.
+    """
+    if isinstance(request, EvaluationNoteRequest):
+        content = request.content
+        return AbandonedCall(
+            kind="note",
+            case_id=request.case_id,
+            evaluation_no=content.evaluation_no,
+            offense_id=content.offense_id,
+            run_marker=content.run_marker,
+        )
+    if isinstance(request, NoDecisionNoteRequest):
+        return AbandonedCall(
+            kind="note",
+            case_id=request.case_id,
+            evaluation_no=request.evaluation_no,
+            offense_id=request.offense_id,
+            run_marker=request.run_marker,
+        )
+    if isinstance(request, CaseAlertRequest):
+        content = request.content
+        return AbandonedCall(
+            kind="email",
+            case_id=request.case_id,
+            evaluation_no=content.evaluation_no,
+            email_kind=CASE_ALERT_KIND,
+            level=content.notify_level,
+            idempotency_key=f"case_alert:{request.case_id}:{content.evaluation_no}",
+        )
+    return AbandonedCall(
+        kind="email",
+        case_id=request.case_id,
+        evaluation_no=request.evaluation_no,
+        email_kind=GROUP_ALERT_KIND,
+        level=request.notify_level,
+        group_id=request.group_id,
+        idempotency_key=f"group_alert:{request.group_id}:{request.evaluation_no}",
     )

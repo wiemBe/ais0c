@@ -1,0 +1,3 @@
+{#- The subject of a health alarm: its state, what it is about and its subject. At most 150
+    characters; ais0c_executor.email.render cuts the subject until it fits. -#}
+[AI-SOC] Sağlık alarmı · {{ state }} · {{ kind }}: {{ subject }}

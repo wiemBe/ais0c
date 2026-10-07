@@ -53,6 +53,7 @@ from ais0c_executor.email import (
     EmailResult,
     EmailTransportError,
     GroupAlert,
+    HealthAlarm,
     SendReceipt,
     TlsMode,
 )
@@ -127,7 +128,7 @@ class Relay:
         self.attempts += 1
         if self.failures:
             raise self.failures.pop(0)
-        assert body.startswith("AI-SOC: bildirim seviyesi")
+        assert body.startswith(("AI-SOC: bildirim seviyesi", "AI-SOC platform sağlık alarmı"))
         self.sent.append(message)
         return SendReceipt(message_id=f"<relay.{len(self.sent)}@example.com>")
 
@@ -209,7 +210,7 @@ class SendEmailWorkflow:
     """Calls the activity as a case workflow would (T-026), with retries."""
 
     @workflow.run
-    async def run(self, request: CaseAlert | GroupAlert) -> EmailOutcome:
+    async def run(self, request: CaseAlert | GroupAlert | HealthAlarm) -> EmailOutcome:
         return await workflow.execute_activity(
             SEND_EMAIL,
             request,
@@ -221,7 +222,9 @@ class SendEmailWorkflow:
         )
 
 
-async def run_workflow(activity_functions: list, request: CaseAlert | GroupAlert) -> EmailOutcome:
+async def run_workflow(
+    activity_functions: list, request: CaseAlert | GroupAlert | HealthAlarm
+) -> EmailOutcome:
     async with (
         await WorkflowEnvironment.start_time_skipping(
             data_converter=pydantic_data_converter
@@ -277,6 +280,51 @@ async def test_a_relay_failure_is_retried_until_the_email_goes_out(
     assert outcome.kind is EmailKind.GROUP_ALERT
     assert (relay.attempts, len(relay.sent)) == (2, 1)
     assert [row.status for row in await recorded(sessions)] == [NotificationStatus.SENT]
+
+
+async def test_a_health_alarm_is_sent_through_temporal_while_writes_are_off(
+    activities: EmailActivities, relay: Relay, sessions: SessionFactory
+) -> None:
+    """T-032 criterion 8: the activity takes the health alarm as the workflow sends it, routes
+    it to `analyst-eng` (revision 0010's seed route) and sends it with the kill switch off."""
+    async with sessions.begin() as session:
+        await session.execute(
+            insert(NotificationRecipientRow),
+            [{"list_name": "analyst-eng", "email": "platform-1@example.com"}],
+        )
+        await set_platform_flag(
+            session,
+            PlatformFlag.WRITES_ENABLED,
+            enabled=False,
+            reason="AI incident, writes stopped.",
+            actor_kind=ActorKind.USER,
+            actor_id="admin01",
+        )
+    alarm = HealthAlarm(
+        alarm_id="0193a5c2-7b4e-7d1a-8c3f-5e2b9a1d4f60",
+        alarm_kind="intake_stopped",
+        subject="intake",
+        status="open",
+        notification_no=1,
+        opened_at=NOW,
+        counts={"lag_minutes": 35, "threshold": 15},
+    )
+
+    outcome = await run_workflow(activities.activities(), alarm)
+
+    assert outcome == EmailOutcome(
+        result=EmailResult.SENT,
+        kind=EmailKind.HEALTH_ALARM,
+        idempotency_key=f"health_alarm:{alarm.alarm_id}:open:1",
+    )
+    assert [message.recipients for message in relay.sent] == [["platform-1@example.com"]]
+    [row] = await recorded(sessions)
+    assert (row.kind, row.level, row.case_id, row.status) == (
+        EmailKind.HEALTH_ALARM,
+        None,
+        None,
+        NotificationStatus.SENT,
+    )
 
 
 # --- settings --------------------------------------------------------------------------------

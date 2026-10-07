@@ -1011,7 +1011,8 @@
         "enum": [
           "case_alert",
           "group_alert",
-          "hunt_report"
+          "hunt_report",
+          "health_alarm"
         ],
         "title": "EmailKind",
         "type": "string"

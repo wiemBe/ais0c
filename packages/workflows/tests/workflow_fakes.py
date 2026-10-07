@@ -81,6 +81,7 @@ from ais0c_workflows.names import (
     OFFENSE_UPDATED,
     PLAN_BUDGETS,
     RECORD_DECISION,
+    RECORD_EXECUTOR_FAILURE,
     RECORD_OFFENSE_UPDATE,
     RECORD_PLAN,
     REEVALUATION_INTERVAL,
@@ -92,6 +93,7 @@ from ais0c_workflows.names import (
     WRITE_OFFENSE_NOTE,
 )
 from ais0c_workflows.notify import (
+    AbandonedCall,
     CaseAlertRequest,
     EmailRequest,
     EvaluationNoteRequest,
@@ -661,6 +663,8 @@ class CaseFakes:
         # The group summary of each evaluation's Triage request (T-027), first attempts only.
         self.triage_summaries: list[tuple[int, GroupSummary | None]] = []
         self.email_attempts: list[int] = []
+        # The notes and e-mails the case gave up on and wrote down as failed (T-032).
+        self.abandoned: list[AbandonedCall] = []
 
     def activities(self) -> list[Callable[..., object]]:
         return [
@@ -675,6 +679,7 @@ class CaseFakes:
             self.mark_no_ai_decision,
             self.close_case,
             self.case_url,
+            self.record_executor_failure,
             self.evaluation_window,
             self.candidate_skills,
             self.plan_budgets,
@@ -797,6 +802,12 @@ class CaseFakes:
     async def case_url(self, case_id: str) -> str:
         self.case_urls.append(case_id)
         return f"{self.case_url_base}/{case_id}"
+
+    @activity.defn(name=RECORD_EXECUTOR_FAILURE)
+    async def record_executor_failure(self, call: AbandonedCall) -> bool:
+        self.abandoned.append(call)
+        await self.events.add("abandoned", len(self.abandoned))
+        return True
 
     @activity.defn(name=WRITE_OFFENSE_NOTE)
     async def write_offense_note(self, request: NoteRequest) -> dict[str, object]:

@@ -103,6 +103,8 @@ class EmailKind(StrEnum):
     CASE_ALERT = "case_alert"
     GROUP_ALERT = "group_alert"
     HUNT_REPORT = "hunt_report"
+    # A platform health alarm (T-23, T-68); not an AI output, so the kill switch does not hold it.
+    HEALTH_ALARM = "health_alarm"
 
 
 class TuningChange(StrEnum):

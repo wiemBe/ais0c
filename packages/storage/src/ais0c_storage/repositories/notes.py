@@ -5,7 +5,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ais0c_contracts import NoteContent
@@ -39,6 +39,34 @@ async def record_note(
         written_at=written_at,
     )
     description = f"note run:{note.run_marker} on offense {note.offense_id}"
+    return await insert_new(session, NoteWrittenRow, values, description)
+
+
+async def record_note_failure(
+    session: AsyncSession,
+    *,
+    case_id: str,
+    offense_id: int,
+    evaluation_no: int,
+    run_marker: str,
+    written_at: datetime,
+    error: str,
+) -> NoteWrittenRow:
+    """Record a note that was never attempted as `failed`: the case gave the call up (T-032).
+
+    Raises `DuplicateError` if a note with the same offense and run marker is recorded, as the
+    executor's own attempt would be.
+    """
+    values = dict(
+        case_id=case_id,
+        offense_id=offense_id,
+        evaluation_no=evaluation_no,
+        run_marker=run_marker,
+        status=NoteStatus.FAILED,
+        error=error,
+        written_at=written_at,
+    )
+    description = f"note run:{run_marker} on offense {offense_id}"
     return await insert_new(session, NoteWrittenRow, values, description)
 
 
@@ -78,3 +106,14 @@ async def list_notes(session: AsyncSession, case_id: str) -> list[NoteWrittenRow
         .order_by(NoteWrittenRow.evaluation_no, NoteWrittenRow.written_at, NoteWrittenRow.id)
     )
     return await fetch_all(session, statement)
+
+
+async def count_failed_notes(session: AsyncSession, *, since: datetime) -> int:
+    """How many notes are `failed` with a record time at or after `since` (T-032 criterion 4).
+    `disabled` and `skipped_duplicate` are not failures."""
+    statement = (
+        select(func.count())
+        .select_from(NoteWrittenRow)
+        .where(NoteWrittenRow.status == NoteStatus.FAILED, NoteWrittenRow.written_at >= since)
+    )
+    return int(await session.scalar(statement) or 0)

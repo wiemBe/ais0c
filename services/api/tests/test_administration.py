@@ -311,7 +311,8 @@ async def test_the_seeded_routes_are_what_the_table_holds(api: Harness) -> None:
         ("group_alert", "critical", "exec"),
         ("group_alert", "critical", "operators"),
         ("group_alert", "high", "operators"),
-        # The hunt report has no level of its own, and it sorts last.
+        # The health alarm and the hunt report have no level of their own, and sort last.
+        ("health_alarm", None, "analyst-eng"),
         ("hunt_report", None, "hunters"),
     ]
 
@@ -417,7 +418,7 @@ async def test_a_route_that_would_never_match_an_e_mail_is_a_422(
 
     assert response.status_code == 422
     assert response.json()["title"] == "request.invalid"
-    assert len(await api.rows("SELECT * FROM notification_routes")) == 9
+    assert len(await api.rows("SELECT * FROM notification_routes")) == 10
 
 
 async def test_a_route_with_an_unknown_kind_is_a_422(api: Harness) -> None:
