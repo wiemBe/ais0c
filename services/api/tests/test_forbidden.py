@@ -18,8 +18,11 @@ SOURCE = Path(__file__).resolve().parents[1] / "src" / "ais0c_api"
 
 # What the API may import of the platform, per docs/impl/repo-structure.md.
 ALLOWED_PACKAGES = {"ais0c_contracts", "ais0c_storage"}
-# What the API may never reach: the gateway and the MCP SDK, any provider's client, the executor,
-# the activities and the workflows.
+# What the API may never reach: the gateway and the MCP SDK, a model provider's client, the
+# executor, the activities and the workflows. No provider is named here: importing one would mean
+# writing its name, which the provider-name check of the CI scans `services/` for anyway
+# (AGENTS.md hard rule 3, docs/impl/repo-structure.md "Ek yasaklar"). That check is what holds this
+# rule for a provider client; the names below are what only this test can see.
 FORBIDDEN_MODULES = {
     "ais0c_agents",
     "ais0c_activities",
@@ -36,7 +39,6 @@ FORBIDDEN_MODULES = {
     "falcon_mcp",
     "falconpy",
     "pydantic_ai",
-    "openai",
 }
 # The HTTP clients a request to a security product or a model would need.
 FORBIDDEN_HTTP_CLIENTS = {"httpx", "httpx2", "requests", "aiohttp", "urllib3"}
