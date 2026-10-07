@@ -185,7 +185,7 @@ Benzersiz: (`offense_id`, `run_marker`).
 | `id` | uuid PK | |
 | `kind` | text | `EmailKind` |
 | `level` | text? | `Level`: uyarının bildirim seviyesi. Vaka ve grup uyarısında zorunlu, hunt raporunda boş. Vaka yeniden değerlendirildiğinde daha önce gönderilen seviye buradan okunur (architecture §9). |
-| `case_id`, `hunt_id`, `group_id` | text? | |
+| `case_id`, `hunt_id`, `group_id` | text? | `health_alarm` satırında üçü de ve `level` boştur (T-72) |
 | `recipients` | text[] | |
 | `subject` | text | |
 | `idempotency_key` | text UNIQUE | |

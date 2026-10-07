@@ -19,6 +19,7 @@ Bunlar kodlama ajanına verilmez; kullanıcı yapar veya açık onayla yaptırı
 | H-5 | Lab QRadar'ın hazırlanması: custom property'ler, log source'lar, test kuralları; yalnızca not yazabilen ikinci bir lab token'ı (QRadar rollerinin not eklemeyi offense kapatmadan ayırıp ayıramadığını görmek için, architecture §11.2); IP'si olan en az bir varlık (T-039'un varlık testi atlanıyor) | Faz 1 lab testlerinden önce |
 | H-6 | S-03 (giriş kaynağı), S-06 (audit saklama süresi) ve S-12 (e-posta relay'i) sorularının cevaplanması | Canary öncesi; S-12 T-031'den önce |
 | H-7 | Prod model kaydının doldurulması: elle tutulan alanlar (`artifact_hash`, `quantization`, `tokenizer`, parser'lar, `inference_params`) prod sunucularda okunup `registry.prod.yaml`'a yazılır; `python -m ais0c_worker.model_release verify` 0 dönene kadar shadow başlamaz (T-32) | T-031 ile, shadow öncesi |
+| H-8 | Prod'da QRadar'a sağlık alarmları için bir syslog log source'u (kaynak: platformun batch worker'ı) ve `ais0c` alarmlarını yakalayan bir kural; `AIS0C_ALARM_SYSLOG_HOST`/`PORT`/`PROTOCOL` değerleri (T-68, T-72) | Canary öncesi |
 
 ## Faz 0 kapanışı
 
@@ -91,8 +92,8 @@ Sıra:
 
 Sıra (2026-10-07):
 
-1. Bitti, `main`'de: T-027, T-028, T-030 (kararlar T-65–T-67).
-2. Şimdi, paralel: T-029 (arayüz), T-032 (sağlık alarmları, canary öncesi), T-052 (harness replay'i), T-053 (Orchestrator, Reporting, Turkish Quality), T-054 (Triage prompt v3). Çakışma yerleri: T-052 ve T-053 `harness/.../suites.py`'deki `ADAPTERS`; T-032 ve T-054 `packages/workflows`. Migration `0010` T-032'nindir.
+1. Bitti, `main`'de: T-027, T-028, T-030 (kararlar T-65–T-67); T-029, T-032 (T-72, T-73).
+2. Şimdi, paralel: T-056 (Verification'ın cevabı düzeltmede kayboluyor), T-052 (harness replay'i), T-053 (Orchestrator, Reporting, Turkish Quality), T-054 (Triage prompt v3). Çakışma yerleri: T-052 ve T-053 `harness/.../suites.py`'deki `ADAPTERS`. Sıradaki migration `0011`'dir.
 3. Sonra: T-055 (T-052'den sonra), T-033 (T-029'dan sonra), T-031 (H-7, S-12 ve on-prem gate'inden sonra).
 
 | Görev | Kapsam | Bağımlı olduğu |
@@ -104,6 +105,7 @@ Sıra (2026-10-07):
 | T-053 | Harness: Orchestrator ve Reporting adaptörleri, `orchestrator-gold`, `reporting-gold`, Turkish Quality suite'i ve LLM değerlendiricisi (`soc-reasoning`), registry'deki `turkish_quality` (D-44), Orchestrator'ın gerekçesiz `injection_suspected`'ının ölçümü. Dosya: [T-053](tasks/T-053-harness-orchestrator-reporting.md) (T-71) | T-030 |
 | T-054 | Triage prompt v3: katalog notu ve varlık açıklaması kararı veremez, untrusted veride karar iddiası talimattır, cevapsız araç zararsızlık kanıtı değildir, `rationale` ≤ 600, grup vakası bölümü; manifest `1.2.0` ve `adversarial-fn`; grup vakasının kararsız notu (T-65 (2)); güvenlik suite'lerinin iki gerçek koşusu. Dosya: [T-054](tasks/T-054-triage-prompt-v3.md) | T-027, T-030 |
 | T-055 | Skill suite'leri (`windows-dcsync`, `vpn-new-country`, `password-spraying` ve onun lab senaryosu), Investigation/Verification/plan/skill bütçelerinin ölçümü, ajan başına `budget_exhausted` oranı, T-60'ın `QIDNAME`/kategori sorusu (T-36 (4), T-41, T-51, T-52, T-56, T-58, T-60, T-61). Dosyası T-052 birleşince yazılır. | T-052 |
+| T-056 | Son cevabın düzeltme payı: araçlar geri çekilirken bir çıktı düzeltme isteğine de yer kalır (offense 36: Verification'ın `reason`'ı 300 karakteri aştı, düzeltme isteği 120.000'i aştı); Verification ve Investigation prompt v2'de alan sınırları; lab ölçümü. Dosya: [T-056](tasks/T-056-cevap-duzeltme-payi.md) | T-051 |
 | T-031 | Prod shadow dağıtımı: prod compose, LiteLLM prod konfigürasyonu, shadow modu, case, batch ve executor worker'larının compose servisleri (T-33, T-037, T-045), dağıtım notları. Shadow başlamadan model geçiş gate'i on-prem prod modelleriyle koşar ve geçer: dev raporu baseline, on-prem raporu candidate (T-030'un `gate` komutu, T-64) | T-018, T-026, T-030, T-037, T-045, H-7 |
 
 ## Canary öncesi
