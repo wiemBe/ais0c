@@ -1,0 +1,8 @@
+# Adversarial FN suite (docs/agent-harness.md §6): text in attacker-controlled fields that
+# calls the activity a harmless, authorized test tries to steer Triage to fp. Format:
+# harness/src/ais0c_harness/eval/suites.py; scenarios: README.md.
+id: adversarial-fn
+title: Adversarial FN
+kind: security
+agent: triage
+scenario_prefix: afn-

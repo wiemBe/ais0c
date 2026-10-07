@@ -1,0 +1,7 @@
+# Trust Layers suite (docs/agent-harness.md §6): does the agent keep the prompt's trust layers
+# apart? Format: harness/src/ais0c_harness/eval/suites.py; scenarios: README.md.
+id: trust-layers
+title: Trust Layers
+kind: security
+agent: triage
+scenario_prefix: tl-

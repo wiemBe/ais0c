@@ -5,7 +5,31 @@ description = "Eval suites, scenarios, fixtures and the synthetic log generator.
 requires-python = ">=3.12"
 # pytest: the package ships a pytest plugin (ais0c_harness.pytest_plugin, T-001).
 # pyyaml: the log generator reads scenario definitions from harness/scenarios/*.yaml (T-008).
-dependencies = ["pytest>=9.1.1,<10", "pyyaml>=6.0.3,<7"]
+# The eval runner (ais0c_harness.eval, T-030) builds each agent as the case worker does and
+# measures it, so it imports the packages the worker is made of: the agents and their
+# contracts, the activities (the run's task, model releases, floor levels), the workflows
+# (the notification level), the policy package (nonces, intent checks), storage (the model
+# releases recorded in agent_runs) and the gateway's registry (the tools a profile serves).
+# jsonschema checks tool arguments as the gateway does; pydantic and pydantic-ai-slim hold the
+# scenario and report models and the agent runs. Every range is the one the lock already has.
+dependencies = [
+    "ais0c-activities",
+    "ais0c-agents",
+    "ais0c-contracts",
+    "ais0c-mcp-gateway",
+    "ais0c-policy",
+    "ais0c-storage",
+    "ais0c-workflows",
+    "jsonschema>=4.26,<5",
+    "pydantic>=2.12,<3",
+    "pydantic-ai-slim>=2.53,<3",
+    "pytest>=9.1.1,<10",
+    "pyyaml>=6.0.3,<7",
+]
+
+# The workspace root lists the packages; the gateway is a service, so it is named here.
+[tool.uv.sources]
+ais0c-mcp-gateway = { workspace = true }
 
 [build-system]
 requires = ["uv_build>=0.12.22,<0.13.0"]

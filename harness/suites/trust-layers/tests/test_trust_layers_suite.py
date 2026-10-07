@@ -1,35 +1,31 @@
 """Trust Layers suite (docs/agent-harness.md §6): the scenario files and the checks that hold
 without a model (T-015 criteria 5 and 6).
 
-The T-030 runner plays each scenario against the model k times and scores the model's behavior
-(pass^k). These tests check the rest on every run: each file is well formed and its input is a
-valid Triage task; the attacker's text reaches the model only in the layer the scenario names;
-the floor level is what the enrichment computes, and no catalog note can move it. A scripted
-model plays each scenario once, so the runner can play it too.
+The T-030 runner (ais0c_harness.eval) plays each scenario against the model k times and scores
+the model's behavior (pass^k); the scenario format is its TriageScenario. These tests check the
+rest on every run: each file is well formed and its input is a valid Triage task; the attacker's
+text reaches the model only in the layer the scenario names; the floor level is what the
+enrichment computes, and no catalog note can move it. A scripted model plays each scenario once,
+so the runner can play it too (harness/tests/test_eval_suites.py plays it through the runner).
 """
 
 import asyncio
 import ipaddress
 import re
 import unicodedata
-from collections.abc import Iterator
 from datetime import timedelta
 from pathlib import Path
-from typing import Annotated, Literal, Self
 
 import pytest
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, StringConstraints, model_validator
 from pydantic_ai.messages import ModelMessage, ModelResponse, ToolCallPart
 from pydantic_ai.models import Model
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 from pydantic_ai.models.test import TestModel
 
 from ais0c_activities import catalog_floor, catalog_mode, floor_level
-from ais0c_activities.levels import level_rank
 from ais0c_agents import (
     FakeGatewayClient,
-    KnowledgeItem,
     ToolsetProfile,
     ToolSpec,
     TriageAgent,
@@ -50,14 +46,12 @@ from ais0c_contracts import (
     Confidence,
     CostClass,
     CriticalAssetHit,
-    EnrichmentContext,
     IocHit,
     Level,
-    OffenseSnapshot,
     RunStatus,
     TimeWindow,
-    ToolResult,
 )
+from ais0c_harness.eval import TriageScenario, load_scenario
 from ais0c_harness.loggen.synthetic import DOCUMENTATION_NETWORKS
 
 SUITE_DIR = Path(__file__).resolve().parents[1]
@@ -81,80 +75,14 @@ BLOCK = re.compile(
 ORG_CONTEXT = re.compile(r"^<org_context>\n(?P<content>.*?)\n</org_context>$", re.DOTALL | re.M)
 IPV4 = re.compile(r"\b\d{1,3}(?:\.\d{1,3}){3}\b")
 
-Location = Annotated[str, StringConstraints(pattern=r"^(org_context|untrusted:[a-z][a-z0-9_.-]*)$")]
-LAYER_LOCATIONS = {
-    "org_context": r"org_context",
-    "knowledge": r"untrusted:kb\.[a-z]+",
-    "log": r"untrusted:(qradar|falcon)\.[a-z0-9_.-]+",
-}
+
+# --- the scenario format (README.md; ais0c_harness.eval, T-030) -----------------------------------
 
 
-# --- the scenario format (README.md) ------------------------------------------------------------
-
-
-class ScenarioInput(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    offense: OffenseSnapshot
-    enrichment: EnrichmentContext
-    knowledge: list[KnowledgeItem]
-    tool_results: dict[str, Annotated[list[ToolResult], Field(min_length=1)]]
-
-
-class Expectation(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    # Deterministic.
-    floor_level: Level | None
-    attack_in: Annotated[list[Location], Field(min_length=1)]
-    # Model behavior, scored by the T-030 runner on every one of k runs.
-    verdict_in: Annotated[frozenset[CaseVerdict], Field(min_length=1)]
-    injection_suspected: bool | None
-    min_notify_level: Level
-
-
-class Scenario(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    id: Annotated[str, StringConstraints(pattern=r"^tl-[0-9]{2}-[a-z0-9-]+$")]
-    suite: Literal["trust-layers"]
-    agent: Literal["triage"]
-    title: Annotated[str, StringConstraints(min_length=1, max_length=200)]
-    layer: Literal["org_context", "knowledge", "log"]
-    attack: Annotated[str, StringConstraints(min_length=1)]
-    marker: Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9][A-Za-z0-9 ,.;_-]{7,}$")]
-    description: Annotated[str, StringConstraints(min_length=1)]
-    input: ScenarioInput
-    expect: Expectation
-
-    @model_validator(mode="after")
-    def _consistent(self) -> Self:
-        if self.marker not in self.attack:
-            raise ValueError("marker must be a part of attack")
-        if not any(self.attack in text for text in strings(self.input.model_dump(mode="json"))):
-            raise ValueError("no input value carries attack")
-        pattern = LAYER_LOCATIONS[self.layer]
-        if not all(re.fullmatch(pattern, location) for location in self.expect.attack_in):
-            raise ValueError(f"attack_in does not fit layer {self.layer}")
-        if level_rank(self.expect.min_notify_level) < level_rank(self.expect.floor_level):
-            raise ValueError("min_notify_level is below floor_level")
-        return self
-
-
-def strings(value: JsonValue) -> Iterator[str]:
-    """Every string inside a JSON value."""
-    if isinstance(value, str):
-        yield value
-    elif isinstance(value, list):
-        for item in value:
-            yield from strings(item)
-    elif isinstance(value, dict):
-        for item in value.values():
-            yield from strings(item)
-
-
-def load(path: Path) -> Scenario:
-    return Scenario.model_validate(yaml.safe_load(path.read_text(encoding="utf-8")))
+def load(path: Path) -> TriageScenario:
+    scenario = load_scenario(path, root=REPO_ROOT).scenario
+    assert isinstance(scenario, TriageScenario)
+    return scenario
 
 
 # --- the real Triage agent with a fake gateway ---------------------------------------------------
@@ -167,7 +95,7 @@ def triage_tool_ids() -> list[str]:
     return [tool["id"] for tool in connectors["profiles"]["qradar-triage-read"]["tools"]]
 
 
-def triage_agent(scenario: Scenario, model: Model) -> tuple[TriageAgent, FakeGatewayClient]:
+def triage_agent(scenario: TriageScenario, model: Model) -> tuple[TriageAgent, FakeGatewayClient]:
     """The agent from config/agents/triage.yaml and its prompt files; the gateway answers with
     the scenario's tool results."""
     registry = load_model_registry(REPO_ROOT / "config/models/registry.dev.yaml")
@@ -195,7 +123,7 @@ def triage_agent(scenario: Scenario, model: Model) -> tuple[TriageAgent, FakeGat
     return agent, fake
 
 
-def triage_task(scenario: Scenario, agent: TriageAgent) -> TriageTask:
+def triage_task(scenario: TriageScenario, agent: TriageAgent) -> TriageTask:
     offense = scenario.input.offense
     budgets = agent.manifest.budgets
     return TriageTask(
@@ -223,7 +151,7 @@ def triage_task(scenario: Scenario, agent: TriageAgent) -> TriageTask:
     )
 
 
-def model_texts(scenario: Scenario) -> list[str]:
+def model_texts(scenario: TriageScenario) -> list[str]:
     """What the model would read: the prompt, then each tool result as the agent wraps it."""
     agent, _ = triage_agent(scenario, TestModel())
     budget = agent.manifest.budgets.tool_calls

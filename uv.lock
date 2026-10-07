@@ -174,12 +174,32 @@ name = "ais0c-harness"
 version = "0.1.0"
 source = { editable = "harness" }
 dependencies = [
+    { name = "ais0c-activities" },
+    { name = "ais0c-agents" },
+    { name = "ais0c-contracts" },
+    { name = "ais0c-mcp-gateway" },
+    { name = "ais0c-policy" },
+    { name = "ais0c-storage" },
+    { name = "ais0c-workflows" },
+    { name = "jsonschema" },
+    { name = "pydantic" },
+    { name = "pydantic-ai-slim" },
     { name = "pytest" },
     { name = "pyyaml" },
 ]
 
 [package.metadata]
 requires-dist = [
+    { name = "ais0c-activities", editable = "packages/activities" },
+    { name = "ais0c-agents", editable = "packages/agents" },
+    { name = "ais0c-contracts", editable = "packages/contracts" },
+    { name = "ais0c-mcp-gateway", editable = "services/mcp-gateway" },
+    { name = "ais0c-policy", editable = "packages/policy" },
+    { name = "ais0c-storage", editable = "packages/storage" },
+    { name = "ais0c-workflows", editable = "packages/workflows" },
+    { name = "jsonschema", specifier = ">=4.26,<5" },
+    { name = "pydantic", specifier = ">=2.12,<3" },
+    { name = "pydantic-ai-slim", specifier = ">=2.53,<3" },
     { name = "pytest", specifier = ">=9.1.1,<10" },
     { name = "pyyaml", specifier = ">=6.0.3,<7" },
 ]
