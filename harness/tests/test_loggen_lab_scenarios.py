@@ -121,6 +121,32 @@ def test_kerberos_preauth_failure_has_the_dsm_fields() -> None:
     assert "Failure Code: 0x18" in line
 
 
+def test_failed_logon_names_the_account_where_the_dsm_reads_it() -> None:
+    # The subject of a 4625 is "-"; the failed account is under "Account For Which
+    # Logon Failed". A "New Logon" section left the lab's username empty.
+    event = TEMPLATES[LogKind.WINDOWS_LOGON](
+        random.Random(  # noqa: S311
+            1
+        ),
+        {
+            "event_id": "4625",
+            "logon_type": "3",
+            "users": ["branch.user03"],
+            "hosts": ["DC-LAB-01"],
+            "src_pool": ["10.50.7.23"],
+        },
+        BASE,
+    )
+    line = render(event)
+    assert "\tEventID=4625\t" in line
+    assert "\tKeywords=Audit Failure\t" in line
+    assert "New Logon:" not in line
+    assert re.search(
+        r"Account For Which Logon Failed: Security ID: \S+ Account Name: branch\.user03 ", line
+    )
+    assert "Source Network Address: 10.50.7.23 " in line
+
+
 def test_f5_asm_line_has_the_syslog_shape_the_dsm_expects() -> None:
     event = TEMPLATES[LogKind.F5_ASM](
         random.Random(  # noqa: S311

@@ -162,8 +162,8 @@ def render_windows_logon(event: Event) -> str:
     event_id = event.extra["event_id"]
     if event_id == "4771":
         return _render_kerberos_preauth_failure(event)
-    success = event_id == "4624"
-    keywords = "Audit Success" if success else "Audit Failure"
+    if event_id == "4625":
+        return _render_failed_logon(event)
     message = (
         f"{_WINDOWS_LOGON_MESSAGE[event_id]} "
         f"Subject: Security ID: S-1-0-0 Account Name: - "
@@ -173,7 +173,35 @@ def render_windows_logon(event: Event) -> str:
         f"Workstation Name: {event.host} Source Network Address: {event.src}"
     )
     fields = [
-        *_wincollect_prefix(event, keywords=keywords, task="SE_ADT_LOGON_LOGON"),
+        *_wincollect_prefix(event, keywords="Audit Success", task="SE_ADT_LOGON_LOGON"),
+        f"Message={message}",
+    ]
+    return _render_wincollect(event, fields)
+
+
+def _render_failed_logon(event: Event) -> str:
+    """4625 in the Security log's own layout.
+
+    The account that failed is under "Account For Which Logon Failed"; the DSM takes the
+    username from there. With a 4624-style "New Logon" section the lab parsed the subject's
+    "Account Name: -" and left the username empty.
+    """
+    message = (
+        f"{_WINDOWS_LOGON_MESSAGE['4625']} "
+        "Subject: Security ID: S-1-0-0 Account Name: - Account Domain: - Logon ID: 0x0 "
+        f"Logon Type: {event.extra['logon_type']} "
+        "Account For Which Logon Failed: Security ID: S-1-0-0 "
+        f"Account Name: {event.username} Account Domain: BANK "
+        "Failure Information: Failure Reason: Unknown user name or bad password. "
+        "Status: 0xC000006D Sub Status: 0xC000006A "
+        "Process Information: Caller Process ID: 0x0 Caller Process Name: - "
+        f"Network Information: Workstation Name: {event.host} "
+        f"Source Network Address: {event.src} Source Port: 0 "
+        "Detailed Authentication Information: Logon Process: NtLmSsp "
+        "Authentication Package: NTLM"
+    )
+    fields = [
+        *_wincollect_prefix(event, keywords="Audit Failure", task="SE_ADT_LOGON_LOGON"),
         f"Message={message}",
     ]
     return _render_wincollect(event, fields)
