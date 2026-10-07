@@ -21,7 +21,13 @@ from ais0c_workflows.agent_run import AgentFailure
 from ais0c_workflows.case import CaseCarry, CaseStatus, CaseView, CaseWorkflow
 from ais0c_workflows.chain import ChainDecision
 from ais0c_workflows.evaluation import AgentChain, ExecutorCalls
-from ais0c_workflows.group import GroupCarry, GroupCaseWorkflow, GroupDecision, GroupView
+from ais0c_workflows.group import (
+    GroupCarry,
+    GroupCaseWorkflow,
+    GroupDecision,
+    GroupView,
+    NoDecisionNotes,
+)
 from ais0c_workflows.group_summary import GroupSummary
 from ais0c_workflows.health import HealthCheck, HealthCheckResult
 from ais0c_workflows.intake import IntakeCheckpoint, OffenseIntake
@@ -72,6 +78,7 @@ __all__ = [
     "IntakeCheckpoint",
     "KnowledgeSync",
     "KnowledgeSyncResult",
+    "NoDecisionNotes",
     "OffenseIntake",
     "TriageFailure",
     "TriageOutcome",

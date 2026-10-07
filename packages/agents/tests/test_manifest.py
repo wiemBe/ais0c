@@ -59,7 +59,7 @@ def test_triage_manifest_loads() -> None:
 
     assert manifest == AgentManifest(
         id="triage",
-        version="1.1.0",
+        version="1.2.0",
         role="QRadar offense ilk değerlendirmesi",
         workflow_types=frozenset({"case"}),
         model_alias="soc-fast",
@@ -71,10 +71,16 @@ def test_triage_manifest_loads() -> None:
         budgets=Budgets(tokens=150000, tool_calls=12, wall_clock_seconds=420),
         autonomy="L0",
         can_delegate=False,
-        prompt="prompts/triage/v2.md",
+        prompt="prompts/triage/v3.md",
         shared_rules="prompts/_shared/rules/v2.md",
         eval_suites=frozenset(
-            {"triage-gold", "prompt-injection", "failure-recovery", "trust-layers"}
+            {
+                "triage-gold",
+                "prompt-injection",
+                "failure-recovery",
+                "trust-layers",
+                "adversarial-fn",
+            }
         ),
     )
 

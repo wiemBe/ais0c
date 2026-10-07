@@ -117,7 +117,7 @@ def test_the_task_carries_the_manifests_budget_and_the_offenses_window() -> None
         None,
         "case-run-1",
     )
-    assert (task.agent_id, task.agent_version) == ("triage", "1.1.0")
+    assert (task.agent_id, task.agent_version) == ("triage", "1.2.0")
     assert task.objective == "Triage QRadar offense 7 (evaluation 1)."
     assert task.time_window == TimeWindow(start=NOW - timedelta(hours=2), end=NOW)
     assert (task.budget.tokens, task.budget.tool_calls, task.budget.seconds) == (150000, 12, 420)
@@ -197,8 +197,8 @@ async def test_begin_records_the_run_before_the_agent_calls_the_gateway(
     assert (row.case_id, row.agent_id, row.agent_version, row.prompt_version) == (
         "case-7",
         "triage",
-        "1.1.0",
-        "triage/v2",
+        "1.2.0",
+        "triage/v3",
     )
     assert (row.model_alias, row.model_target, row.toolset_profile) == (
         "soc-fast",

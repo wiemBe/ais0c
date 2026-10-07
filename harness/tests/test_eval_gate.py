@@ -90,7 +90,12 @@ def test_another_model_release_is_expected_and_printed(baseline: Report) -> None
             ),
             "scenario versions differ: trust-layers/tl-02-runbook-instruction",
         ),
-        (lambda report: with_agent(report, agent_version="1.2.0"), "agent versions differ: triage"),
+        # A version the manifest does not have (the manifest is read, so the change must not
+        # collide with the real one).
+        (
+            lambda report: with_agent(report, agent_version="9.9.9"),
+            "agent versions differ: triage",
+        ),
         (lambda report: with_agent(report, prompt_hash="0" * 64), "prompt hashes differ: triage"),
         (
             lambda report: with_agent(report, toolset_sha256="0" * 64),

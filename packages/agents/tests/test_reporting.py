@@ -1550,8 +1550,8 @@ def test_the_prompt_takes_exactly_the_placeholders_the_agent_fills() -> None:
             id="another output schema",
         ),
         pytest.param(
-            {"prompt": "prompts/triage/v2.md"},
-            "uses prompts/triage/v2.md, not",
+            {"prompt": "prompts/triage/v3.md"},
+            "uses prompts/triage/v3.md, not",
             id="another prompt",
         ),
         pytest.param(

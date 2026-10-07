@@ -92,7 +92,7 @@ from ais0c_policy import KnowledgeKind
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 TRIAGE_MANIFEST = REPO_ROOT / "config/agents/triage.yaml"
-TRIAGE_PROMPT = "prompts/triage/v2.md"
+TRIAGE_PROMPT = "prompts/triage/v3.md"
 VERIFICATION_MANIFEST = REPO_ROOT / "config/agents/verification.yaml"
 VERIFICATION_PROMPT = "prompts/verification/v1.md"
 GATEWAY_POLICY = REPO_ROOT / "config/policies/qradar.yaml"

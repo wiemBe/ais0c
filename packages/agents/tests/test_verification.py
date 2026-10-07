@@ -111,7 +111,7 @@ def test_the_manifest_and_the_prompt_are_checked_together_at_build_time() -> Non
     # The manifest must name this agent's own prompt; a different one stops the build.
     wrong = verification_manifest().model_copy(update={"prompt": TRIAGE_PROMPT})
 
-    with pytest.raises(ValueError, match=r"manifest 'verification' uses prompts/triage/v2\.md"):
+    with pytest.raises(ValueError, match=r"manifest 'verification' uses prompts/triage/v3\.md"):
         build_verification(ScriptedModel(), verification_gateway(), manifest=wrong)
 
 

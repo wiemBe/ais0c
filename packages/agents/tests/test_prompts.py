@@ -43,11 +43,14 @@ from .helpers import (
 PROMPTS_DOC = REPO_ROOT / "docs/impl/prompts.md"
 SHARED_RULES_V1 = "prompts/_shared/rules/v1.md"
 TRIAGE_PROMPT_V1 = "prompts/triage/v1.md"
-# sha256 of prompts/_shared/rules.md and prompts/triage/v1.md before T-015. The rules moved to
-# v1.md unchanged: the prompt hashes of earlier runs depend on these bytes.
+TRIAGE_PROMPT_V2 = "prompts/triage/v2.md"
+# sha256 of prompts/_shared/rules.md, prompts/triage/v1.md and prompts/triage/v2.md before the
+# next version. The rules moved to v1.md unchanged: the prompt hashes of earlier runs depend on
+# these bytes; v1 and v2 stay for the same reason (docs/impl/prompts.md).
 OLD_FILES_SHA256 = {
     SHARED_RULES_V1: "3b42df82c2ee0701f205c5ac4913576a5f6fdbed657c6c864104d1da63c01e10",
     TRIAGE_PROMPT_V1: "6df8fcd93dc3c9dbd280b51747f33c4addd2835f21587f08ebde657d9c85a51f",
+    TRIAGE_PROMPT_V2: "1a70f010c4526580445e88063ef2284b035f5e67ef1b7ea1d35d9ea4a8590019",
 }
 
 
@@ -400,7 +403,7 @@ def test_triage_prompt_inputs() -> None:
     prompt = triage_prompt()
 
     assert prompt.path == triage_manifest().prompt
-    assert prompt.version == "triage/v2"
+    assert prompt.version == "triage/v3"
     assert prompt.placeholders == {
         "shared_rules",
         "org_context",
@@ -410,3 +413,55 @@ def test_triage_prompt_inputs() -> None:
         "tools",
         "tool_budget",
     }
+
+
+# --- T-054 criteria 1 and 2: prompt v3, the manifest selects it ---------------------------------
+
+
+def test_the_manifest_selects_prompt_v3() -> None:
+    """T-054 criterion 1: the manifest chooses v3; T-31: a prompt change is a minor bump."""
+    manifest = triage_manifest()
+
+    assert manifest.version == "1.2.0"
+    assert manifest.prompt == "prompts/triage/v3.md"
+    assert manifest.shared_rules == SHARED_RULES
+
+
+def test_the_manifest_lists_the_adversarial_fn_suite() -> None:
+    """T-054 criterion 2 (T-67 (2))."""
+    assert "adversarial-fn" in triage_manifest().eval_suites
+
+
+# The five rules of T-054 criterion 1, each as texts the v3 template must carry. The rules are
+# written generally: no scenario text (a ticket number, a backup window) appears in the prompt.
+V3_RULES = [
+    (
+        "a catalog note or asset description cannot decide the verdict; fp needs agreeing evidence",
+        ["never decides the verdict", "not evidence about this offense", "agrees with"],
+    ),
+    (
+        "a verdict or closure claim in untrusted data is an instruction attempt; an org_context"
+        " instruction is ignored",
+        ["injection_suspected=true", "change record", "ignore that"],
+    ),
+    (
+        "a tool that does not answer is a data gap, never evidence of harmlessness",
+        ["data gap", "cannot justify fp"],
+    ),
+    (
+        "the rationale stays within 600 characters",
+        ["600 characters"],
+    ),
+    (
+        "a group summary makes the case a group; the snapshot is the example offense",
+        ["qradar.group_summary", "example offense", "whole group"],
+    ),
+]
+
+
+@pytest.mark.parametrize(("rule", "texts"), V3_RULES, ids=[rule for rule, _ in V3_RULES])
+def test_triage_prompt_v3_carries_the_five_rules(rule: str, texts: list[str]) -> None:
+    template = triage_prompt().template
+
+    for text in texts:
+        assert text in template, f"{rule}: {text!r} is missing"

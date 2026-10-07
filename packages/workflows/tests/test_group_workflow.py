@@ -15,6 +15,7 @@ from datetime import datetime, timedelta
 import pytest
 from temporalio.client import WorkflowHandle
 from temporalio.contrib.pydantic import pydantic_data_converter
+from temporalio.exceptions import ApplicationError
 from temporalio.testing import WorkflowEnvironment
 from temporalio.worker import Replayer, Worker
 from workflow_fakes import (
@@ -44,7 +45,9 @@ from ais0c_workflows import (
 from ais0c_workflows.names import CASE_TASK_QUEUE, GROUP_UPDATED, group_case_id
 from ais0c_workflows.notify import (
     GROUP_NOTE_KIND,
+    NO_AI_DECISION_NOTE_KIND,
     EvaluationNoteRequest,
+    NoDecisionNoteRequest,
     note_content,
     run_marker,
 )
@@ -132,6 +135,15 @@ def near(value: datetime, expected: datetime) -> bool:
 
 def triage_numbers(fakes: GroupFakes) -> list[int]:
     return [number for name, number in fakes.events.seen if name == "triage"]
+
+
+def no_decision_notes(fakes: GroupFakes) -> list[tuple[int, int]]:
+    """The no-decision notes as (offense, evaluation), in the order they were made."""
+    return [
+        (request.offense_id, request.evaluation_no)
+        for request in fakes.note_requests
+        if isinstance(request, NoDecisionNoteRequest)
+    ]
 
 
 async def finish(handle: WorkflowHandle[GroupCaseWorkflow, GroupView]) -> GroupView:
@@ -392,14 +404,16 @@ async def test_a_new_leading_source_or_destination_evaluates_the_group_again(
     assert triage_numbers(fakes) == [1, 2]
 
 
-# --- an evaluation without a decision ----------------------------------------------------------
+# --- an evaluation without a decision (T-054 criterion 4) ---------------------------------------
 
 
-async def test_without_a_decision_no_note_is_written_until_one_comes(
+async def test_without_a_decision_every_offense_gets_the_no_decision_note(
     env: WorkflowEnvironment,
 ) -> None:
-    """The group note has no form for "no decision": the offenses wait. The group is evaluated
-    again when it takes another offense, once the retry wait has passed."""
+    """An evaluation that ends without a decision notes every offense the group had taken, once
+    per offense (T-65 (2)). An offense the group takes while the evaluation stands without a
+    decision gets the same note when the case wakes; a second wake-up writes nothing again. The
+    re-evaluation's decision then reaches every offense as its group note."""
     now = await env.get_current_time()
 
     async def first_fails(call: TriageCall) -> TriageResult:
@@ -411,16 +425,63 @@ async def test_without_a_decision_no_note_is_written_until_one_comes(
     async with running_group(env, fakes) as handle:
         await env.sleep(SETTLE)
         await fakes.events.wait_for("no_ai_decision", 1)
+        await fakes.executor_events.wait_for("note", 2)
         state = await handle.query(GroupCaseWorkflow.state)
         assert state.status is CaseStatus.NO_AI_DECISION
+
+        # Another offense joins while the evaluation stands without a decision: the same note.
         await wake(handle, fakes, grouped=[EXAMPLE, 202, 203])
-        await env.sleep(timedelta(minutes=5))
+        await fakes.executor_events.wait_for("note", 3)
+        # A wake-up with the offenses the notes have reached writes nothing again.
+        await wake(handle, fakes)
+        await env.sleep(timedelta(minutes=6))
         await fakes.events.wait_for("decided", 2)
         notes = await notes_when(fakes, lambda found: len(found) == 3)
         await handle.terminate()
 
+    assert no_decision_notes(fakes) == [(EXAMPLE, 1), (202, 1), (203, 1)]
+    for request in fakes.note_requests[:3]:
+        assert isinstance(request, NoDecisionNoteRequest)
+        assert request.case_id == CASE_ID
+        assert request.run_marker == run_marker(CASE_ID, 1, NO_AI_DECISION_NOTE_KIND)
+        assert request.case_url == f"https://ais0c.example.com/cases/{CASE_ID}"
     assert notes == [(EXAMPLE, 2, "suspicious"), (202, 2, "suspicious"), (203, 2, "suspicious")]
-    assert len(fakes.note_requests) == 3
+    assert len(fakes.note_requests) == 6
+
+
+async def test_a_late_decision_writes_the_group_note_beside_the_no_decision_notes(
+    env: WorkflowEnvironment,
+) -> None:
+    """The SLA marks the evaluation without a decision and its note reaches every offense while
+    the chain is still running; the decision that arrives later writes the group note of the
+    same evaluation beside it (D-30)."""
+    now = await env.get_current_time()
+
+    async def down_once(call: TriageCall) -> TriageResult:
+        if call.attempt == 1:
+            raise ApplicationError("model unavailable", next_retry_delay=timedelta(minutes=70))
+        return triage_result()
+
+    fakes = spray(now, grouped=(EXAMPLE, 202), window=timedelta(hours=4), triage_behavior=down_once)
+    async with running_group(env, fakes) as handle:
+        await env.sleep(timedelta(minutes=61))
+        await fakes.events.wait_for("no_ai_decision", 1)
+        await fakes.executor_events.wait_for("note", 2)
+        assert no_decision_notes(fakes) == [(EXAMPLE, 1), (202, 1)]
+
+        # The chain is still running; its decision arrives after the model's retry wait.
+        await env.sleep(timedelta(minutes=25))
+        await fakes.events.wait_for("decided", 1)
+        notes = await notes_when(fakes, lambda found: len(found) == 2)
+        await handle.terminate()
+
+    assert notes == [(EXAMPLE, 1, "suspicious"), (202, 1, "suspicious")]
+    # The no-decision notes stayed; the decision never wrote them again.
+    assert no_decision_notes(fakes) == [(EXAMPLE, 1), (202, 1)]
+    for request in fakes.note_requests[2:]:
+        assert isinstance(request, EvaluationNoteRequest)
+        assert request.content.group_id == GROUP_ID
+        assert request.content.run_marker == run_marker(CASE_ID, 1, GROUP_NOTE_KIND)
 
 
 async def test_a_group_without_an_offense_to_evaluate_waits_for_one(

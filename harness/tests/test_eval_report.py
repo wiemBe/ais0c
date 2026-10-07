@@ -94,7 +94,7 @@ def test_every_envelope_field_is_filled(out_dir: Path) -> None:
         assert SHA256.fullmatch(envelope.suite_version)
         assert SHA256.fullmatch(envelope.scenario_version)
         assert (envelope.agent_id, envelope.agent_version) == ("triage", config.manifest.version)
-        assert envelope.prompt_version == "triage/v2"
+        assert envelope.prompt_version == "triage/v3"
         assert envelope.prompt_hash == config.prompt.sha256
         assert envelope.shared_rules == config.manifest.shared_rules
         assert envelope.model_alias == "soc-fast"

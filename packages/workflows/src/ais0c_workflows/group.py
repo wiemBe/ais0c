@@ -19,9 +19,12 @@ group takes another (`wake_group_cases`). The case:
    the executor sends it only when the level rose above the group's alerts already sent (D-42).
    An offense the group takes later gets the latest decision's note when the case wakes. An
    offense gets a second note only when the group's verdict changed since its note, so the same
-   decision never reaches it twice; the executor's run marker guards a retry (T-045). Before the
-   first decision no note is written: the notes wait for it. An evaluation without a decision
-   writes none either, because the group note has no form for it; the offenses keep waiting.
+   decision never reaches it twice; the executor's run marker guards a retry (T-045).
+   An evaluation that ends without a decision (at the SLA deadline, or with the chain giving no
+   decision) writes the "AI değerlendirmesi yapılamadı" note on every offense the group had
+   taken (T-65 (2)): one per offense, with that evaluation's run marker. An offense the group
+   takes while the evaluation still stands without a decision gets the same note when the case
+   wakes. A decision that arrives late writes the group note beside it (D-30).
 4. Evaluates the group again (T-22):
    - 24 hours after the last evaluation;
    - when the group has twice the offenses it had at the last evaluation;
@@ -76,7 +79,13 @@ with workflow.unsafe.imports_passed_through():
     from ais0c_workflows.chain import ChainDecision
     from ais0c_workflows.evaluation import AgentChain, ExecutorCalls
     from ais0c_workflows.group_summary import GroupSummary
-    from ais0c_workflows.notify import ALERT_LEVELS, group_alert, group_note, note_content
+    from ais0c_workflows.notify import (
+        ALERT_LEVELS,
+        group_alert,
+        group_note,
+        no_decision_note,
+        note_content,
+    )
 
 # A group decision is evaluated again after this long (T-22).
 GROUP_DECISION_LIFETIME: Final = timedelta(hours=24)
@@ -110,6 +119,18 @@ class GroupDecision(BaseModel):
     decided_at: AwareDatetime
 
 
+class NoDecisionNotes(BaseModel):
+    """The latest evaluation that ended without an AI decision: when it ended, the case's link
+    and the offenses its note has reached (T-65 (2))."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    evaluation_no: int
+    evaluated_at: AwareDatetime
+    case_url: str
+    noted: set[int]
+
+
 class GroupCarry(BaseModel):
     """State handed to the next run by Continue-As-New."""
 
@@ -126,6 +147,7 @@ class GroupCarry(BaseModel):
     decision: GroupDecision | None
     # The verdict each offense's latest group note carries.
     noted: dict[int, CaseVerdict]
+    no_decision: NoDecisionNotes | None = None
     window_end: AwareDatetime | None
     due_at: AwareDatetime | None
     updated: bool
@@ -147,6 +169,7 @@ class GroupCaseWorkflow:
         self._evaluated_destination: str | None = None
         self._decision: GroupDecision | None = None
         self._noted: dict[int, CaseVerdict] = {}
+        self._no_decision: NoDecisionNotes | None = None
         self._window_end: datetime | None = None
         # When the next evaluation is due: the end of the settle time, then 24 hours after the
         # last evaluation or earlier when a re-evaluation rule plans it.
@@ -239,6 +262,7 @@ class GroupCaseWorkflow:
         evaluation when a re-evaluation rule says so."""
         summary, grouped, _ = await self._state()
         self._note(grouped)
+        self._note_no_decision(grouped)
         if summary is None:
             return
         now = workflow.now()
@@ -307,12 +331,12 @@ class GroupCaseWorkflow:
             self._chain.run(evaluation_no, offense, enrichment, group_summary=summary)
         )
         if not await _settled_by(sla_due_at, chain):
-            await self._no_ai_decision(evaluation_no)
+            await self._no_ai_decision(evaluation_no, grouped)
             await workflow.wait_condition(chain.done)
         decision = chain.result()
         if decision is None:
             if self._status is CaseStatus.RUNNING:
-                await self._no_ai_decision(evaluation_no)
+                await self._no_ai_decision(evaluation_no, grouped)
             return
         await self._decided(evaluation_no, summary, offense, enrichment, decision)
 
@@ -344,6 +368,9 @@ class GroupCaseWorkflow:
         )
         self._notify_level = level
         self._status = CaseStatus.DECIDED
+        # The no-decision phase of this evaluation is over: an offense the group takes from now
+        # on gets the decision's note, not the no-decision note (T-65 (2)).
+        self._no_decision = None
         content = note_content(
             case_id=self._case_id,
             offense_id=offense.offense_id,
@@ -392,10 +419,45 @@ class GroupCaseWorkflow:
                 ),
             )
 
-    async def _no_ai_decision(self, evaluation_no: int) -> None:
-        """Mark the evaluation without an AI decision; a later decision replaces it (D-30)."""
+    async def _no_ai_decision(self, evaluation_no: int, grouped: list[int]) -> None:
+        """Mark the evaluation without an AI decision and write its note on every offense the
+        group had taken (T-65 (2)); a later decision replaces it (D-30) and writes the group
+        note beside this one."""
         await call(MARK_NO_AI_DECISION, self._case_id, evaluation_no, result_type=type(None))
         self._status = CaseStatus.NO_AI_DECISION
+        ended_at = workflow.now()
+        self._no_decision = NoDecisionNotes(
+            evaluation_no=evaluation_no,
+            evaluated_at=ended_at,
+            case_url=await self._executor.case_link(),
+            noted=set(),
+        )
+        self._note_no_decision(grouped)
+
+    def _note_no_decision(self, grouped: list[int]) -> None:
+        """The no-decision note of the latest evaluation without a decision, once per offense;
+        offenses the group takes while it stands get it when the case wakes (T-65 (2))."""
+        pending = self._no_decision
+        if (
+            pending is None
+            or self._status is not CaseStatus.NO_AI_DECISION
+            or pending.evaluation_no != self._evaluation_no
+        ):
+            return
+        for offense_id in grouped:
+            if offense_id in pending.noted:
+                continue
+            pending.noted.add(offense_id)
+            self._executor.write(
+                WRITE_OFFENSE_NOTE,
+                no_decision_note(
+                    case_id=self._case_id,
+                    offense_id=offense_id,
+                    evaluation_no=pending.evaluation_no,
+                    case_url=pending.case_url,
+                    evaluated_at=pending.evaluated_at,
+                ),
+            )
 
     async def _close_if_ended(self) -> None:
         """Close the group and its case if its window has ended; an offense may have moved it."""
@@ -426,6 +488,7 @@ class GroupCaseWorkflow:
             evaluated_destination=self._evaluated_destination,
             decision=self._decision,
             noted=dict(self._noted),
+            no_decision=self._no_decision,
             window_end=self._window_end,
             due_at=self._due_at,
             updated=self._updated,
@@ -442,6 +505,11 @@ class GroupCaseWorkflow:
         self._evaluated_destination = carry.evaluated_destination
         self._decision = carry.decision
         self._noted = dict(carry.noted)
+        self._no_decision = (
+            None
+            if carry.no_decision is None
+            else carry.no_decision.model_copy(update={"noted": set(carry.no_decision.noted)})
+        )
         self._window_end = carry.window_end
         self._due_at = carry.due_at
         self._updated = self._updated or carry.updated

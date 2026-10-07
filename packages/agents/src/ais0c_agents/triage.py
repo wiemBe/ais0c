@@ -57,7 +57,7 @@ OUTPUT_SCHEMA: Final = "TriageResult"
 TOOL_RETRIES: Final = 2
 OUTPUT_RETRIES: Final = 2
 RETRIES: Final[AgentRetries] = {"tools": TOOL_RETRIES, "output": OUTPUT_RETRIES}
-# The template's inputs besides the shared rules (prompts/triage/v2.md).
+# The template's inputs besides the shared rules (prompts/triage/v3.md).
 PLACEHOLDERS: Final = frozenset(
     {"org_context", "offense_snapshot", "entity_resolutions", "knowledge", "tools", "tool_budget"}
 )
