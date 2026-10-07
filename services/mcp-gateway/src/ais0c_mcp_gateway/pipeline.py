@@ -176,7 +176,7 @@ class Gateway:
     async def _authorize(
         self, session: AsyncSession, profile: Profile, run: AgentRunRow, intent: ToolIntent
     ) -> _Plan | Denial:
-        if _holds_nul(intent.model_dump(mode="json")):
+        if holds_nul(intent.model_dump(mode="json")):
             return Denial("invalid_intent", "the intent holds a NUL character (U+0000)")
         if run.ended_at is not None or run.status is not None:
             return Denial("run_not_active", "the agent run has ended")
@@ -210,10 +210,10 @@ class Gateway:
                 "schema_version_mismatch",
                 f"{tool.id} is at schema version {tool.entry.schema_version}",
             )
-        problem = _argument_problem(tool, intent.arguments)
+        problem = argument_problem(tool, intent.arguments)
         if problem is not None:
             return Denial("invalid_arguments", problem)
-        problem = _text_problem(profile, intent.arguments)
+        problem = text_rule_problem(profile, intent.arguments)
         if problem is not None:
             return Denial("invalid_text", problem)
 
@@ -457,13 +457,14 @@ def build_pools(
     }
 
 
-def _holds_nul(value: JsonValue) -> bool:
+def holds_nul(value: JsonValue) -> bool:
+    """Whether a JSON value holds U+0000 in a string or a key (pipeline step 3)."""
     if isinstance(value, str):
         return _NUL in value
     if isinstance(value, dict):
-        return any(_NUL in key or _holds_nul(item) for key, item in value.items())
+        return any(_NUL in key or holds_nul(item) for key, item in value.items())
     if isinstance(value, list):
-        return any(_holds_nul(item) for item in value)
+        return any(holds_nul(item) for item in value)
     return False
 
 
@@ -480,7 +481,7 @@ def _without_nul(value: JsonValue) -> JsonValue:
 def _storable(intent: ToolIntent) -> ToolIntent:
     """The intent as tool_calls can hold it: a NUL character becomes U+FFFD."""
     data = intent.model_dump(mode="json")
-    if not _holds_nul(data):
+    if not holds_nul(data):
         return intent
     return ToolIntent.model_validate(_without_nul(data))
 
@@ -500,16 +501,17 @@ def _pool_of(intent: ToolIntent) -> PoolName:
     return "case" if intent.case_id else "hunt"
 
 
-def _argument_problem(tool: Tool, arguments: Mapping[str, JsonValue]) -> str | None:
-    """What is wrong with the arguments, without echoing their values."""
+def argument_problem(tool: Tool, arguments: Mapping[str, JsonValue]) -> str | None:
+    """What is wrong with the arguments, without echoing their values (step 3). Public: the
+    harness checks its intents with the gateway's own function (T-052)."""
     error = best_match(Draft202012Validator(tool.entry.input_schema).iter_errors(arguments))
     if error is None:
         return None
     return _describe(error, tool)
 
 
-def _text_problem(profile: Profile, arguments: Mapping[str, JsonValue]) -> str | None:
-    """What breaks one of the profile's text rules, without echoing the text."""
+def text_rule_problem(profile: Profile, arguments: Mapping[str, JsonValue]) -> str | None:
+    """What breaks one of the profile's text rules, without echoing the text (step 3)."""
     for name, rule in profile.text_rules.items():
         value = arguments.get(name)
         if isinstance(value, str) and (problem := text_problem(name, value, rule)) is not None:

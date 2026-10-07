@@ -13,12 +13,14 @@ rejected when a field is unknown or invalid, its file name is not its `id`, its 
 suite's prefix, its `suite` is not the directory, its `agent` is not the suite's, or it has
 results for (or requires) a tool that is not in the agent's gateway profile.
 
-A scenario's version is the sha256 of its file's bytes. A suite's version is the sha256 of
+A scenario's version is the sha256 of its file's bytes, followed by the manifest of the recording
+it names, if it names one. A suite's version is the sha256 of
 `suite.yaml`'s bytes followed by the list of its scenarios' (id, version) pairs as JSON.
 
-Only Triage had an adapter after T-030; T-053 adds the Orchestrator, the Reporting agent and
-the Turkish Quality suite, which runs the Reporting agent under its own evaluator. T-052 adds
-replay of recorded lab answers and the Investigation and Verification adapters.
+Triage has had an adapter since T-030. T-052 adds replay of recorded lab answers and the
+Investigation and Verification adapters; T-053 adds the Orchestrator, the Reporting agent and the
+Turkish Quality suite, which runs the Reporting agent under its own evaluator. A suite for an
+agent without an adapter fails with "not supported yet".
 """
 
 import hashlib
@@ -34,18 +36,27 @@ from pydantic import BaseModel, ConfigDict, StringConstraints, ValidationError
 
 from ais0c_harness.eval.adapter import AgentAdapter
 from ais0c_harness.eval.config import GATEWAY_CONFIG_DIR, GATEWAY_CONNECTORS
+from ais0c_harness.eval.investigation import InvestigationAdapter
 from ais0c_harness.eval.orchestrator import OrchestratorAdapter
 from ais0c_harness.eval.reporting import ReportingAdapter
 from ais0c_harness.eval.scenario import AgentId, ScenarioBase, SuiteId
 from ais0c_harness.eval.triage import TriageAdapter
 from ais0c_harness.eval.turkish import TurkishQualityAdapter
+from ais0c_harness.eval.verification import VerificationAdapter
 from ais0c_mcp_gateway.registry import RegistryError, load_registry
 
 SUITES_DIR: Final = "harness/suites"
 SUITE_FILE: Final = "suite.yaml"
 ADAPTERS: Final[Mapping[str, type[AgentAdapter]]] = {
     adapter.suite_agent: adapter
-    for adapter in (TriageAdapter, OrchestratorAdapter, ReportingAdapter, TurkishQualityAdapter)
+    for adapter in (
+        TriageAdapter,
+        InvestigationAdapter,
+        VerificationAdapter,
+        OrchestratorAdapter,
+        ReportingAdapter,
+        TurkishQualityAdapter,
+    )
 }
 """The agents the harness can run, keyed by the `agent` a suite.yaml names."""
 
@@ -207,9 +218,14 @@ def _scenario(path: Path, suite: SuiteDefinition, *, root: Path) -> ScenarioFile
         raise SuiteError(f"{path}: results for {', '.join(unknown)}, not in the agent's profile")
     if unknown := sorted(scenario.expectation().required_tools - tools):
         raise SuiteError(f"{path}: requires {', '.join(unknown)}, not in the agent's profile")
-    return ScenarioFile(
-        path=path, version=hashlib.sha256(path.read_bytes()).hexdigest(), scenario=scenario
-    )
+    try:
+        scenario.check_files(root)
+    except ValueError as error:
+        raise SuiteError(f"{path}: {error}") from None
+    digest = hashlib.sha256(path.read_bytes())
+    for part in scenario.version_parts(root):
+        digest.update(part)
+    return ScenarioFile(path=path, version=digest.hexdigest(), scenario=scenario)
 
 
 def _read(path: Path) -> object:

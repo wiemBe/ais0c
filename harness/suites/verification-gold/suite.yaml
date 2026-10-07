@@ -1,0 +1,8 @@
+# Verification gold suite (T-052): Verification on a recorded lab offense, a quality suite
+# (the pass rate counts, no pass^k). Format: harness/src/ais0c_harness/eval/verification.py;
+# scenarios: README.md.
+id: verification-gold
+title: Verification gold
+kind: quality
+agent: verification
+scenario_prefix: ver-

@@ -1,0 +1,413 @@
+[
+  {
+    "name": "count_all",
+    "query": "SELECT COUNT(*) AS n FROM events WHERE LOGSOURCETYPENAME(devicetype) NOT IN ('Health Metrics') AND starttime BETWEEN 1791208663905 AND 1791215863905 LIMIT 10 START 1791208063905 STOP 1791216463905",
+    "rows": [
+      {
+        "n": 15270.0
+      }
+    ]
+  },
+  {
+    "name": "qidname_filter",
+    "query": "SELECT starttime, sourceip, username, QIDNAME(qid) AS q FROM events WHERE LOGSOURCETYPENAME(devicetype) NOT IN ('Health Metrics') AND starttime BETWEEN 1791212262905 AND 1791212264905 AND QIDNAME(qid) ILIKE '%object%' ORDER BY starttime ASC LIMIT 50 START 1791211662905 STOP 1791212864905",
+    "rows": [
+      {
+        "starttime": 1791212263905,
+        "sourceip": "192.0.2.19",
+        "username": "MSOL_a1b2c3d4e5f6a7b8",
+        "q": "Success Audit: An operation was performed on an object"
+      },
+      {
+        "starttime": 1791212263905,
+        "sourceip": "192.0.2.12",
+        "username": null,
+        "q": "Success Audit: An operation was performed on an object"
+      },
+      {
+        "starttime": 1791212263905,
+        "sourceip": "192.0.2.10",
+        "username": "MSOL_a1b2c3d4e5f6a7b8",
+        "q": "Success Audit: An operation was performed on an object"
+      },
+      {
+        "starttime": 1791212263905,
+        "sourceip": "192.0.2.18",
+        "username": "MSOL_a1b2c3d4e5f6a7b8",
+        "q": "Success Audit: An operation was performed on an object"
+      },
+      {
+        "starttime": 1791212263905,
+        "sourceip": "192.0.2.19",
+        "username": "MSOL_a1b2c3d4e5f6a7b8",
+        "q": "Success Audit: An operation was performed on an object"
+      },
+      {
+        "starttime": 1791212263905,
+        "sourceip": "192.0.2.15",
+        "username": "svc_backup",
+        "q": "Success Audit: An operation was performed on an object"
+      },
+      {
+        "starttime": 1791212263905,
+        "sourceip": "192.0.2.23",
+        "username": "MSOL_a1b2c3d4e5f6a7b8",
+        "q": "Success Audit: An operation was performed on an object"
+      },
+      {
+        "starttime": 1791212263905,
+        "sourceip": "192.0.2.5",
+        "username": "MSOL_a1b2c3d4e5f6a7b8",
+        "q": "Success Audit: An operation was performed on an object"
+      },
+      {
+        "starttime": 1791212263905,
+        "sourceip": "192.0.2.14",
+        "username": null,
+        "q": "Success Audit: An operation was performed on an object"
+      },
+      {
+        "starttime": 1791212263905,
+        "sourceip": "192.0.2.11",
+        "username": "svc_backup",
+        "q": "Success Audit: An operation was performed on an object"
+      },
+      {
+        "starttime": 1791212263905,
+        "sourceip": "192.0.2.4",
+        "username": null,
+        "q": "Success Audit: An operation was performed on an object"
+      },
+      {
+        "starttime": 1791212263905,
+        "sourceip": "192.0.2.13",
+        "username": "svc_backup",
+        "q": "Success Audit: An operation was performed on an object"
+      },
+      {
+        "starttime": 1791212263905,
+        "sourceip": "192.0.2.21",
+        "username": null,
+        "q": "Success Audit: An operation was performed on an object"
+      }
+    ]
+  },
+  {
+    "name": "group_count",
+    "query": "SELECT logsourceid, COUNT(*) AS n FROM events WHERE LOGSOURCETYPENAME(devicetype) NOT IN ('Health Metrics') AND starttime BETWEEN 1791208663905 AND 1791215863905 GROUP BY logsourceid ORDER BY logsourceid ASC LIMIT 20 START 1791208063905 STOP 1791216463905",
+    "rows": [
+      {
+        "logsourceid": 64,
+        "n": 1599.0
+      },
+      {
+        "logsourceid": 65,
+        "n": 13648.0
+      },
+      {
+        "logsourceid": 136,
+        "n": 5.0
+      },
+      {
+        "logsourceid": 213,
+        "n": 18.0
+      }
+    ]
+  },
+  {
+    "name": "ilike_payload",
+    "query": "SELECT starttime, sourceip, username FROM events WHERE LOGSOURCETYPENAME(devicetype) NOT IN ('Health Metrics') AND starttime BETWEEN 1791212262905 AND 1791212264905 AND UTF8(payload) ILIKE '%svc_backup%' ORDER BY starttime ASC LIMIT 50 START 1791211662905 STOP 1791212864905",
+    "rows": [
+      {
+        "starttime": 1791212263905,
+        "sourceip": "192.0.2.15",
+        "username": "svc_backup"
+      },
+      {
+        "starttime": 1791212263905,
+        "sourceip": "192.0.2.11",
+        "username": "svc_backup"
+      },
+      {
+        "starttime": 1791212263905,
+        "sourceip": "192.0.2.13",
+        "username": "svc_backup"
+      }
+    ]
+  },
+  {
+    "name": "epoch_window",
+    "query": "SELECT starttime, sourceip, username, qid FROM events WHERE LOGSOURCETYPENAME(devicetype) NOT IN ('Health Metrics') AND starttime BETWEEN 1791212262905 AND 1791212264905 ORDER BY starttime ASC LIMIT 50 START 1791211662905 STOP 1791212864905",
+    "rows": [
+      {
+        "starttime": 1791212263616,
+        "sourceip": "192.0.2.26",
+        "username": null,
+        "qid": 38750003
+      },
+      {
+        "starttime": 1791212263616,
+        "sourceip": "192.0.2.26",
+        "username": null,
+        "qid": 38750003
+      },
+      {
+        "starttime": 1791212263905,
+        "sourceip": "192.0.2.19",
+        "username": "MSOL_a1b2c3d4e5f6a7b8",
+        "qid": 5000849
+      },
+      {
+        "starttime": 1791212263905,
+        "sourceip": "192.0.2.24",
+        "username": "analyst1",
+        "qid": 5000830
+      },
+      {
+        "starttime": 1791212263905,
+        "sourceip": "192.0.2.12",
+        "username": null,
+        "qid": 5000849
+      },
+      {
+        "starttime": 1791212263905,
+        "sourceip": "192.0.2.9",
+        "username": "helpdesk1",
+        "qid": 5000830
+      },
+      {
+        "starttime": 1791212263905,
+        "sourceip": "192.0.2.10",
+        "username": "MSOL_a1b2c3d4e5f6a7b8",
+        "qid": 5000849
+      },
+      {
+        "starttime": 1791212263905,
+        "sourceip": "192.0.2.18",
+        "username": "MSOL_a1b2c3d4e5f6a7b8",
+        "qid": 5000849
+      },
+      {
+        "starttime": 1791212263905,
+        "sourceip": "192.0.2.6",
+        "username": "helpdesk1",
+        "qid": 5000830
+      },
+      {
+        "starttime": 1791212263905,
+        "sourceip": "192.0.2.16",
+        "username": "analyst1",
+        "qid": 5000830
+      },
+      {
+        "starttime": 1791212263905,
+        "sourceip": "192.0.2.19",
+        "username": "MSOL_a1b2c3d4e5f6a7b8",
+        "qid": 5000849
+      },
+      {
+        "starttime": 1791212263905,
+        "sourceip": "192.0.2.8",
+        "username": "helpdesk1",
+        "qid": 5000830
+      },
+      {
+        "starttime": 1791212263905,
+        "sourceip": "192.0.2.20",
+        "username": "helpdesk1",
+        "qid": 5000830
+      },
+      {
+        "starttime": 1791212263905,
+        "sourceip": "192.0.2.17",
+        "username": "helpdesk1",
+        "qid": 5000830
+      },
+      {
+        "starttime": 1791212263905,
+        "sourceip": "192.0.2.22",
+        "username": "analyst1",
+        "qid": 5000830
+      },
+      {
+        "starttime": 1791212263905,
+        "sourceip": "192.0.2.15",
+        "username": "svc_backup",
+        "qid": 5000849
+      },
+      {
+        "starttime": 1791212263905,
+        "sourceip": "192.0.2.7",
+        "username": "analyst1",
+        "qid": 5000830
+      },
+      {
+        "starttime": 1791212263905,
+        "sourceip": "192.0.2.23",
+        "username": "helpdesk1",
+        "qid": 5000830
+      },
+      {
+        "starttime": 1791212263905,
+        "sourceip": "192.0.2.23",
+        "username": "MSOL_a1b2c3d4e5f6a7b8",
+        "qid": 5000849
+      },
+      {
+        "starttime": 1791212263905,
+        "sourceip": "192.0.2.26",
+        "username": null,
+        "qid": 38750003
+      },
+      {
+        "starttime": 1791212263905,
+        "sourceip": "192.0.2.5",
+        "username": "MSOL_a1b2c3d4e5f6a7b8",
+        "qid": 5000849
+      },
+      {
+        "starttime": 1791212263905,
+        "sourceip": "192.0.2.14",
+        "username": null,
+        "qid": 5000849
+      },
+      {
+        "starttime": 1791212263905,
+        "sourceip": "192.0.2.11",
+        "username": "svc_backup",
+        "qid": 5000849
+      },
+      {
+        "starttime": 1791212263905,
+        "sourceip": "192.0.2.4",
+        "username": null,
+        "qid": 5000849
+      },
+      {
+        "starttime": 1791212263905,
+        "sourceip": "192.0.2.13",
+        "username": "svc_backup",
+        "qid": 5000849
+      },
+      {
+        "starttime": 1791212263905,
+        "sourceip": "192.0.2.21",
+        "username": null,
+        "qid": 5000849
+      }
+    ]
+  },
+  {
+    "name": "dateformat_user",
+    "query": "SELECT DATEFORMAT(starttime, 'yyyy-MM-dd HH:mm:ss') AS t, username, sourceip FROM events WHERE LOGSOURCETYPENAME(devicetype) NOT IN ('Health Metrics') AND starttime BETWEEN 1791212262905 AND 1791212264905 AND username = 'svc_backup' ORDER BY starttime ASC LIMIT 20 START 1791211662905 STOP 1791212864905",
+    "rows": [
+      {
+        "t": "2026-10-05 14:57:43",
+        "username": "svc_backup",
+        "sourceip": "192.0.2.15"
+      },
+      {
+        "t": "2026-10-05 14:57:43",
+        "username": "svc_backup",
+        "sourceip": "192.0.2.11"
+      },
+      {
+        "t": "2026-10-05 14:57:43",
+        "username": "svc_backup",
+        "sourceip": "192.0.2.13"
+      }
+    ]
+  },
+  {
+    "name": "aggregates",
+    "query": "SELECT SUM(eventcount) AS total, MIN(starttime) AS earliest, MAX(starttime) AS latest, COUNT(username) AS named FROM events WHERE LOGSOURCETYPENAME(devicetype) NOT IN ('Health Metrics') AND starttime BETWEEN 1791212262905 AND 1791212264905 LIMIT 10 START 1791211662905 STOP 1791212864905",
+    "rows": [
+      {
+        "total": 26.0,
+        "earliest": 1791212263616.0,
+        "latest": 1791212263905.0,
+        "named": 19.0
+      }
+    ]
+  },
+  {
+    "name": "agent_form",
+    "query": "SELECT starttime, username, sourceip, QIDNAME(qid) AS event_name FROM events WHERE username = 'svc_backup' ORDER BY starttime ASC LIMIT 100 START 1791212263905 STOP 1791212323905",
+    "rows": [
+      {
+        "starttime": 1791212263905,
+        "username": "svc_backup",
+        "sourceip": "192.0.2.15",
+        "event_name": "Success Audit: An operation was performed on an object"
+      },
+      {
+        "starttime": 1791212263905,
+        "username": "svc_backup",
+        "sourceip": "192.0.2.11",
+        "event_name": "Success Audit: An operation was performed on an object"
+      },
+      {
+        "starttime": 1791212263905,
+        "username": "svc_backup",
+        "sourceip": "192.0.2.13",
+        "event_name": "Success Audit: An operation was performed on an object"
+      }
+    ]
+  },
+  {
+    "name": "in_between_null",
+    "query": "SELECT starttime, sourceip, username FROM events WHERE LOGSOURCETYPENAME(devicetype) NOT IN ('Health Metrics') AND starttime BETWEEN 1791212262905 AND 1791212264905 AND (username IS NULL OR username IN ('svc_backup')) AND eventcount BETWEEN 1 AND 5 AND NOT (sourceport = 1) ORDER BY starttime ASC LIMIT 50 START 1791211662905 STOP 1791212864905",
+    "rows": [
+      {
+        "starttime": 1791212263616,
+        "sourceip": "192.0.2.26",
+        "username": null
+      },
+      {
+        "starttime": 1791212263616,
+        "sourceip": "192.0.2.26",
+        "username": null
+      },
+      {
+        "starttime": 1791212263905,
+        "sourceip": "192.0.2.12",
+        "username": null
+      },
+      {
+        "starttime": 1791212263905,
+        "sourceip": "192.0.2.15",
+        "username": "svc_backup"
+      },
+      {
+        "starttime": 1791212263905,
+        "sourceip": "192.0.2.26",
+        "username": null
+      },
+      {
+        "starttime": 1791212263905,
+        "sourceip": "192.0.2.14",
+        "username": null
+      },
+      {
+        "starttime": 1791212263905,
+        "sourceip": "192.0.2.11",
+        "username": "svc_backup"
+      },
+      {
+        "starttime": 1791212263905,
+        "sourceip": "192.0.2.4",
+        "username": null
+      },
+      {
+        "starttime": 1791212263905,
+        "sourceip": "192.0.2.13",
+        "username": "svc_backup"
+      },
+      {
+        "starttime": 1791212263905,
+        "sourceip": "192.0.2.21",
+        "username": null
+      }
+    ]
+  }
+]

@@ -40,16 +40,23 @@ def test_each_suite_has_a_suite_yaml() -> None:
     assert set(suites) == {
         "trust-layers",
         "adversarial-fn",
+        "investigation-gold",
+        "verification-gold",
         "orchestrator-gold",
         "reporting-gold",
         "turkish-quality",
     }
-    for suite_id, prefix in (("trust-layers", "tl-"), ("adversarial-fn", "afn-")):
+    for suite_id, kind, agent, prefix in (
+        ("trust-layers", "security", "triage", "tl-"),
+        ("adversarial-fn", "security", "triage", "afn-"),
+        ("investigation-gold", "quality", "investigation", "inv-"),
+        ("verification-gold", "quality", "verification", "ver-"),
+    ):
         definition = suites[suite_id].definition
         assert definition.id == suites[suite_id].path.name == suite_id
         assert (definition.kind, definition.agent, definition.scenario_prefix) == (
-            "security",
-            "triage",
+            kind,
+            agent,
             prefix,
         )
         assert definition.title
@@ -219,7 +226,7 @@ def test_a_suite_id_other_than_its_directory_is_rejected(tmp_path: Path) -> None
     assert "is not the directory's name" in rejected(directory)
 
 
-@pytest.mark.parametrize("agent", ["investigation", "verification"])
+@pytest.mark.parametrize("agent", ["hunter", "endpoint"])
 def test_a_suite_for_another_agent_is_not_supported_yet(tmp_path: Path, agent: str) -> None:
     directory = copied(tmp_path)
     edit(directory / "suite.yaml", agent=agent)

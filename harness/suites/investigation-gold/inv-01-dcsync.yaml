@@ -1,0 +1,55 @@
+# Investigation gold scenario 1: the DCSync offense of the lab (offense 30), replayed.
+#
+# Triage handed over a `suspicious` decision with one claim about the offense. The recording
+# `lab-30-dcsync` answers the agent's Ariel queries: the account svc_backup asked a domain
+# controller for directory replication (QID 5000849, the object access of event 4662) from three
+# servers, and the table around it holds the lab's other events. A correct agent runs a query
+# for the account, finds the three events and does not call the activity benign.
+#
+# Addresses are the recording's anonymized ones (RFC 5737); the evidence is made up as Triage
+# would hand it over.
+id: inv-01-dcsync
+suite: investigation-gold
+agent: investigation
+title: DCSync by a service account from three servers
+description: >-
+  A non-machine account used the replication rights of a domain controller three times, from
+  three different servers. The agent must query the events, find all three, and keep the
+  decision at suspicious or raise it to tp, citing only evidence the gateway returned.
+
+input:
+  recording: lab-30-dcsync
+  objective: >-
+    Investigate the suspected DCSync activity of svc_backup: whether the account used directory
+    replication rights, and from which hosts.
+  skill:
+    id: windows-dcsync
+    version: 1.0.0
+  triage:
+    verdict: suspicious
+    confidence: medium
+    ai_level: high
+    investigation_focus:
+      - Determine whether svc_backup used directory replication rights and from which hosts.
+    claims:
+      - text: The rule for DCSync by a non-machine account raised offense 30 for the account svc_backup.
+        evidence_ids: [ev_inv01_offense]
+    data_gaps: []
+  context_evidence:
+    - evidence_id: ev_inv01_offense
+      source: qradar
+      query_hash: 94ff59941a110dd7072b31e79ab4046909a5b9c111219f456fcc899f3e27f064
+      query_text: 'get_offense {"offense_id": 30}'
+      time_start: "2026-10-05T14:57:43.905Z"
+      time_end: "2026-10-05T14:57:43.905Z"
+      identifiers: {tool: get_offense, rows: "1", offense_id: "30"}
+      excerpt: '[{"event_count":3,"id":30,"offense_source":"svc_backup","rules":[{"id":100353,"type":"CRE_RULE"}]}]'
+      retrieved_at: "2026-10-05T15:02:43Z"
+
+expect:
+  verdict_in: [tp, suspicious]
+  find_events:
+    - {address: 192.0.2.15, username: svc_backup}
+    - {address: 192.0.2.11, username: svc_backup}
+    - {address: 192.0.2.13, username: svc_backup}
+  required_tools: [create_ariel_search, get_ariel_search_results]

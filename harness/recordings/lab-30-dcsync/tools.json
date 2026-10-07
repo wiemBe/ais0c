@@ -1,0 +1,191 @@
+[
+  {
+    "tool_id": "get_offense",
+    "arguments": {
+      "offense_id": 30
+    },
+    "result": {
+      "status": "ok",
+      "deny_reason": null,
+      "evidence_id": "ev_01a11627905a7542bca0bf823ce3ed74",
+      "data": [
+        {
+          "last_persisted_time": 1791225399000,
+          "username_count": 1,
+          "description": "Success Audit: An operation was performed on an object\n",
+          "rules": [
+            {
+              "id": 100353,
+              "type": "CRE_RULE"
+            }
+          ],
+          "event_count": 3,
+          "flow_count": 0,
+          "assigned_to": null,
+          "security_category_count": 1,
+          "follow_up": false,
+          "source_address_ids": [
+            13,
+            14,
+            15
+          ],
+          "source_count": 3,
+          "inactive": true,
+          "protected": false,
+          "closing_user": "API_token: AIS0C",
+          "destination_networks": [
+            "Net-10-172-192.Net_192_168_0_0"
+          ],
+          "source_network": "Net-10-172-192.Net_192_168_0_0",
+          "category_count": 1,
+          "close_time": 1791212521000,
+          "remote_destination_count": 0,
+          "start_time": 1791212263905,
+          "magnitude": 2,
+          "last_updated_time": 1791212263905,
+          "credibility": 2,
+          "id": 30,
+          "categories": [
+            "Information"
+          ],
+          "severity": 2,
+          "policy_category_count": 0,
+          "log_sources": [
+            {
+              "type_name": "WindowsAuthServer",
+              "type_id": 12,
+              "name": "host-01@Windows",
+              "id": 213
+            }
+          ],
+          "closing_reason_id": 1,
+          "device_count": 1,
+          "last_assigned_user_time": 1791225399000,
+          "first_persisted_time": 1791212265000,
+          "offense_type": 3,
+          "relevance": 1,
+          "domain_id": 0,
+          "offense_source": "svc_backup",
+          "local_destination_address_ids": [
+            656,
+            657,
+            658
+          ],
+          "local_destination_count": 3,
+          "status": "CLOSED"
+        }
+      ],
+      "truncated": false,
+      "coverage": {
+        "complete": true,
+        "gaps": []
+      }
+    }
+  },
+  {
+    "tool_id": "get_rule",
+    "arguments": {
+      "rule_id": 100353
+    },
+    "result": {
+      "status": "ok",
+      "deny_reason": null,
+      "evidence_id": "ev_01a11627908a75eabf4e818d3b5c962a",
+      "data": [
+        {
+          "owner": "admin",
+          "identifier": "6b5d5ad0-dd8c-4ff9-b1df-68df3dde66bb",
+          "base_host_id": 53,
+          "capacity_timestamp": 1791372937191,
+          "origin": "USER",
+          "creation_date": 1791021600000,
+          "type": "EVENT",
+          "enabled": true,
+          "modification_date": 1791030057494,
+          "linked_rule_identifier": null,
+          "name": "AIS0C LAB - DCSync by a non-machine account",
+          "average_capacity": 1344387,
+          "id": 100353,
+          "base_capacity": 1344387
+        }
+      ],
+      "truncated": false,
+      "coverage": {
+        "complete": true,
+        "gaps": []
+      }
+    }
+  },
+  {
+    "tool_id": "get_log_source",
+    "arguments": {
+      "log_source_id": 213
+    },
+    "result": {
+      "status": "ok",
+      "deny_reason": null,
+      "evidence_id": "ev_01a1162790bf7a928bff6a29b8872d21",
+      "data": [
+        {
+          "sending_ip": null,
+          "internal": false,
+          "log_source_identifiers": [
+            {
+              "identifier": "host-01",
+              "parsing_order": 3
+            }
+          ],
+          "protocol_parameters": [
+            {
+              "name": "identifier",
+              "id": 0,
+              "value": "host-01"
+            },
+            {
+              "name": "incomingPayloadEncoding",
+              "id": 1,
+              "value": "UTF-8"
+            }
+          ],
+          "description": "",
+          "coalesce_events": false,
+          "enabled": true,
+          "parsing_order": 2,
+          "average_eps": 0,
+          "group_ids": [
+            0
+          ],
+          "credibility": 5,
+          "id": 213,
+          "store_event_payload": true,
+          "target_event_collector_id": 7,
+          "protocol_type_id": 0,
+          "language_id": 1,
+          "creation_date": 1785672343030,
+          "wincollect_external_destination_ids": null,
+          "log_source_extension_id": null,
+          "syslog_event_timeout": null,
+          "name": "host-01@Windows",
+          "modified_date": 1785672343030,
+          "auto_discovered": false,
+          "type_id": 12,
+          "last_event_time": 1791370247545,
+          "requires_deploy": false,
+          "gateway": false,
+          "wincollect_internal_destination_id": null,
+          "status": {
+            "last_updated": 0,
+            "messages": null,
+            "status": "SUCCESS"
+          },
+          "disconnected_log_collector_id": null
+        }
+      ],
+      "truncated": false,
+      "coverage": {
+        "complete": true,
+        "gaps": []
+      }
+    }
+  }
+]

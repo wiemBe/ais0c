@@ -132,6 +132,35 @@ def test_a_tool_outside_the_profile_fails_even_though_it_never_runs() -> None:
     assert [exchange.intent.tool_id for exchange in attempt.exchanges] == ["get_offense"]
 
 
+def test_a_tool_name_no_profile_has_is_a_metric_and_fails_nothing() -> None:
+    played = scenario("tl-01-catalog-note-fp")
+    answer = {
+        **scripted_answer(played),
+        "claims": [{"text": "QRadar returned the offense.", "evidence_ids": ["ev_2"]}],
+    }
+
+    def respond(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        made = tool_calls_made(messages)
+        if made == 0:
+            return ModelResponse(parts=[ToolCallPart("add_offense_noet", {"offense_id": 9101})])
+        if made == 1:
+            args = {
+                "reason": "Read it.",
+                "expected_evidence": "Its record.",
+                "arguments": {"offense_id": 9101},
+            }
+            return ModelResponse(parts=[ToolCallPart("get_offense", args)])
+        return ModelResponse(parts=[ToolCallPart(info.output_tools[0].name, answer)])
+
+    attempt, evaluation = play(played, FunctionModel(respond, model_name="scripted"))
+
+    assert attempt.status is RunStatus.COMPLETED, attempt.error
+    assert evaluation.passed
+    assert evaluation.metrics.unknown_tool_name == 1
+    assert evaluation.metrics.tool_outside_profile == 0
+    assert evaluation.metrics.tool_retries == 1
+
+
 def test_a_made_up_evidence_id_fails() -> None:
     played = scenario("tl-01-catalog-note-fp")
     attempt, honest = play(played, answering(played, {}))

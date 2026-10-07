@@ -1,0 +1,35 @@
+{
+  "offense_id": 30,
+  "description": "Success Audit: An operation was performed on an object",
+  "offense_type": "Username",
+  "offense_source": "svc_backup",
+  "rule_ids": [
+    100353
+  ],
+  "rule_names": [
+    "AIS0C LAB - DCSync by a non-machine account"
+  ],
+  "categories": [
+    "Information"
+  ],
+  "magnitude": 2,
+  "start_time": "2026-10-05T14:57:43.905000Z",
+  "last_updated_time": "2026-10-05T14:57:43.905000Z",
+  "event_count": 3,
+  "log_source_ids": [
+    213
+  ],
+  "source_ips": [
+    "192.0.2.15",
+    "192.0.2.13",
+    "192.0.2.11"
+  ],
+  "destination_ips": [
+    "192.0.2.15",
+    "192.0.2.13",
+    "192.0.2.11"
+  ],
+  "usernames": [
+    "svc_backup"
+  ]
+}

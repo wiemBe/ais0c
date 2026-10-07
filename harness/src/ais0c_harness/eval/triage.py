@@ -15,7 +15,7 @@ the workflow computes it (ais0c_workflows.chain.notify_level, decision T-42 (2))
 """
 
 import re
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from datetime import timedelta
 from typing import Annotated, ClassVar, Final, Literal, Self
 
@@ -59,6 +59,7 @@ from ais0c_harness.eval.config import AgentConfig
 from ais0c_harness.eval.evaluate import Check, Evaluation, evaluate_common
 from ais0c_harness.eval.fixture_gateway import FixtureGateway, GatewayExchange
 from ais0c_harness.eval.scenario import Expectation, ScenarioBase, strings
+from ais0c_harness.replay.derived import DerivedAnswers
 from ais0c_mcp_gateway.registry import Profile
 from ais0c_policy import new_nonce
 from ais0c_workflows.chain import notify_level
@@ -200,7 +201,10 @@ class TriageAdapter(AgentAdapter):
     ) -> Attempt:
         triage = _triage(scenario)
         gateway = FixtureGateway(
-            _gateway_profile(self.config), triage.input.tool_results, now=triage.evaluated_at
+            _gateway_profile(self.config),
+            triage.input.tool_results,
+            now=triage.evaluated_at,
+            derived=DerivedAnswers(triage.input.offense, triage.input.enrichment),
         )
         recorder = RecordingModel(model)
         agent = self.build(gateway, recorder)
@@ -225,6 +229,7 @@ class TriageAdapter(AgentAdapter):
             profile=_profile(self.config),
             tokens=attempt.tokens,
             seconds=attempt.seconds,
+            known_tools=self.config.gateway_tools,
         )
 
     def describe(self, result: AgentResult) -> dict[str, str]:
@@ -271,6 +276,7 @@ def evaluate_triage(
     profile: ToolsetProfile,
     tokens: int = 0,
     seconds: float = 0.0,
+    known_tools: Collection[str] | None = None,
 ) -> Evaluation:
     """Every check and metric of one Triage run; the Triage checks come first."""
     common = evaluate_common(
@@ -283,6 +289,7 @@ def evaluate_triage(
         output_tool=OUTPUT_TOOL,
         tokens=tokens,
         seconds=seconds,
+        known_tools=known_tools,
     )
     if result is None:
         return common

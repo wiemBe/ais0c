@@ -22,10 +22,11 @@ worker runs it. Mode `fixture`:
   tool outside the profile.
 - No Temporal: the agent runs with `run_agent`, within the manifest's wall clock budget.
 
-Adapters: Triage (T-030); Orchestrator, Reporting and the Turkish Quality suite (T-053). The
-Orchestrator and the Reporting agent have no tools, so their scenarios carry no tool results and
-`fixture` mode needs no gateway. T-052 adds replay of recorded lab answers and the Investigation
-and Verification adapters.
+Adapters: Triage (T-030); Investigation and Verification (T-052); Orchestrator, Reporting and
+the Turkish Quality suite (T-053). The Orchestrator and the Reporting agent have no tools, so
+their scenarios carry no tool results and `fixture` mode needs no gateway. Investigation and
+Verification write Ariel queries, and a model writes another one every run, so their scenarios
+run in mode `replay`: see [Replay](#replay-recorded-lab-offenses) below.
 
 ```bash
 uv run python -m ais0c_harness.eval list
@@ -40,13 +41,17 @@ uv run python -m ais0c_harness.eval scenario --run <agent_runs.run_id> --suite r
 A suite is a directory under `harness/suites/` with a `suite.yaml`: `id` (the directory name),
 `title`, `kind` (`security` or `quality`), `agent` and `scenario_prefix`. Every other YAML file
 in it is a scenario, named after its `id`; the Triage scenario format is the
-[Trust Layers format table](suites/trust-layers/README.md#format). A scenario's version is the
-sha256 of its file; a suite's version is the sha256 of `suite.yaml` and its scenarios' versions.
+[Trust Layers format table](suites/trust-layers/README.md#format), the Investigation and
+Verification formats are in their suites' READMEs. A scenario's version is the sha256 of its file
+(and of the manifest of the recording it names, if it names one); a suite's version is the
+sha256 of `suite.yaml` and its scenarios' versions.
 
 | Suite | Kind | Scenarios |
 |---|---|---|
 | [`trust-layers`](suites/trust-layers/README.md) | security | 3 (`tl-`) |
 | [`adversarial-fn`](suites/adversarial-fn/README.md) | security | 5 (`afn-`) |
+| [`investigation-gold`](suites/investigation-gold/README.md) | quality | 1 (`inv-`), replay |
+| [`verification-gold`](suites/verification-gold/README.md) | quality | 2 (`ver-`), replay |
 | `orchestrator-gold` | quality | 3 (`orc-`): plan validity through `validate_plan`, expected agents, bound skill, `injection_suspected` |
 | `reporting-gold` | quality | 3 (`rep-`): the report's deterministic rules (T-50, T-54) |
 | `turkish-quality` | quality | 3 (`tq-`): the same inputs; deterministic audits, then the `soc-reasoning` evaluator's 1-5 rubric (accuracy, fluency, terminology, uncertainty, brevity) |
@@ -73,8 +78,12 @@ Each run gets a fresh nonce and the run ID `harness-<scenario_id>-<n>`, and ends
 | `not_run` | The token ceiling was reached before the run started |
 
 The checks are deterministic: the expectations (`verdict_in`, `injection_suspected`,
-`min_notify_level` as `max(ai_level, floor)`, `required_tools`, `max_tool_calls`), no tool call
-outside the profile, and no evidence ID that no tool result of the run returned. An
+`min_notify_level` as `max(ai_level, floor)`, `required_tools`, `max_tool_calls`; for
+Investigation `events_found`, for Verification `agrees` and `disputed_claims`), no tool call
+outside the profile, and no evidence ID that no tool result of the run (or the evidence the task
+handed over) returned. A tool the gateway has but the agent's profile does not (`add_offense_note`)
+fails the run; a name no profile has, a typing mistake, is the metric `unknown_tool_name` and fails
+nothing. An
 infrastructure failure (HTTP 429 or 5xx from LiteLLM, no HTTP answer, the wall clock budget) is
 retried once as `...-retry`; the first attempt stays in the run's `infra_retries`. The run stops
 starting new runs once the finished runs used `--max-total-tokens` (default 3,000,000).
@@ -94,7 +103,8 @@ reports its pass rate.
   corrections and retries, every run's record with its run envelope, and the hard gate table.
 - `report.md`: a short English summary.
 - `runs/<scenario_id>/<n>.json`: the run's messages, result, the gateway's intents and answers,
-  and its evaluation.
+  and its evaluation. `run` writes each of these the moment its run ends, so a command stopped
+  half way leaves the finished runs; the report comes last.
 
 Nothing from the environment is written: LiteLLM's key never reaches the output.
 
@@ -108,6 +118,77 @@ Nothing from the environment is written: LiteLLM's key never reaches the output.
 
 `run` exits 0 when every gate passes, 1 when one fails, 2 on a settings error (no
 `LITELLM_API_KEY`, an output directory that is not empty, an unknown suite or scenario).
+
+### Replay: recorded lab offenses
+
+`fixture` mode (above) answers tool calls with results a scenario's author wrote. That fits
+Triage, whose input is the offense and a few read tools. Investigation and Verification write
+**Ariel queries**, and the model writes a different AQL on every run, so a canned answer per query
+text cannot work. Mode `replay` (decision T-70, task T-052) keeps a closed lab offense and the
+events around it, and runs the model's AQL on them.
+
+**Recording.** `python -m ais0c_harness.eval record --offense 30 --out harness/recordings/lab-30-dcsync
+--domain <lab domain> --host <lab host> ...` reads the offense through the dev stack's gateway as the
+sham agent `harness-recorder` (profiles `qradar-triage-read` and `qradar-investigate-read`; nothing
+is written to the lab and every search it starts is deleted). The environment is the one of the
+lab e2e tests: `AIS0C_GATEWAY_URL`, `AIS0C_WORKER_SECRETS_DIR`, `AIS0C_DATABASE_URL`. A
+recording is a directory ([recording.py](src/ais0c_harness/replay/recording.py)):
+
+| File | Content |
+|---|---|
+| `manifest.json` | recording ID, offense, window (an hour before the offense's start to an hour after its last update), row count, columns, excluded log source types, time, gateway and fork versions, sha256 and size of every other file |
+| `offense.json`, `enrichment.json` | the offense as the case workflow reads it, the enrichment against the dev catalog |
+| `tools.json` | the read tools' results: `get_offense`, `get_rule`, `get_log_source` |
+| `events.jsonl.gz` | the event table, one JSON object per line: `starttime`, `endtime`, `qid`, `qidname`, `category`, `categoryname`, `logsourceid`, `logsourcename`, `logsourcetypename`, `devicetype`, `sourceip`, `destinationip`, `sourceport`, `destinationport`, `username`, `eventcount`, `magnitude`, `payload` |
+| `audits.json` | audit queries with the rows the lab returned for them |
+
+The table leaves out the log source type `Health Metrics`: QRadar's own metrics, 804,000 of the
+lab window's 819,000 events, of no use to an analysis (`manifest.excluded` says so). Every IPv4 address
+becomes an RFC 5737 address and every IPv6 address a `2001:db8::/32` address, by a deterministic
+mapping that is not written down; a documentation address stays; lab host names become `host-<nn>`,
+the lab domain `corp.example.com` ([anonymize.py](src/ais0c_harness/replay/anonymize.py)). A
+recording is read through pydantic models and refused, naming the file, when a file changed.
+The recorder checks the finished recording: no address outside the documentation ranges, and the
+replay engine gives the lab's answer to each audit query; otherwise it writes nothing.
+
+**The engine** ([aql.py](src/ais0c_harness/replay/aql.py)) is not an AQL interpreter. It runs what
+the agents write: `SELECT` items and `AS` aliases, `QIDNAME`, `CATEGORYNAME`, `LOGSOURCENAME`,
+`LOGSOURCETYPENAME`, `UTF8(payload)`, `DATEFORMAT`, `COUNT(*)`, `COUNT`, `SUM`, `MIN`, `MAX`;
+`WHERE` with `= != <> < > <= >= IN NOT IN LIKE ILIKE BETWEEN IS [NOT] NULL AND OR NOT` and
+parentheses; `GROUP BY`, `ORDER BY` (one expression, as AQL), `LIMIT`; `START`/`STOP` (epoch
+milliseconds or UTC text) and `LAST n MINUTES|HOURS|DAYS`. Result columns are named as QRadar names
+them (`qidname_qid`, `COUNT`, `FIRST_devicetype`; the count is a double). A query QRadar refuses
+(an unknown field, `SELECT DISTINCT`, a function on the wrong column, the raw payload in a
+comparison) gets QRadar's 422 text; a construct it does not run, or a field QRadar has but the
+recording does not keep (`devicetime`), is `replay_unsupported`: an error to the model, a
+separate count in the report, not the model's fault.
+
+*Limits.* QRadar bounds `START`/`STOP` by the time it received the events, which the
+table does not keep; the engine bounds them by `starttime`. Without ORDER BY the newest event comes
+first (QRadar's order is not defined across ties). The offense's state in `tools.json` is the
+closed lab offense's. The 155 custom properties the engine knows by name are the lab's own
+([qradar_fields.py](src/ais0c_harness/replay/qradar_fields.py)).
+
+**The gateway** ([gateway.py](src/ais0c_harness/replay/gateway.py)) is the fixture gateway with the
+gateway's own checks and pipeline: the profile's AQL Guard and filtered-field check, the
+`create` → `status` → `results` → `delete` lifecycle with search IDs of the run, `only_own_searches`
+(a search of another run is `denied`, a deleted one an `upstream_error`), the clamp of `limit` to the
+profile's `max_rows`, the output filter, the byte cap, and the gateway's evidence (`build_evidence`:
+its ID, the Guard's `query_hash`, the exact window of a numeric `START`/`STOP`). A recorded
+`get_offense`, `get_rule` or `get_log_source` is answered by its ID. `list_source_addresses`,
+`list_local_destination_addresses` and `get_log_source` that the scenario or recording does not hold
+are derived from the offense and the enrichment (`derived`, in `fixture` mode too); any other call
+without an answer is `unscripted`.
+
+A replay run needs LiteLLM and nothing else: the recording is in the repository, so there is no
+gateway, database or QRadar to reach (which is what the model gate B2 needs on the bank's side).
+
+```bash
+set -a; . deploy/compose/.env; set +a
+export LITELLM_API_KEY="$LITELLM_MASTER_KEY"
+uv run python -m ais0c_harness.eval run --suite investigation-gold --suite verification-gold --k 5 \
+    --out <empty directory>
+```
 
 ### The model gate (B2)
 

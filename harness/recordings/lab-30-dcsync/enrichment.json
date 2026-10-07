@@ -1,0 +1,27 @@
+{
+  "catalog": {
+    "rules": [
+      {
+        "rule_id": 100353,
+        "mode": "analyze",
+        "min_level": null,
+        "context_note": null,
+        "attack_techniques": null
+      }
+    ],
+    "log_sources": [
+      {
+        "log_source_id": 213,
+        "type_name": "Microsoft Windows Security Event Log",
+        "description": null,
+        "criticality": null,
+        "context_note": null
+      }
+    ]
+  },
+  "critical_asset_hits": [],
+  "ioc_hits": [],
+  "entity_resolutions": [],
+  "group_id": null,
+  "floor_level": null
+}

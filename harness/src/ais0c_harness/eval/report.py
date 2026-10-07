@@ -28,10 +28,10 @@ from ais0c_contracts import Budget, ModelRelease, RunStatus
 from ais0c_harness.eval.adapter import Attempt
 from ais0c_harness.eval.evaluate import Check, RunMetrics
 from ais0c_harness.eval.fixture_gateway import GatewayExchange
+from ais0c_harness.eval.scenario import ExecutionMode
 from ais0c_harness.eval.suites import SuiteKind
 
 SCHEMA_VERSION: Final = 1
-EXECUTION_MODE: Final = "fixture"
 SCHEMA_VALIDITY_MIN: Final = 0.995
 REPORT_JSON: Final = "report.json"
 REPORT_MD: Final = "report.md"
@@ -68,7 +68,7 @@ class RunEnvelope(_Model):
     model_release: ModelRelease
     toolset_profile: str
     toolset_sha256: str
-    execution_mode: Literal["fixture"]
+    execution_mode: ExecutionMode
     budget: Budget
     k: int
     run_number: int
@@ -153,6 +153,10 @@ class ScenarioReport(_Model):
     scores: dict[str, float]
     """An LLM evaluator's average per criterion over the runs that were scored (T-053); empty
     without one."""
+    replay_unsupported: int = 0
+    """Ariel queries of the k runs the replay engine did not run (decision T-70)."""
+    unknown_tool_name: int = 0
+    """Tool calls of the k runs by a name no gateway profile has."""
 
 
 class SuiteReport(_Model):
@@ -195,7 +199,8 @@ class RunnerSettings(_Model):
     k: int
     concurrency: int
     max_total_tokens: int
-    execution_mode: Literal["fixture"]
+    execution_mode: Literal["fixture", "replay", "mixed"]
+    """`mixed` when the suites hold both kinds of scenario."""
     registry: str
     registry_sha256: str
     suites: list[str]
@@ -300,6 +305,8 @@ def scenario_report(
         tool_retries=sum(run.metrics.tool_retries for run in runs),
         budget_exhausted_gaps=sum(run.metrics.budget_exhausted_gaps for run in runs),
         infra_retries=sum(len(run.infra_retries) for run in runs),
+        replay_unsupported=sum(run.metrics.replay_unsupported for run in runs),
+        unknown_tool_name=sum(run.metrics.unknown_tool_name for run in runs),
         failed_checks=dict(
             sorted(
                 Counter(
@@ -408,16 +415,22 @@ def hard_gates(scenarios: Sequence[ScenarioReport], runs: Sequence[RunRecord]) -
     ]
 
 
+def write_run_file(directory: Path, run_file: RunFile) -> None:
+    """Write one run's file, `runs/<scenario_id>/<n>.json`, as soon as the run has ended."""
+    envelope = run_file.record.envelope
+    path = directory / RUNS_DIR / envelope.scenario_id / f"{envelope.run_number}.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(run_file.model_dump_json(indent=2) + "\n", encoding="utf-8")
+
+
 def write_report(directory: Path, report: Report, files: Iterable[RunFile]) -> None:
-    """Write the report into `directory`, which must be empty or not exist."""
+    """Write the report into `directory`, which must be empty or not exist, and the run files
+    in `files` (`run` has written them already, one by one, when its runs ended)."""
     directory.mkdir(parents=True, exist_ok=True)
     (directory / REPORT_JSON).write_text(report.model_dump_json(indent=2) + "\n", encoding="utf-8")
     (directory / REPORT_MD).write_text(render_markdown(report), encoding="utf-8")
     for run_file in files:
-        envelope = run_file.record.envelope
-        path = directory / RUNS_DIR / envelope.scenario_id / f"{envelope.run_number}.json"
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(run_file.model_dump_json(indent=2) + "\n", encoding="utf-8")
+        write_run_file(directory, run_file)
 
 
 def load_report(path: Path) -> Report:
@@ -469,7 +482,7 @@ def render_markdown(report: Report) -> str:
         "## Scenarios",
         "",
         "| Scenario | Status | Pass rate | Results | Injection | Tokens med/max "
-        "| Seconds med/max | Retries out/tool | Scores | Failed checks |",
+        "| Seconds med/max | Retries out/tool | Unsupported/unknown tool | Scores | Failed checks |",
         "|---|---|---|---|---|---|---|---|---|---|",
     ]
     for scenario in report.scenarios:
@@ -483,7 +496,9 @@ def render_markdown(report: Report) -> str:
             f"| {scenario.scenario_id} | {scenario.status} | {scenario.pass_rate:.0%} "
             f"| {results or '-'} | {scenario.injection_suspected}/{scenario.k} "
             f"| {_spread(scenario.tokens, '{:,.0f}')} | {_spread(scenario.seconds, '{:.1f}')} "
-            f"| {scenario.output_retries}/{scenario.tool_retries} | {scores or '-'} | {failed or '-'} |"
+            f"| {scenario.output_retries}/{scenario.tool_retries} "
+            f"| {scenario.replay_unsupported}/{scenario.unknown_tool_name} "
+            f"| {scores or '-'} | {failed or '-'} |"
         )
     return "\n".join(lines) + "\n"
 

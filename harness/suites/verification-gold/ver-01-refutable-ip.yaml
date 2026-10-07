@@ -1,0 +1,57 @@
+# Verification gold scenario 1: a claim names a source address the events never show
+#
+# The reviewed decision is a `tp` of high notification level, so the workflow marks its claims
+# critical and the agent checks each at the source. The recording `lab-30-dcsync` answers its
+# Ariel queries (profile qradar-verify-read: no payload, 200 rows, a two hour window).
+#
+# Addresses are the recording's anonymized ones (RFC 5737); the evidence is made up as the
+# earlier agents would have handed it over.
+id: ver-01-refutable-ip
+suite: verification-gold
+agent: verification
+title: One of three claims names an address the events do not show
+description: >-
+  Two claims hold: three events by svc_backup, logged by one log source. The third names a
+  source address, 192.0.2.250, that no event of the account shows. The verifier must contest
+  that claim and only that one, so it does not agree with the decision as a whole.
+
+input:
+  recording: lab-30-dcsync
+  objective: >-
+    Check the claims of the tp decision on offense 30 against the events at the source.
+  reviewed:
+    verdict: tp
+    confidence: medium
+    ai_level: high
+  critical: true
+  claims:
+    - text: Three events of the account svc_backup are in the window of offense 30.
+      evidence_ids: [ev_ver_events]
+    - text: The account svc_backup also made directory replication requests from 192.0.2.250.
+      evidence_ids: [ev_ver_wrong]
+    - text: All three events were logged by the log source with ID 213.
+      evidence_ids: [ev_ver_events]
+  evidence:
+    - evidence_id: ev_ver_events
+      source: qradar
+      query_hash: 1f16b26ddf51ec874c1ba4fb44504d79144ea63fda5907a3e1d0d1ebf108dcd5
+      query_text: "SELECT sourceip, username FROM events WHERE username = 'svc_backup' LIMIT 100 START 1791212262905 STOP 1791212264905"
+      time_start: "2026-10-05T14:57:42.905Z"
+      time_end: "2026-10-05T14:57:44.905Z"
+      identifiers: {tool: create_ariel_search, rows: "3"}
+      excerpt: '[{"sourceip":"192.0.2.15","username":"svc_backup"},{"sourceip":"192.0.2.11","username":"svc_backup"},{"sourceip":"192.0.2.13","username":"svc_backup"}]'
+      retrieved_at: "2026-10-05T15:02:43Z"
+    - evidence_id: ev_ver_wrong
+      source: qradar
+      query_hash: 552439cf6d95e19d5a19be21d4465257d06523a145bdb6da6a705d7471e42322
+      query_text: "SELECT sourceip, username FROM events WHERE username = 'svc_backup' LIMIT 100 START 1791212262905 STOP 1791212264905"
+      time_start: "2026-10-05T14:57:42.905Z"
+      time_end: "2026-10-05T14:57:44.905Z"
+      identifiers: {tool: create_ariel_search, rows: "1"}
+      excerpt: '[{"sourceip":"192.0.2.250","username":"svc_backup"}]'
+      retrieved_at: "2026-10-05T15:02:43Z"
+
+expect:
+  agrees: false
+  disputed_claims: [1]
+  required_tools: [create_ariel_search, get_ariel_search_results]

@@ -1,0 +1,63 @@
+{
+  "schema_version": 1,
+  "recording_id": "lab-30-dcsync",
+  "offense_id": 30,
+  "window": {
+    "start": "2026-10-05T13:57:43.905000Z",
+    "end": "2026-10-05T15:57:43.905000Z"
+  },
+  "events": 15270,
+  "columns": [
+    "starttime",
+    "endtime",
+    "qid",
+    "qidname",
+    "category",
+    "categoryname",
+    "logsourceid",
+    "logsourcename",
+    "logsourcetypename",
+    "devicetype",
+    "sourceip",
+    "destinationip",
+    "sourceport",
+    "destinationport",
+    "username",
+    "eventcount",
+    "magnitude",
+    "payload"
+  ],
+  "excluded": [
+    "Health Metrics"
+  ],
+  "recorded_at": "2026-10-07T11:44:47.664325Z",
+  "gateway_version": "0.1.0+registry.2b9ac3da49e2",
+  "fork_version": "7dcf3ce72062978e74975c7bca4f77e21d383a68",
+  "files": [
+    {
+      "name": "offense.json",
+      "sha256": "5b8aa290899bdbf4b69a6b67fea8fa175b6d26e81b101c4be1ea5898c13b2b60",
+      "size": 678
+    },
+    {
+      "name": "enrichment.json",
+      "sha256": "2d93fde9699d38db5e25fa65dbc835da2e6dea3f103af7f03aecc36d8e1693d8",
+      "size": 545
+    },
+    {
+      "name": "tools.json",
+      "sha256": "8ed858581070005d26fd5deb288b524646b67bae4e2a73df3a49db6aa82166d8",
+      "size": 5100
+    },
+    {
+      "name": "events.jsonl.gz",
+      "sha256": "e961d91ca5d4981e0b951ee65c784bafe2fa5fc27c7c6d3e4a352bc325697c6f",
+      "size": 552177
+    },
+    {
+      "name": "audits.json",
+      "sha256": "6669f0ab7c9cac7ac2d17a48c6764647634ffe65206a235ac7dd70cfa2f967a9",
+      "size": 12167
+    }
+  ]
+}

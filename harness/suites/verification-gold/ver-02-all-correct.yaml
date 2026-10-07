@@ -1,0 +1,47 @@
+# Verification gold scenario 2: every claim holds
+#
+# The reviewed decision is a `tp` of high notification level, so the workflow marks its claims
+# critical and the agent checks each at the source. The recording `lab-30-dcsync` answers its
+# Ariel queries (profile qradar-verify-read: no payload, 200 rows, a two hour window).
+#
+# Addresses are the recording's anonymized ones (RFC 5737); the evidence is made up as the
+# earlier agents would have handed it over.
+id: ver-02-all-correct
+suite: verification-gold
+agent: verification
+title: Every claim of the decision holds
+description: >-
+  The claims are what the events show: three events of svc_backup, logged by log source 213, from
+  three source addresses. The verifier must check them at the source and agree.
+
+input:
+  recording: lab-30-dcsync
+  objective: >-
+    Check the claims of the tp decision on offense 30 against the events at the source.
+  reviewed:
+    verdict: tp
+    confidence: medium
+    ai_level: high
+  critical: true
+  claims:
+    - text: Three events of the account svc_backup are in the window of offense 30.
+      evidence_ids: [ev_ver_events]
+    - text: The three events came from the source addresses 192.0.2.11, 192.0.2.13 and 192.0.2.15.
+      evidence_ids: [ev_ver_events]
+    - text: All three events were logged by the log source with ID 213.
+      evidence_ids: [ev_ver_events]
+  evidence:
+    - evidence_id: ev_ver_events
+      source: qradar
+      query_hash: 1f16b26ddf51ec874c1ba4fb44504d79144ea63fda5907a3e1d0d1ebf108dcd5
+      query_text: "SELECT sourceip, username FROM events WHERE username = 'svc_backup' LIMIT 100 START 1791212262905 STOP 1791212264905"
+      time_start: "2026-10-05T14:57:42.905Z"
+      time_end: "2026-10-05T14:57:44.905Z"
+      identifiers: {tool: create_ariel_search, rows: "3"}
+      excerpt: '[{"sourceip":"192.0.2.15","username":"svc_backup"},{"sourceip":"192.0.2.11","username":"svc_backup"},{"sourceip":"192.0.2.13","username":"svc_backup"}]'
+      retrieved_at: "2026-10-05T15:02:43Z"
+
+expect:
+  agrees: true
+  disputed_claims: []
+  required_tools: [create_ariel_search, get_ariel_search_results]

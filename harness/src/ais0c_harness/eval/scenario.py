@@ -12,9 +12,12 @@ packages/contracts.
 """
 
 from collections.abc import Iterator
-from typing import Annotated, Final
+from pathlib import Path
+from typing import Annotated, Final, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, StringConstraints
+
+ExecutionMode = Literal["fixture", "replay"]
 
 SCENARIO_ID_PATTERN: Final = r"^[a-z][a-z0-9]*-[0-9]{2}-[a-z0-9]+(?:-[a-z0-9]+)*$"
 # The run IDs (`harness-<id>-<n>-retry`) must stay within the contract's 200 characters.
@@ -57,6 +60,19 @@ class ScenarioBase(BaseModel):
     def scripted_tools(self) -> frozenset[str]:
         """The tools the scenario has results for."""
         raise NotImplementedError
+
+    def execution_mode(self) -> ExecutionMode:
+        """`fixture`: the scenario holds the tool results; `replay`: a recording answers."""
+        return "fixture"
+
+    def version_parts(self, root: Path) -> list[bytes]:
+        """Bytes of the files the scenario names, which its version covers besides its own
+        file: a changed recording is a changed scenario."""
+        return []
+
+    def check_files(self, root: Path) -> None:
+        """Raise ValueError when a file under `root` that the scenario names (a recording) is
+        missing or invalid; most scenarios name none."""
 
 
 def strings(value: JsonValue) -> Iterator[str]:

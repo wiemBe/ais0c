@@ -1,8 +1,9 @@
-"""The eval harness's runner (T-030, docs/agent-harness.md §2, §5-§8).
+"""The eval harness's runner (T-030, T-052, docs/agent-harness.md §2, §5-§8).
 
-The runner plays a suite's scenarios against an agent built as the case worker builds it, in
-`fixture` mode: the real model through LiteLLM, the gateway's tool profile, and a fixture
-gateway that answers with the scenario's tool results (decision T-64). It scores every run with
+The runner plays a suite's scenarios against an agent built as the case worker builds it: the
+real model through LiteLLM, the gateway's tool profile, and either a fixture gateway that answers
+with the scenario's tool results (`fixture` mode, decision T-64) or a replay gateway that answers
+from a recorded lab offense (`replay` mode, decision T-70; ais0c_harness.replay). It scores every run with
 deterministic checks, judges the security suites with pass^k and writes a versioned report
 with the hard gate table. `gate` compares two reports (the model gate, B2) and `releases` lists
 the model releases that changed since the last recorded runs.
@@ -26,6 +27,13 @@ from ais0c_harness.eval.config import (
 from ais0c_harness.eval.evaluate import Check, Evaluation, RunMetrics
 from ais0c_harness.eval.fixture_gateway import UNSCRIPTED_RESULT, FixtureGateway, GatewayExchange
 from ais0c_harness.eval.gate import GateResult, compare_reports
+from ais0c_harness.eval.investigation import (
+    InvestigationAdapter,
+    InvestigationExpectation,
+    InvestigationInput,
+    InvestigationScenario,
+    evaluate_investigation,
+)
 from ais0c_harness.eval.orchestrator import (
     OrchestratorAdapter,
     OrchestratorExpectation,
@@ -80,6 +88,13 @@ from ais0c_harness.eval.turkish import (
     score_checks,
     turkish_checks,
 )
+from ais0c_harness.eval.verification import (
+    VerificationAdapter,
+    VerificationExpectation,
+    VerificationInput,
+    VerificationScenario,
+    evaluate_verification,
+)
 
 __all__ = [
     "UNSCRIPTED_RESULT",
@@ -99,6 +114,10 @@ __all__ = [
     "GateResult",
     "GatewayExchange",
     "HardGate",
+    "InvestigationAdapter",
+    "InvestigationExpectation",
+    "InvestigationInput",
+    "InvestigationScenario",
     "Job",
     "OrchestratorAdapter",
     "OrchestratorExpectation",
@@ -127,10 +146,16 @@ __all__ = [
     "TriageScenario",
     "TurkishQualityAdapter",
     "TurkishQualityScenario",
+    "VerificationAdapter",
+    "VerificationExpectation",
+    "VerificationInput",
+    "VerificationScenario",
     "agents_by_alias",
     "compare_reports",
     "describe_release_changes",
+    "evaluate_investigation",
     "evaluate_triage",
+    "evaluate_verification",
     "evaluator_identity",
     "infra_failure",
     "litellm_model",

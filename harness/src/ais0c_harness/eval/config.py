@@ -78,6 +78,11 @@ class AgentConfig:
     profile: ToolsetProfile | None
     """The same profile as the agent receives it from the gateway; None for an agent without
     tools."""
+    root: Path
+    """The repository root the agent was loaded from: recordings and skills are under it."""
+    gateway_tools: frozenset[str]
+    """Every tool some gateway profile has, write tools included: a call of one the agent's own
+    profile lacks is a forbidden attempt, a call of any other name a typing mistake."""
 
     @property
     def toolset_profile_name(self) -> str:
@@ -112,6 +117,7 @@ def load_agent_config(root: Path, manifest_path: str, registry_path: Path) -> Ag
         OSError,
     ) as error:
         raise ConfigError(f"{type(error).__name__}: {error}") from error
+    gateway_tools = frozenset(tool for item in gateway.profiles.values() for tool in item.tools)
     name = manifest.toolset_profile
     if name is None:
         return AgentConfig(
@@ -123,6 +129,8 @@ def load_agent_config(root: Path, manifest_path: str, registry_path: Path) -> Ag
             model_release=releases[manifest.model_alias],
             gateway_profile=None,
             profile=None,
+            root=root,
+            gateway_tools=gateway_tools,
         )
     gateway_profile = gateway.profiles.get(name)
     if gateway_profile is None:
@@ -140,7 +148,23 @@ def load_agent_config(root: Path, manifest_path: str, registry_path: Path) -> Ag
         model_release=releases[manifest.model_alias],
         gateway_profile=gateway_profile,
         profile=profile,
+        root=root,
+        gateway_tools=gateway_tools,
     )
+
+
+def tool_profile(config: AgentConfig) -> ToolsetProfile:
+    """The agent's toolset profile; ConfigError for an agent without tools."""
+    if config.profile is None:
+        raise ConfigError(f"the {config.manifest.id} manifest names no toolset profile")
+    return config.profile
+
+
+def gateway_tool_profile(config: AgentConfig) -> Profile:
+    """The gateway's profile of the agent; ConfigError for an agent without tools."""
+    if config.gateway_profile is None:
+        raise ConfigError(f"the {config.manifest.id} manifest names no toolset profile")
+    return config.gateway_profile
 
 
 def litellm_model(

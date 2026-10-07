@@ -12,10 +12,12 @@ requires-python = ">=3.12"
 # releases recorded in agent_runs) and the gateway's registry (the tools a profile serves).
 # jsonschema checks tool arguments as the gateway does; pydantic and pydantic-ai-slim hold the
 # scenario and report models and the agent runs. Every range is the one the lock already has.
+# The replay mode (T-052) adds ais0c-knowledge (the skills an Investigation scenario carries).
 dependencies = [
     "ais0c-activities",
     "ais0c-agents",
     "ais0c-contracts",
+    "ais0c-knowledge",
     "ais0c-mcp-gateway",
     "ais0c-policy",
     "ais0c-storage",

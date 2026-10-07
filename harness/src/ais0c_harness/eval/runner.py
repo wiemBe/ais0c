@@ -28,7 +28,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from shutil import which
-from typing import Final
+from typing import Final, Literal
 
 from pydantic_ai.models import Model
 
@@ -37,7 +37,6 @@ from ais0c_harness.eval.adapter import AgentAdapter, Attempt, EvaluatorIdentity
 from ais0c_harness.eval.config import AgentConfig, load_agent_config, sha256_file
 from ais0c_harness.eval.evaluate import Evaluation, RunMetrics
 from ais0c_harness.eval.report import (
-    EXECUTION_MODE,
     SCHEMA_VERSION,
     AgentReport,
     GitState,
@@ -152,9 +151,11 @@ async def run_jobs(
     adapters: Mapping[str, AgentAdapter],
     models: Mapping[str, Model],
     options: RunOptions,
+    on_result: Callable[[JobResult], None] | None = None,
 ) -> list[JobResult]:
     """Run every job; the result list is in the order of `jobs`. `models` holds each
-    scenario's model, by scenario ID."""
+    scenario's model, by scenario ID. `on_result` is called with each run's result the moment the
+    run ends, `not_run` runs included, so a `run` stopped half way leaves the runs it finished."""
     results: list[JobResult | None] = [None] * len(jobs)
     spent = 0
     pending = iter(enumerate(jobs))
@@ -163,19 +164,24 @@ async def run_jobs(
         nonlocal spent
         for index, job in pending:
             if spent >= options.max_total_tokens:
-                results[index] = JobResult(
+                skipped = JobResult(
                     job=job,
                     outcome="not_run",
                     error=f"the token ceiling of {options.max_total_tokens:,} was reached",
                     attempts=(),
                     evaluation=None,
                 )
+                results[index] = skipped
+                if on_result is not None:
+                    on_result(skipped)
                 continue
             adapter = adapters[job.suite.agent]
             model = models[job.scenario.id]
             result = await run_job(job, adapter=adapter, model=model, options=options)
             spent += result.tokens_spent
             results[index] = result
+            if on_result is not None:
+                on_result(result)
 
     await asyncio.gather(*(worker() for _ in range(options.concurrency)))
     return [result for result in results if result is not None]
@@ -236,8 +242,12 @@ async def run_eval(
     registry_path: Path,
     model_factory: ModelFactory,
     options: RunOptions,
+    on_run: Callable[[RunFile], None] | None = None,
 ) -> EvalRun:
     """Run the suites' scenarios k times each and build the report.
+
+    `on_run` receives each run's file when the run ends (T-52 criterion 9), long before the
+    report: `run` writes it at once, so an interrupted command keeps the runs it finished.
 
     Raises SuiteError for an unknown scenario ID and ConfigError (config.py) when an agent's
     files are invalid; both before any model call.
@@ -255,7 +265,16 @@ async def run_eval(
         for suite, scenario in pairs
         for number in range(1, options.k + 1)
     ]
-    results = await run_jobs(jobs, adapters=adapters, models=models, options=options)
+
+    def finished(result: JobResult) -> None:
+        if on_run is not None:
+            adapter = adapters[result.job.suite.agent]
+            record = record_of(result, adapter=adapter, k=options.k, git=git)
+            on_run(run_file_of(result, record))
+
+    results = await run_jobs(
+        jobs, adapters=adapters, models=models, options=options, on_result=finished
+    )
     records = [
         record_of(result, adapter=adapters[result.job.suite.agent], k=options.k, git=git)
         for result in results
@@ -264,7 +283,7 @@ async def run_eval(
         k=options.k,
         concurrency=options.concurrency,
         max_total_tokens=options.max_total_tokens,
-        execution_mode=EXECUTION_MODE,
+        execution_mode=_execution_mode(pairs),
         registry=_display_path(registry_path, root),
         registry_sha256=sha256_file(registry_path),
         suites=[suite.id for suite in suites],
@@ -279,11 +298,21 @@ async def run_eval(
         records=records,
         adapters=adapters,
     )
-    files = [
-        RunFile(record=record, attempts=[attempt_file(attempt) for attempt in result.attempts])
-        for result, record in zip(results, records, strict=True)
-    ]
+    files = [run_file_of(result, record) for result, record in zip(results, records, strict=True)]
     return EvalRun(report=report, files=files)
+
+
+def _execution_mode(
+    pairs: Sequence[tuple[Suite, ScenarioFile]],
+) -> Literal["fixture", "replay", "mixed"]:
+    modes = {scenario.scenario.execution_mode() for _, scenario in pairs}
+    if len(modes) > 1:
+        return "mixed"
+    return "replay" if modes == {"replay"} else "fixture"
+
+
+def run_file_of(result: JobResult, record: RunRecord) -> RunFile:
+    return RunFile(record=record, attempts=[attempt_file(attempt) for attempt in result.attempts])
 
 
 def record_of(result: JobResult, *, adapter: AgentAdapter, k: int, git: GitState) -> RunRecord:
@@ -352,7 +381,7 @@ def envelope(
         model_release=config.model_release,
         toolset_profile=config.toolset_profile_name,
         toolset_sha256=config.toolset_sha256,
-        execution_mode=EXECUTION_MODE,
+        execution_mode=job.scenario.scenario.execution_mode(),
         budget=Budget(
             tokens=manifest.budgets.tokens,
             tool_calls=manifest.budgets.tool_calls,

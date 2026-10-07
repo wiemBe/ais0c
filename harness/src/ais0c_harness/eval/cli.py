@@ -1,5 +1,6 @@
 """`python -m ais0c_harness.eval`: list suites, run them, compare reports, list changed model
-releases, write a scenario draft from a recorded run (T-030 criterion 11, T-053 criterion 5).
+releases, write a scenario draft from a recorded run (T-030 criterion 11, T-053 criterion 5),
+record a lab offense (T-052).
 
     list     [--suite ID ...]
     run      --suite ID [--suite ID ...] [--scenario ID ...] --out DIR
@@ -7,13 +8,21 @@ releases, write a scenario draft from a recorded run (T-030 criterion 11, T-053 
     gate     --baseline REPORT --candidate REPORT [--max-pass-rate-drop 0.10]
     releases [--registry FILE]
     scenario --run RUN_ID --suite ID --id SCENARIO_ID --out FILE [--kind orchestrator|reporting|turkish]
+    record   --offense ID --out harness/recordings/<id> [--domain NAME ...] [--host NAME ...]
+             [--exclude-type NAME ... | --keep-all-types]
+
+`record` reads a closed lab offense through the dev stack's gateway (AIS0C_GATEWAY_URL,
+AIS0C_WORKER_SECRETS_DIR, AIS0C_DATABASE_URL) and writes nothing to the lab; `run` writes each
+run's file `runs/<scenario>/<n>.json` as the run ends.
 
 `--root` (default: the current directory) is the repository root with `config/`, `prompts/`
 and `harness/suites/`. `run` needs LITELLM_API_KEY; LITELLM_BASE_URL defaults to
 http://127.0.0.1:4000. `releases` and `scenario` read the database at AIS0C_DATABASE_URL (the
 latter read-only).
 
-Exit codes: `run` 0 when every hard gate passes, 1 when one fails; `gate` 0 pass, 1 block,
+Exit codes: `run` 0 when every hard gate passes, 1 when one fails; `record` 0 when the recording
+was written, 1 when it could not be made (the replay engine disagrees with the lab, an address
+survived anonymization); `gate` 0 pass, 1 block,
 2 not comparable; `releases` 0 when no release changed, 1 when one did; every command 2 for a
 setting, file or argument error. Errors go to stderr and never repeat environment values.
 """
@@ -22,11 +31,11 @@ import argparse
 import asyncio
 import os
 import sys
-from collections.abc import Awaitable, Callable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Coroutine, Mapping, Sequence
 from dataclasses import dataclass
 from fractions import Fraction
 from pathlib import Path
-from typing import Final, TextIO
+from typing import Any, Final, TextIO
 
 from pydantic import ValidationError
 from pydantic_ai.models import Model
@@ -50,7 +59,7 @@ from ais0c_harness.eval.config import (
 from ais0c_harness.eval.from_records import build_scenario
 from ais0c_harness.eval.gate import DEFAULT_MAX_PASS_RATE_DROP, compare_reports, parse_drop
 from ais0c_harness.eval.releases import agents_by_alias, describe_release_changes
-from ais0c_harness.eval.report import REPORT_JSON, load_report, write_report
+from ais0c_harness.eval.report import REPORT_JSON, load_report, write_report, write_run_file
 from ais0c_harness.eval.runner import (
     DEFAULT_CONCURRENCY,
     DEFAULT_K,
@@ -61,6 +70,12 @@ from ais0c_harness.eval.runner import (
 )
 from ais0c_harness.eval.scenario import ScenarioBase
 from ais0c_harness.eval.suites import SuiteError, load_suites
+from ais0c_harness.replay.record import (
+    DEFAULT_EXCLUDED,
+    RecordError,
+    record_offense,
+)
+from ais0c_harness.replay.recording import RecordingManifest
 from ais0c_storage import ConfigurationError, create_engine, create_session_factory, database_url
 
 OK: Final = 0
@@ -70,6 +85,7 @@ SETTINGS_ERROR: Final = 2
 type ReleaseChanges = Callable[
     [SessionFactory, Mapping[str, ModelRelease]], Awaitable[list[ModelReleaseChange]]
 ]
+type Recorder = Callable[..., Coroutine[Any, Any, RecordingManifest]]
 
 
 @dataclass(frozen=True)
@@ -80,6 +96,7 @@ class Dependencies:
         lambda config, _scenario, env: litellm_model(config, env)
     )
     release_changes: ReleaseChanges = model_release_changes
+    recorder: Recorder = record_offense
     retry_delay_seconds: float = INFRA_RETRY_DELAY_SECONDS
 
 
@@ -117,6 +134,8 @@ def main(
                 return _releases(root, args, env, dependencies, out)
             case "scenario":
                 return _scenario(root, args, env, out)
+            case "record":
+                return _record(root, args, env, dependencies, out, err)
             case _:  # pragma: no cover - argparse requires a command
                 parser.error("no command")
     except (_UsageError, SuiteError, ConfigError, ModelConfigError, ValueError) as error:
@@ -169,6 +188,18 @@ def _parser() -> argparse.ArgumentParser:
         help="which suite the draft is for (default: the run's own agent)",
     )
     scenario.add_argument("--out", required=True, help="the file to write")
+    record = commands.add_parser("record", help="record a closed lab offense for replay")
+    record.add_argument("--offense", type=_positive, required=True)
+    record.add_argument("--out", required=True, help="harness/recordings/<recording-id>")
+    record.add_argument("--domain", action="append", default=[], help="a lab domain name")
+    record.add_argument("--host", action="append", default=[], help="a lab host name")
+    exclude = record.add_mutually_exclusive_group()
+    exclude.add_argument(
+        "--exclude-type",
+        action="append",
+        help=f"leave out this log source type (repeatable; default {', '.join(DEFAULT_EXCLUDED)})",
+    )
+    exclude.add_argument("--keep-all-types", action="store_true")
     return parser
 
 
@@ -214,9 +245,10 @@ def _run(
             registry_path=registry,
             model_factory=lambda config, scenario: deps.model_factory(config, scenario, env),
             options=options,
+            on_run=lambda run_file: write_run_file(directory, run_file),
         )
     )
-    write_report(directory, result.report, result.files)
+    write_report(directory, result.report, [])
     report = result.report
     print(f"report: {directory / REPORT_JSON}", file=out)
     for gate in report.hard_gates:
@@ -301,6 +333,50 @@ def _scenario(
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_text(text, encoding="utf-8")
     print(f"{destination}: {summary}", file=out)
+    return OK
+
+
+def _record(
+    root: Path,
+    args: argparse.Namespace,
+    env: Mapping[str, str],
+    deps: Dependencies,
+    out: TextIO,
+    err: TextIO,
+) -> int:
+    names = {"AIS0C_GATEWAY_URL": "", "AIS0C_WORKER_SECRETS_DIR": "", "AIS0C_DATABASE_URL": ""}
+    for name in names:
+        names[name] = env.get(name, "").strip()
+    if missing := [name for name, value in names.items() if not value]:
+        raise _UsageError(f"set {', '.join(missing)} to record from the lab")
+    directory = _under(root, args.out)
+    if directory.exists() and (not directory.is_dir() or any(directory.iterdir())):
+        raise _UsageError(
+            f"{directory} is not an empty directory; a recording is never overwritten"
+        )
+    excluded = [] if args.keep_all_types else args.exclude_type or list(DEFAULT_EXCLUDED)
+    try:
+        manifest = asyncio.run(
+            deps.recorder(
+                root=root,
+                offense_id=args.offense,
+                directory=directory,
+                gateway_url=names["AIS0C_GATEWAY_URL"],
+                secrets_dir=Path(names["AIS0C_WORKER_SECRETS_DIR"]),
+                database_url=names["AIS0C_DATABASE_URL"],
+                domains=args.domain,
+                hosts=args.host,
+                excluded=excluded,
+            )
+        )
+    except RecordError as error:
+        print(f"error: {error}", file=err)
+        return FAILED
+    print(
+        f"recording {manifest.recording_id}: offense {manifest.offense_id}, "
+        f"{manifest.events} events, {len(manifest.files)} files in {directory}",
+        file=out,
+    )
     return OK
 
 

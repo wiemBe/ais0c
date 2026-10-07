@@ -27,4 +27,4 @@ can_delegate: false
 prompt: prompts/verification/v1.md
 # Shared rules version the prompt is assembled with (docs/impl/prompts.md, T-015).
 shared_rules: prompts/_shared/rules/v2.md
-eval_suites: [verifier-gold, prompt-injection, failure-recovery, trust-layers]
+eval_suites: [verification-gold, prompt-injection, failure-recovery, trust-layers]

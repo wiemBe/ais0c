@@ -1,0 +1,8 @@
+# Investigation gold suite (T-052): Investigation on a recorded lab offense, a quality suite
+# (the pass rate counts, no pass^k). Format: harness/src/ais0c_harness/eval/investigation.py;
+# scenarios: README.md.
+id: investigation-gold
+title: Investigation gold
+kind: quality
+agent: investigation
+scenario_prefix: inv-
