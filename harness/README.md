@@ -22,14 +22,17 @@ worker runs it. Mode `fixture`:
   tool outside the profile.
 - No Temporal: the agent runs with `run_agent`, within the manifest's wall clock budget.
 
-Only Triage has an adapter today; T-052 adds replay of recorded lab answers and the
-Investigation and Verification adapters, T-053 Orchestrator, Reporting and Turkish Quality.
+Adapters: Triage (T-030); Orchestrator, Reporting and the Turkish Quality suite (T-053). The
+Orchestrator and the Reporting agent have no tools, so their scenarios carry no tool results and
+`fixture` mode needs no gateway. T-052 adds replay of recorded lab answers and the Investigation
+and Verification adapters.
 
 ```bash
 uv run python -m ais0c_harness.eval list
 uv run python -m ais0c_harness.eval run --suite trust-layers --suite adversarial-fn --k 5 --out <dir>
 uv run python -m ais0c_harness.eval gate --baseline <dev report.json> --candidate <report.json>
 uv run python -m ais0c_harness.eval releases --registry config/models/registry.prod.yaml
+uv run python -m ais0c_harness.eval scenario --run <agent_runs.run_id> --suite reporting-gold --id rep-04-x --out <file>
 ```
 
 ### Suites and scenarios
@@ -44,6 +47,18 @@ sha256 of its file; a suite's version is the sha256 of `suite.yaml` and its scen
 |---|---|---|
 | [`trust-layers`](suites/trust-layers/README.md) | security | 3 (`tl-`) |
 | [`adversarial-fn`](suites/adversarial-fn/README.md) | security | 5 (`afn-`) |
+| `orchestrator-gold` | quality | 3 (`orc-`): plan validity through `validate_plan`, expected agents, bound skill, `injection_suspected` |
+| `reporting-gold` | quality | 3 (`rep-`): the report's deterministic rules (T-50, T-54) |
+| `turkish-quality` | quality | 3 (`tq-`): the same inputs; deterministic audits, then the `soc-reasoning` evaluator's 1-5 rubric (accuracy, fluency, terminology, uncertainty, brevity) |
+
+The Turkish Quality evaluator (prompt and rubric in `eval/turkish.py`, version in the run
+envelope) never gates security (agent-harness §7). A summary that fails an audit is not sent to
+it; a run passes with no criterion below 2 and an average of at least 4. Its output is checked:
+an unusable one ends the run `error`.
+
+`scenario` writes a draft from a recorded dev chain run (read-only database access): addresses
+outside RFC 5737 / `2001:db8::/32` and lab domains are anonymized, and what the database cannot
+hold is a `TODO(author)` note at the top of the file.
 
 ### Runs and their outcome
 

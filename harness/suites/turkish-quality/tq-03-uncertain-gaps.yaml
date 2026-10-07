@@ -1,0 +1,311 @@
+id: tq-03-uncertain-gaps
+suite: turkish-quality
+agent: turkish-quality
+title: 'The offense 33 summary: uncertainty in Turkish'
+description: 'The same Reporting input as rep-03-uncertain-gaps: the suite judges whether the Turkish
+  summary states the data gaps honestly.'
+input:
+  decision:
+    verdict: suspicious
+    confidence: medium
+    notify_level: medium
+  claims:
+  - text: Rule 100353 (AIS0C LAB - DCSync by a non-machine account) is a user-created EVENT rule that
+      detects domain replication (DCSync) operations performed by accounts without a trailing $ (non-machine
+      accounts).
+    evidence_ids:
+    - ev_01a1114ae3f872049fa7a63fa03d22ef
+    - ev_01a1114b4f0d77bab4eb6c8ab53d8274
+  - text: Offense 33 was triggered by the svc_backup account on Domain Controller DC-LAB-01 (log source
+      213, Microsoft Windows Security Event Log) for a DCSync-like replication operation.
+    evidence_ids:
+    - ev_01a1114b4f0d77bab4eb6c8ab53d8274
+    - ev_01a1114ae3d77eed86c24b92ba2f5811
+    - ev_01a1114b193a7d628a35666aba5738b3
+  - text: All three IPs (198.51.100.101, 198.51.100.72, 198.51.100.58) appear together in 8 prior offenses
+      (IDs 18, 21, 25, 27, 28, 30, 31, 32) plus current offense 33, all triggered by the same rule 100353
+      with the same svc_backup account, indicating recurring activity.
+    evidence_ids:
+    - ev_01a1114eb08579a3ac0eb0852641c9ee
+    - ev_01a1114eef34738db1efa72b5ea881cd
+  - text: 'Prior offenses show a consistent pattern: all involve svc_backup, rule 100353, DC-LAB-01, exactly
+      3 events each, same description ''Success Audit: An operation was performed on an object'', with
+      magnitude increasing from 1 to 3 over time.'
+    evidence_ids:
+    - ev_01a1114eef34738db1efa72b5ea881cd
+  - text: Raw Windows Event Log payloads (Event ID 4662) could not be retrieved via AQL queries, leaving
+      the exact replication operation type (DS-Replication-Get-Changes/All) and target objects unconfirmed.
+    evidence_ids:
+    - ev_01a1114eb08579a3ac0eb0852641c9ee
+    - ev_01a1114d2e5f7a61862828547f046411
+    - ev_01a1114d96d376d78b84584f89ef7740
+    - ev_01a1114e119c7a13bf25546205843b2f
+  - text: Asset model contains no hostname or role information for any of the three involved IPs (198.51.100.101,
+      198.51.100.72, 198.51.100.58), preventing identification of the originating host.
+    evidence_ids:
+    - ev_01a1114eb08579a3ac0eb0852641c9ee
+  - text: The rule name includes 'LAB', suggesting it was created for a lab/SOC training environment scenario,
+      but it is enabled and actively generating offenses with escalating magnitude.
+    evidence_ids:
+    - ev_01a1114ae3f872049fa7a63fa03d22ef
+  evidence:
+  - evidence_id: ev_01a1114ae3f872049fa7a63fa03d22ef
+    source: qradar
+    query_hash: aceb2713c92f7cd70e2129a2bd01ee881b8d5fe5451183822d42bb15305c0cb8
+    query_text: 'get_rule {"rule_id": 100353}'
+    time_start: '2026-10-06T12:55:35.400000+00:00'
+    time_end: '2026-10-06T12:57:00.779646+00:00'
+    identifiers:
+      rows: '1'
+      tool: get_rule
+      rule_id: '100353'
+    excerpt: '[{"average_capacity":2872215,"base_capacity":2872215,"base_host_id":53,"capacity_timestamp":1791291349059,"creation_date":1791021600000,"enabled":true,"id":100353,"identifier":"6b5d5ad0-dd8c-4ff9-b1df-68df3dde66bb","linked_rule_identifier":null,"modification_date":1791030057494,"name":"AIS0C
+      LAB - DCSync by a non-machine account","origin":"USER","owner":"admin","type":"EVENT"}]'
+    retrieved_at: '2026-10-06T12:58:03.128213+00:00'
+  - evidence_id: ev_01a1114b4f0d77bab4eb6c8ab53d8274
+    source: qradar
+    query_hash: c1e310dc2a506b4630216a2e780ec93d31378c02fd7c05f9ee96eda74cccc87a
+    query_text: 'get_offense {"offense_id": 33}'
+    time_start: '2026-10-06T12:55:35.400000+00:00'
+    time_end: '2026-10-06T12:57:00.779646+00:00'
+    identifiers:
+      rows: '1'
+      tool: get_offense
+      offense_id: '33'
+    excerpt: '[{"assigned_to":null,"categories":["Information"],"category_count":1,"close_time":null,"closing_reason_id":null,"closing_user":null,"credibility":2,"description":"Success
+      Audit: An operation was performed on an object\n","destination_networks":["Net-10-172-192.Net_192_168_0_0"],"device_count":1,"domain_id":0,"event_count":3,"first_persisted_time":1791291337000,"flow_count":0,"follow_up":false,"id":33,"inactive":false,"last_assigned_user_time":1791291337000,"last_persisted_time":1791291379000,"l…'
+    retrieved_at: '2026-10-06T12:58:30.541562+00:00'
+  - evidence_id: ev_01a1114ae3d77eed86c24b92ba2f5811
+    source: qradar
+    query_hash: d2da83055e6e171b2b648912626bb5d5526055adefeb3cff9ade2f219c2eaeb4
+    query_text: 'get_log_source {"log_source_id": 213}'
+    time_start: '2026-10-06T12:55:35.400000+00:00'
+    time_end: '2026-10-06T12:57:00.779646+00:00'
+    identifiers:
+      rows: '1'
+      tool: get_log_source
+      log_source_id: '213'
+    excerpt: '[{"auto_discovered":false,"average_eps":0,"coalesce_events":false,"creation_date":1785672343030,"credibility":5,"description":"","disconnected_log_collector_id":null,"enabled":true,"gateway":false,"group_ids":[0],"id":213,"internal":false,"language_id":1,"last_event_time":1791291335400,"log_source_extension_id":null,"log_source_identifiers":[{"identifier":"DC-LAB-01","parsing_order":3}],"modified_date":1785672343030,"name":"DC-LAB-01@Windows","parsing_order":2,"protocol_parameters":[{"id":0,"na…'
+    retrieved_at: '2026-10-06T12:58:03.095049+00:00'
+  - evidence_id: ev_01a1114b193a7d628a35666aba5738b3
+    source: qradar
+    query_hash: 1c350674f6a01158c3d7815b83a469690c0bf936d50950d4548f03d11f1f9579
+    query_text: 'list_log_source_types {"filter": "id = 12"}'
+    time_start: '2026-10-06T12:55:35.400000+00:00'
+    time_end: '2026-10-06T12:57:00.779646+00:00'
+    identifiers:
+      rows: '1'
+      tool: list_log_source_types
+      filter: id = 12
+    excerpt: '[{"custom":false,"default_protocol_id":0,"id":12,"internal":false,"latest_version":"20260604091","log_source_extension_id":3,"name":"Microsoft
+      Windows Security Event Log","protocol_types":[{"documented":true,"protocol_id":30},{"documented":true,"protocol_id":12},{"documented":true,"protocol_id":31},{"documented":true,"protocol_id":39},{"documented":true,"protocol_id":59},{"documented":false,"protocol_id":24},{"documented":false,"protocol_id":50},{"documented":true,"protocol_id":57},{"documented…'
+    retrieved_at: '2026-10-06T12:58:16.762205+00:00'
+  - evidence_id: ev_01a1114eb08579a3ac0eb0852641c9ee
+    source: qradar
+    query_hash: 5b506b99cf8317ae23d1951a86ce6fac9dae4b41a3b496d480cffe0de930df9f
+    query_text: 'list_source_addresses {"filter": "id in (13,14,15)", "limit": 5}'
+    time_start: '2026-10-06T12:55:35.400000+00:00'
+    time_end: '2026-10-06T12:59:18+00:00'
+    identifiers:
+      rows: '3'
+      tool: list_source_addresses
+      limit: '5'
+      filter: id in (13,14,15)
+    excerpt: '[{"domain_id":0,"event_flow_count":9,"first_event_flow_seen":1791032870567,"id":13,"last_event_flow_seen":1791291335400,"local_destination_address_ids":[656],"magnitude":0,"network":"Net-10-172-192.Net_192_168_0_0","offense_ids":[18,21,25,27,28,30,31,32,33],"source_ip":"198.51.100.101"},{"domain_id":0,"event_flow_count":9,"first_event_flow_seen":1791032870567,"id":14,"last_event_flow_seen":1791291335400,"local_destination_address_ids":[657],"magnitude":0,"network":"Net-10-172-192.Net_192_168_0_…'
+    retrieved_at: '2026-10-06T13:02:12.101431+00:00'
+  - evidence_id: ev_01a1114eef34738db1efa72b5ea881cd
+    source: qradar
+    query_hash: eb531819706a23fa0125980cdd91f3b849877aeeb2df17f5272c3bb35876f694
+    query_text: 'list_offenses {"fields": "id,description,offense_source,offense_type,start_time,event_count,magnitude,categories,rules(id),log_sources(id)",
+      "filter": "id in (18,21,25,27,28,30,31,32)", "limit": 8, "sort": "+id"}'
+    time_start: '2026-10-06T12:55:35.400000+00:00'
+    time_end: '2026-10-06T12:59:18+00:00'
+    identifiers:
+      rows: '8'
+      sort: +id
+      tool: list_offenses
+      limit: '8'
+      fields: id,description,offense_source,offense_type,start_time,event_count,magnitude,categories,rules(id),log_sources(id)
+      filter: id in (18,21,25,27,28,30,31,32)
+    excerpt: '[{"categories":["Information"],"description":"Success Audit: An operation was performed
+      on an object\n","event_count":3,"id":18,"log_sources":[{"id":213}],"magnitude":1,"offense_source":"svc_backup","offense_type":3,"rules":[{"id":100353}],"start_time":1791032828138},{"categories":["Information"],"description":"Success
+      Audit: An operation was performed on an object\n","event_count":3,"id":21,"log_sources":[{"id":213}],"magnitude":2,"offense_source":"svc_backup","offense_type":3,"rules":[{"id":1…'
+    retrieved_at: '2026-10-06T13:02:28.148060+00:00'
+  - evidence_id: ev_01a1114d2e5f7a61862828547f046411
+    source: qradar
+    query_hash: ca20979655ec4c49120d2f8009d77dc89775a9b7f9c72237d81c3ee6bfee5128
+    query_text: SELECT DATEFORMAT(starttime, 'yyyy-MM-dd HH:mm:ss') AS event_time, username, sourceip,
+      destinationip, qid, UTF8(payload) AS payload FROM events WHERE username = 'svc_backup' AND starttime
+      BETWEEN 1791291335400 AND 1791291558000 LIMIT 100 START '2026-10-06 14:55' STOP '2026-10-06 17:00'
+    time_start: '2026-10-06T12:55:35.400000+00:00'
+    time_end: '2026-10-06T12:59:18+00:00'
+    identifiers:
+      rows: '0'
+      tool: get_ariel_search_results
+      start: '0'
+      search_id: 9856c4ca-67b6-4a35-91ff-8965586965a2
+    excerpt: '[]'
+    retrieved_at: '2026-10-06T13:00:33.247470+00:00'
+  - evidence_id: ev_01a1114d96d376d78b84584f89ef7740
+    source: qradar
+    query_hash: beb011b49161541a25ce0f28d5aedfa3b1f8f0fd58b4e239558f6a797a52a7ee
+    query_text: SELECT DATEFORMAT(starttime, 'yyyy-MM-dd HH:mm:ss') AS event_time, username, sourceip,
+      destinationip, qid, UTF8(payload) AS payload FROM events WHERE logsourceid = 213 AND starttime BETWEEN
+      1791291335400 AND 1791291558000 LIMIT 100 START '2026-10-06 14:55' STOP '2026-10-06 17:00'
+    time_start: '2026-10-06T12:55:35.400000+00:00'
+    time_end: '2026-10-06T12:59:18+00:00'
+    identifiers:
+      rows: '0'
+      tool: get_ariel_search_results
+      start: '0'
+      search_id: 56c2fe0a-0b1d-444c-9a15-8f4e17af62ba
+    excerpt: '[]'
+    retrieved_at: '2026-10-06T13:00:59.987424+00:00'
+  - evidence_id: ev_01a1114e119c7a13bf25546205843b2f
+    source: qradar
+    query_hash: fa134400fe05b802ab64d0630926d712edb1dbff131d0a8d15137ed0e91cb41f
+    query_text: SELECT DATEFORMAT(starttime, 'yyyy-MM-dd HH:mm:ss') AS event_time, username, sourceip,
+      destinationip, qid, UTF8(payload) AS payload FROM events WHERE sourceip IN ('198.51.100.101', '198.51.100.72',
+      '198.51.100.58') AND starttime BETWEEN 1791291335400 AND 1791291558000 LIMIT 100 START '2026-10-06
+      14:55' STOP '2026-10-06 17:00'
+    time_start: '2026-10-06T12:55:35.400000+00:00'
+    time_end: '2026-10-06T12:59:18+00:00'
+    identifiers:
+      rows: '0'
+      tool: get_ariel_search_results
+      start: '0'
+      search_id: 8f5d870c-b5cc-493f-b659-ac309d88f7c0
+    excerpt: '[]'
+    retrieved_at: '2026-10-06T13:01:31.420607+00:00'
+  urgent_event_candidates:
+  - rank: 1
+    time: '2026-10-06T12:55:35.400000Z'
+    log_source: DC-LAB-01@Windows (ID 213)
+    event_name: DCSync replication by svc_backup on DC-LAB-01
+    qid: null
+    source: 198.51.100.101/198.51.100.72/198.51.100.58
+    destination: DC-LAB-01
+    username: svc_backup
+    reason: Highest-magnitude occurrence of recurring DCSync events by non-machine account; rule 100353
+      triggered with magnitude 3
+    checklist:
+    - Verify svc_backup is a legitimate backup service account authorized for DS-Replication-Get-Changes
+    aql: null
+    evidence_id: ev_01a1114b4f0d77bab4eb6c8ab53d8274
+  - rank: 2
+    time: '2026-10-06T12:55:35.400000Z'
+    log_source: All 9 offenses from DC-LAB-01@Windows
+    event_name: Recurring svc_backup DCSync pattern across 9 offenses
+    qid: null
+    source: 198.51.100.101
+    destination: unknown (not in asset model)
+    username: svc_backup
+    reason: 8 prior offenses (IDs 18,21,25,27,28,30,31,32) show identical pattern — repeated DCSync-like
+      operations suggesting automated/backup behavior or persistent compromise
+    checklist:
+    - Check if backup software (Veeam, etc.) is installed on the originating host
+    - Correlate backup job schedule times with offense timestamps
+    aql: null
+    evidence_id: ev_01a1114eef34738db1efa72b5ea881cd
+  - rank: 3
+    time: '2026-10-06T12:55:35.400000Z'
+    log_source: Asset model
+    event_name: Source IPs lack asset context
+    qid: null
+    source: 198.51.100.101
+    destination: unknown (not in asset model)
+    username: null
+    reason: Asset model has no hostname, role, or OS data for any of the three IPs (198.51.100.101, 198.51.100.72,
+      198.51.100.58) — critical gap for determining which host initiated DCSync
+    checklist:
+    - This IP or associated host may be the source of the DCSync request — check AD audit logs directly
+      on DC-LAB-01
+    aql: null
+    evidence_id: ev_01a1114eb08579a3ac0eb0852641c9ee
+  data_gaps:
+  - source: Raw Windows Security Event Log payloads (Event ID 4662) from DC-LAB-01 — all AQL queries (by
+      username, logsourceid, and sourceip) returned 0 results
+    period_start: '2026-10-06T12:55:35.400000Z'
+    period_end: '2026-10-06T12:59:18Z'
+    reason: not_parsed
+  - source: Asset model for IPs 198.51.100.101, 198.51.100.72, 198.51.100.58 — no hostname or role information
+      available
+    period_start: '2026-10-06T12:55:35.400000Z'
+    period_end: '2026-10-06T12:59:18Z'
+    reason: no_data
+  - source: Scheduled tasks or backup configuration on DC-LAB-01 — not accessible via QRadar tools
+    period_start: '2026-10-06T12:55:35.400000Z'
+    period_end: '2026-10-06T12:59:18Z'
+    reason: not_visible
+  - source: Red team activity or authorized security testing schedule — not accessible via QRadar tools
+    period_start: '2026-10-06T12:55:35.400000Z'
+    period_end: '2026-10-06T12:59:18Z'
+    reason: not_visible
+  - source: svc_backup account's AD permissions (DS-Replication-Get-Changes rights) — not accessible via
+      QRadar tools
+    period_start: '2026-10-06T12:55:35.400000Z'
+    period_end: '2026-10-06T12:59:18Z'
+    reason: not_visible
+  - source: investigation
+    period_start: '2026-10-06T12:55:35.400000Z'
+    period_end: '2026-10-06T12:59:18Z'
+    reason: budget_exhausted
+  - source: Ariel event database (events table)
+    period_start: '2026-10-06T12:55:35.400000Z'
+    period_end: '2026-10-06T12:59:18Z'
+    reason: no_data
+  - source: Asset model for IPs 198.51.100.101, 198.51.100.72, 198.51.100.58
+    period_start: '2026-10-06T12:55:35.400000Z'
+    period_end: '2026-10-06T12:59:18Z'
+    reason: not_visible
+  - source: verification
+    period_start: '2026-10-06T12:55:35.400000Z'
+    period_end: '2026-10-06T12:59:18Z'
+    reason: budget_exhausted
+  offense:
+    offense_id: 33
+    description: 'Success Audit: An operation was performed on an object '
+    offense_type: Username
+    offense_source: ''
+    rule_ids:
+    - 100353
+    rule_names:
+    - AIS0C LAB - DCSync by a non-machine account
+    categories:
+    - Information
+    magnitude: 0
+    start_time: '2026-10-06T12:55:35.400000Z'
+    last_updated_time: '2026-10-06T12:55:35.400000Z'
+    event_count: 3
+    log_source_ids:
+    - 213
+    source_ips:
+    - 198.51.100.101
+    - 198.51.100.72
+    - 198.51.100.58
+    destination_ips:
+    - 198.51.100.101
+    - 198.51.100.72
+    - 198.51.100.58
+    usernames: []
+  enrichment:
+    catalog:
+      rules:
+      - rule_id: 100353
+        mode: analyze
+        min_level: null
+        context_note: null
+        attack_techniques: null
+      log_sources:
+      - log_source_id: 213
+        type_name: Microsoft Windows Security Event Log
+        description: null
+        criticality: null
+        context_note: null
+    critical_asset_hits: []
+    ioc_hits: []
+    entity_resolutions: []
+    group_id: null
+    floor_level: null
+  evaluated_at: '2026-10-06T12:59:18+00:00'
+expect: {}

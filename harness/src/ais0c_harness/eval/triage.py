@@ -55,9 +55,11 @@ from ais0c_contracts import (
     TriageResult,
 )
 from ais0c_harness.eval.adapter import AgentAdapter, Attempt, RecordingModel, timed_run
+from ais0c_harness.eval.config import AgentConfig
 from ais0c_harness.eval.evaluate import Check, Evaluation, evaluate_common
 from ais0c_harness.eval.fixture_gateway import FixtureGateway, GatewayExchange
 from ais0c_harness.eval.scenario import Expectation, ScenarioBase, strings
+from ais0c_mcp_gateway.registry import Profile
 from ais0c_policy import new_nonce
 from ais0c_workflows.chain import notify_level
 
@@ -143,18 +145,32 @@ class TriageScenario(ScenarioBase):
         return frozenset(self.input.tool_results)
 
 
+def _profile(config: AgentConfig) -> ToolsetProfile:
+    if config.profile is None:
+        raise TypeError("the Triage manifest names no toolset profile")
+    return config.profile
+
+
+def _gateway_profile(config: AgentConfig) -> Profile:
+    if config.gateway_profile is None:
+        raise TypeError("the Triage manifest names no toolset profile")
+    return config.gateway_profile
+
+
 class TriageAdapter(AgentAdapter):
     agent_id: ClassVar[str] = "triage"
+    suite_agent: ClassVar[str] = "triage"
     manifest_path: ClassVar[str] = "config/agents/triage.yaml"
     scenario_type: ClassVar[type[ScenarioBase]] = TriageScenario
 
     def build(self, gateway: GatewayClient, model: Model) -> TriageAgent:
         """The agent as the worker builds it, without TemporalDurability."""
         config = self.config
+        profile = _profile(config)
         return build_triage_agent(
             manifest=config.manifest,
             prompt=config.prompt,
-            profiles={config.profile.name: config.profile},
+            profiles={profile.name: profile},
             gateway=gateway,
             model=model,
         )
@@ -184,7 +200,7 @@ class TriageAdapter(AgentAdapter):
     ) -> Attempt:
         triage = _triage(scenario)
         gateway = FixtureGateway(
-            self.config.gateway_profile, triage.input.tool_results, now=triage.evaluated_at
+            _gateway_profile(self.config), triage.input.tool_results, now=triage.evaluated_at
         )
         recorder = RecordingModel(model)
         agent = self.build(gateway, recorder)
@@ -206,7 +222,7 @@ class TriageAdapter(AgentAdapter):
             result=result,
             messages=attempt.messages,
             exchanges=attempt.exchanges,
-            profile=self.config.profile,
+            profile=_profile(self.config),
             tokens=attempt.tokens,
             seconds=attempt.seconds,
         )
@@ -224,7 +240,7 @@ class TriageAdapter(AgentAdapter):
         """What the model would read: the prompt, then each scripted tool result as the agent
         wraps it, in the order of the scenario, the n-th under the alias `ev_<n>` (T-27)."""
         agent = self.build(
-            FixtureGateway(self.config.gateway_profile, {}, now=scenario.evaluated_at),
+            FixtureGateway(_gateway_profile(self.config), {}, now=scenario.evaluated_at),
             TestModel(),
         )
         task = self.task(scenario, agent, run_id=f"harness-{scenario.id}-0")

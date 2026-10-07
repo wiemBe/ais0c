@@ -16,6 +16,7 @@ from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, Tool
 from pydantic_ai.models import Model
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
+from ais0c_agents import ToolsetProfile
 from ais0c_contracts import CostClass, TimeWindow, ToolIntent
 from ais0c_harness.eval import (
     AgentConfig,
@@ -33,6 +34,7 @@ from ais0c_harness.eval import (
 )
 from ais0c_harness.eval.runner import DEFAULT_MAX_TOTAL_TOKENS
 from ais0c_harness.eval.scripted import scripted_answer, scripted_calls, tool_calls_made
+from ais0c_mcp_gateway.registry import Profile
 
 REPO_ROOT: Final = Path(__file__).resolve().parents[2]
 SUITES: Final = REPO_ROOT / "harness" / "suites"
@@ -43,6 +45,16 @@ TRIAGE_PROFILE: Final = "qradar-triage-read"
 @cache
 def triage_config() -> AgentConfig:
     return load_agent_config(REPO_ROOT, TriageAdapter.manifest_path, REGISTRY)
+
+
+def profile_of(config: AgentConfig) -> ToolsetProfile:
+    assert config.profile is not None
+    return config.profile
+
+
+def gateway_profile_of(config: AgentConfig) -> Profile:
+    assert config.gateway_profile is not None
+    return config.gateway_profile
 
 
 def triage_adapter() -> TriageAdapter:
@@ -120,7 +132,7 @@ def varying_model(
     """A scripted model whose n-th run (from 0, in the order runs start) answers with
     `answers[n]` over the scripted answer; `failures` maps a run to the HTTP status its first
     request fails with. Runs must not overlap (concurrency 1)."""
-    calls = scripted_calls(scenario, triage_config().profile)
+    calls = scripted_calls(scenario, profile_of(triage_config()))
     started = -1
 
     def respond(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
@@ -149,7 +161,7 @@ def varying_model(
 def scripted(config: AgentConfig, played: ScenarioBase) -> Model:
     """The runner's model factory for scripted runs: each scenario's scripted model."""
     assert isinstance(played, TriageScenario)
-    return scripted_model(played, config.profile)
+    return scripted_model(played, profile_of(config))
 
 
 def run(
@@ -181,7 +193,7 @@ def intent(
     schema_version: str | None = None,
 ) -> ToolIntent:
     """An intent as the Triage agent sends it for `played`, with the tool's schema version."""
-    profile = triage_config().profile
+    profile = profile_of(triage_config())
     spec = next((tool for tool in profile.tools if tool.id == tool_id), None)
     offense = played.input.offense
     return ToolIntent(

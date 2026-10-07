@@ -16,7 +16,7 @@ the model's own: HTTP 429 or 5xx from LiteLLM, or a request that got no HTTP ans
 import asyncio
 import time
 from abc import ABC, abstractmethod
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import ClassVar, Final
@@ -55,6 +55,8 @@ class Attempt:
     exchanges: list[GatewayExchange]
     tokens: int
     seconds: float
+    scores: Mapping[str, float] | None = None
+    """An LLM evaluator's per-criterion scores of the run (turkish.py); None without one."""
 
 
 class RecordingModel(WrapperModel):
@@ -99,10 +101,25 @@ def infra_failure(error: Exception | None) -> str | None:
     return None
 
 
+@dataclass(frozen=True, kw_only=True)
+class EvaluatorIdentity:
+    """An LLM evaluator of one suite, versioned into the report's run envelope (T-053)."""
+
+    id: str
+    version: str
+    prompt_sha256: str
+    model_alias: str
+    """The alias the evaluator runs on, e.g. soc-reasoning (T-71)."""
+
+
 class AgentAdapter(ABC):
     """One agent under test: builds it, runs it on a scenario and evaluates the run."""
 
     agent_id: ClassVar[str]
+    """The ID of the manifest the adapter builds the agent from."""
+    suite_agent: ClassVar[str]
+    """The `agent` a suite.yaml names to get this adapter; differs from `agent_id` only for the
+    Turkish Quality suite, which runs the Reporting agent under its own evaluator."""
     manifest_path: ClassVar[str]
     """The agent's manifest under the repository root, e.g. config/agents/triage.yaml."""
     scenario_type: ClassVar[type[ScenarioBase]]
@@ -115,6 +132,10 @@ class AgentAdapter(ABC):
     @property
     def wall_clock_seconds(self) -> float:
         return float(self.config.manifest.budgets.wall_clock_seconds)
+
+    def evaluator(self) -> EvaluatorIdentity | None:
+        """The LLM evaluator this adapter's runs add to the agent's own model, if any."""
+        return None
 
     @abstractmethod
     async def attempt(

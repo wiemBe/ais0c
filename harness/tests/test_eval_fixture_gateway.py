@@ -9,7 +9,7 @@ from pydantic import JsonValue
 from ais0c_contracts import ToolCoverage, ToolIntent, ToolResult, ToolStatus
 from ais0c_harness.eval import UNSCRIPTED_RESULT, FixtureGateway
 
-from .eval_helpers import intent, scenario, triage_config
+from .eval_helpers import gateway_profile_of, intent, scenario, triage_config
 
 PLAYED = scenario("tl-01-catalog-note-fp")
 OFFENSE: dict[str, JsonValue] = {"offense_id": PLAYED.input.offense.offense_id}
@@ -27,7 +27,7 @@ def ok(evidence_id: str, row: int) -> ToolResult:
 
 def gateway(results: dict[str, list[ToolResult]] | None = None) -> FixtureGateway:
     return FixtureGateway(
-        triage_config().gateway_profile,
+        gateway_profile_of(triage_config()),
         PLAYED.input.tool_results if results is None else results,
         now=PLAYED.evaluated_at,
     )

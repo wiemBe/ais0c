@@ -1,15 +1,17 @@
 """`python -m ais0c_harness.eval`: list suites, run them, compare reports, list changed model
-releases (T-030 criterion 11).
+releases, write a scenario draft from a recorded run (T-030 criterion 11, T-053 criterion 5).
 
     list     [--suite ID ...]
     run      --suite ID [--suite ID ...] [--scenario ID ...] --out DIR
              [--k 5] [--registry FILE] [--concurrency 2] [--max-total-tokens 3000000]
     gate     --baseline REPORT --candidate REPORT [--max-pass-rate-drop 0.10]
     releases [--registry FILE]
+    scenario --run RUN_ID --suite ID --id SCENARIO_ID --out FILE [--kind orchestrator|reporting|turkish]
 
 `--root` (default: the current directory) is the repository root with `config/`, `prompts/`
 and `harness/suites/`. `run` needs LITELLM_API_KEY; LITELLM_BASE_URL defaults to
-http://127.0.0.1:4000. `releases` reads the database at AIS0C_DATABASE_URL.
+http://127.0.0.1:4000. `releases` and `scenario` read the database at AIS0C_DATABASE_URL (the
+latter read-only).
 
 Exit codes: `run` 0 when every hard gate passes, 1 when one fails; `gate` 0 pass, 1 block,
 2 not comparable; `releases` 0 when no release changed, 1 when one did; every command 2 for a
@@ -45,6 +47,7 @@ from ais0c_harness.eval.config import (
     agent_aliases,
     litellm_model,
 )
+from ais0c_harness.eval.from_records import build_scenario
 from ais0c_harness.eval.gate import DEFAULT_MAX_PASS_RATE_DROP, compare_reports, parse_drop
 from ais0c_harness.eval.releases import agents_by_alias, describe_release_changes
 from ais0c_harness.eval.report import REPORT_JSON, load_report, write_report
@@ -112,9 +115,11 @@ def main(
                 return _gate(args, out)
             case "releases":
                 return _releases(root, args, env, dependencies, out)
+            case "scenario":
+                return _scenario(root, args, env, out)
             case _:  # pragma: no cover - argparse requires a command
                 parser.error("no command")
-    except (_UsageError, SuiteError, ConfigError, ModelConfigError) as error:
+    except (_UsageError, SuiteError, ConfigError, ModelConfigError, ValueError) as error:
         print(f"error: {error}", file=err)
         return SETTINGS_ERROR
 
@@ -150,6 +155,20 @@ def _parser() -> argparse.ArgumentParser:
         "releases", help="list model releases changed since the last runs"
     )
     releases.add_argument("--registry", default=DEFAULT_REGISTRY, help="model registry file")
+
+    scenario = commands.add_parser(
+        "scenario", help="write a scenario draft from a recorded dev chain run"
+    )
+    scenario.add_argument("--run", required=True, help="the agent_runs.run_id of a chain run")
+    scenario.add_argument("--suite", required=True, help="the suite the scenario joins")
+    scenario.add_argument("--id", required=True, help="the scenario ID (its file's name)")
+    scenario.add_argument(
+        "--kind",
+        choices=["orchestrator", "reporting", "turkish"],
+        default=None,
+        help="which suite the draft is for (default: the run's own agent)",
+    )
+    scenario.add_argument("--out", required=True, help="the file to write")
     return parser
 
 
@@ -244,6 +263,45 @@ def _releases(
     found = asyncio.run(changes())
     print(describe_release_changes(found, agents), end="", file=out)
     return FAILED if found else OK
+
+
+def _scenario(
+    root: Path,
+    args: argparse.Namespace,
+    env: Mapping[str, str],
+    out: TextIO,
+) -> int:
+    """Write a scenario draft from a recorded dev chain run (T-053 criterion 5)."""
+    from ais0c_storage import ConfigurationError
+
+    try:
+        url = database_url(env)
+    except ConfigurationError as error:
+        raise _UsageError(str(error)) from None
+    kind = args.kind or "reporting"
+
+    async def build() -> tuple[str, str]:
+        engine = create_engine(url)
+        try:
+            session_factory = create_session_factory(engine)
+            async with session_factory() as session:
+                return await build_scenario(
+                    session,
+                    root=root,
+                    run_id=args.run,
+                    suite=args.suite,
+                    scenario_id=args.id,
+                    kind=kind,
+                )
+        finally:
+            await engine.dispose()
+
+    text, summary = asyncio.run(build())
+    destination = Path(args.out)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_text(text, encoding="utf-8")
+    print(f"{destination}: {summary}", file=out)
+    return OK
 
 
 def _under(root: Path, path: str) -> Path:

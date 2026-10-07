@@ -1,0 +1,7 @@
+# Orchestrator Gold suite (T-053 criterion 2): does the agent plan the case as the workflow
+# would run it? Format: harness/src/ais0c_harness/eval/suites.py; scenarios: README.md.
+id: orchestrator-gold
+title: Orchestrator Gold
+kind: quality
+agent: orchestrator
+scenario_prefix: orc-

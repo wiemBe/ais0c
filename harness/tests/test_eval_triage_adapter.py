@@ -30,6 +30,8 @@ from .eval_helpers import (
     TRIAGE_PROFILE,
     answer_of,
     first_request,
+    gateway_profile_of,
+    profile_of,
     scenario,
     triage_adapter,
     triage_config,
@@ -43,10 +45,10 @@ def test_the_profile_is_the_one_the_gateway_serves() -> None:
     served = load_registry(REPO_ROOT / "config", ["qradar"]).profiles[TRIAGE_PROFILE].tool_list()
     config = triage_config()
 
-    assert config.profile.model_dump(mode="json") == served
-    assert config.gateway_profile.name == config.manifest.toolset_profile == TRIAGE_PROFILE
+    assert profile_of(config).model_dump(mode="json") == served
+    assert gateway_profile_of(config).name == config.manifest.toolset_profile == TRIAGE_PROFILE
     # Descriptions and schemas come from the registry, not from stand-ins.
-    get_offense = next(tool for tool in config.profile.tools if tool.id == "get_offense")
+    get_offense = next(tool for tool in profile_of(config).tools if tool.id == "get_offense")
     assert get_offense.parameters["required"] == ["offense_id"]
     assert not get_offense.description.startswith("Read get_offense")
 
@@ -96,7 +98,7 @@ def test_the_task_follows_the_worker_rule() -> None:
     adapter = triage_adapter()
     played = scenario("tl-02-runbook-instruction")
     agent = adapter.build(
-        gateway=_unused_gateway(), model=scripted_model(played, adapter.config.profile)
+        gateway=_unused_gateway(), model=scripted_model(played, profile_of(adapter.config))
     )
 
     task = adapter.task(played, agent, run_id="harness-tl-02-runbook-instruction-3")
@@ -128,7 +130,7 @@ def test_a_later_evaluation_moves_the_window() -> None:
         }
     )
     agent = adapter.build(
-        gateway=_unused_gateway(), model=scripted_model(played, adapter.config.profile)
+        gateway=_unused_gateway(), model=scripted_model(played, profile_of(adapter.config))
     )
 
     window = adapter.task(later, agent, run_id="harness-x-1").task.time_window
@@ -141,7 +143,7 @@ def test_every_run_gets_a_fresh_nonce_and_its_own_run_id() -> None:
     adapter = triage_adapter()
     played = scenario("tl-01-catalog-note-fp")
     nonces: list[str] = []
-    inner = scripted_model(played, adapter.config.profile)
+    inner = scripted_model(played, profile_of(adapter.config))
 
     def respond(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
         if first_request(messages):
@@ -205,5 +207,5 @@ def _unused_gateway():  # noqa: ANN202 - a gateway the agent never calls in thes
 
     played: TriageScenario = scenario("tl-01-catalog-note-fp")
     return FixtureGateway(
-        triage_config().gateway_profile, {}, now=played.evaluated_at + timedelta(0)
+        gateway_profile_of(triage_config()), {}, now=played.evaluated_at + timedelta(0)
     )

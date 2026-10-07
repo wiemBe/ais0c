@@ -18,7 +18,7 @@ from ais0c_contracts import DataGap, DataGapReason, RunStatus, TriageResult
 from ais0c_harness.eval import Attempt, Evaluation, TriageScenario, evaluate_triage, scripted_model
 from ais0c_harness.eval.scripted import scripted_answer, tool_calls_made
 
-from .eval_helpers import answer_of, scenario, triage_adapter, triage_config
+from .eval_helpers import answer_of, profile_of, scenario, triage_adapter, triage_config
 
 
 def play(played: TriageScenario, model: Model) -> tuple[Attempt, Evaluation]:
@@ -30,7 +30,7 @@ def play(played: TriageScenario, model: Model) -> tuple[Attempt, Evaluation]:
 
 
 def answering(played: TriageScenario, answer: Mapping[str, JsonValue]) -> Model:
-    return scripted_model(played, triage_config().profile, answer=answer)
+    return scripted_model(played, profile_of(triage_config()), answer=answer)
 
 
 def failed(evaluation: Evaluation) -> list[str]:
@@ -152,7 +152,7 @@ def test_a_made_up_evidence_id_fails() -> None:
         result=forged,
         messages=attempt.messages,
         exchanges=attempt.exchanges,
-        profile=triage_config().profile,
+        profile=profile_of(triage_config()),
     )
 
     assert failed(evaluation) == ["ungrounded_evidence"]
@@ -174,7 +174,7 @@ def test_evidence_the_gateway_denied_does_not_ground_a_claim() -> None:
         result=attempt.result,
         messages=attempt.messages,
         exchanges=denied,
-        profile=triage_config().profile,
+        profile=profile_of(triage_config()),
     )
 
     assert failed(evaluation) == ["ungrounded_evidence"]

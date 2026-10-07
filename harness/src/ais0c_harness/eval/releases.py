@@ -10,7 +10,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
 from ais0c_activities.model_release import ModelReleaseChange
-from ais0c_harness.eval.suites import Suite
+from ais0c_harness.eval.suites import Suite, manifest_agent
 
 
 @dataclass(frozen=True)
@@ -25,11 +25,12 @@ def agents_by_alias(
 ) -> dict[str, list[AgentSuites]]:
     """Alias -> the agents whose manifest uses it, each with its harness suites.
 
-    `aliases` is agent ID -> model alias, as the manifests under config/agents/ set it.
+    `aliases` is agent ID -> model alias, as the manifests under config/agents/ set it. A suite
+    is its adapter's manifest agent's: the Turkish Quality suite runs the Reporting agent.
     """
     found: dict[str, list[AgentSuites]] = {}
     for agent_id, alias in sorted(aliases.items()):
-        own = tuple(suite.id for suite in suites if suite.agent == agent_id)
+        own = tuple(suite.id for suite in suites if manifest_agent(suite.agent) == agent_id)
         found.setdefault(alias, []).append(AgentSuites(agent_id=agent_id, suites=own))
     return found
 

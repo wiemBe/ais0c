@@ -33,7 +33,7 @@ from typing import Final
 from pydantic_ai.models import Model
 
 from ais0c_contracts import Budget
-from ais0c_harness.eval.adapter import AgentAdapter, Attempt
+from ais0c_harness.eval.adapter import AgentAdapter, Attempt, EvaluatorIdentity
 from ais0c_harness.eval.config import AgentConfig, load_agent_config, sha256_file
 from ais0c_harness.eval.evaluate import Evaluation, RunMetrics
 from ais0c_harness.eval.report import (
@@ -300,6 +300,7 @@ def record_of(result: JobResult, *, adapter: AgentAdapter, k: int, git: GitState
             started_at=result.attempts[0].started_at if result.attempts else None,
             ended_at=None if final is None else final.ended_at,
             git=git,
+            evaluator=adapter.evaluator(),
         ),
         outcome=result.outcome,
         error=result.error,
@@ -333,6 +334,7 @@ def envelope(
     started_at: datetime | None,
     ended_at: datetime | None,
     git: GitState,
+    evaluator: EvaluatorIdentity | None = None,
 ) -> RunEnvelope:
     manifest = config.manifest
     return RunEnvelope(
@@ -348,7 +350,7 @@ def envelope(
         shared_rules=config.prompt.shared_rules_path,
         model_alias=manifest.model_alias,
         model_release=config.model_release,
-        toolset_profile=config.profile.name,
+        toolset_profile=config.toolset_profile_name,
         toolset_sha256=config.toolset_sha256,
         execution_mode=EXECUTION_MODE,
         budget=Budget(
@@ -362,6 +364,10 @@ def envelope(
         ended_at=ended_at,
         git_commit=git.commit,
         git_dirty=git.dirty,
+        evaluator_id=None if evaluator is None else evaluator.id,
+        evaluator_version=None if evaluator is None else evaluator.version,
+        evaluator_prompt_sha256=None if evaluator is None else evaluator.prompt_sha256,
+        evaluator_model_alias=None if evaluator is None else evaluator.model_alias,
     )
 
 
@@ -428,7 +434,7 @@ def agent_report(config: AgentConfig) -> AgentReport:
         shared_rules=config.prompt.shared_rules_path,
         model_alias=manifest.model_alias,
         model_release=config.model_release,
-        toolset_profile=config.profile.name,
+        toolset_profile=config.toolset_profile_name,
         toolset_sha256=config.toolset_sha256,
     )
 

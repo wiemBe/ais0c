@@ -1,0 +1,104 @@
+id: orc-03-skill-candidate
+suite: orchestrator-gold
+agent: orchestrator
+title: A candidate skill is bound to the investigation step
+description: 'The recorded Orchestrator input of offense 35, with the router''s candidate for the investigation
+  step added: the windows-dcsync skill at its listed version, budget and required evidence. A candidate
+  that fits the offense and Triage''s focus is bound to the investigation step with skill_id and skill_version
+  copied exactly; validate_plan accepts the plan unchanged.'
+input:
+  triage:
+    verdict: tp
+    confidence: high
+    ai_level: critical
+    needs_investigation: true
+    investigation_focus:
+    - Identify which IP (198.51.100.101, .58, or .72) is the originating attacker machine by correlating
+      the Directory Service Access and Replication events (event IDs 4662 and 5141) on DC-LAB-01.
+    - 'Investigate the svc_backup account: determine its intended purpose, who has access to its credentials,
+      when it was created, and whether it has legitimate replication rights (like being part of Backup
+      Operators or Domain Admins).'
+    - 'Check for lateral movement: review the source IPs for signs of compromise, installed tools (e.g.,
+      Mimikatz), and whether they are joined to the domain.'
+    - Review all 11 previous offenses involving these three IPs to assess the timeline and pattern of
+      the attack campaign.
+    - Isolate or contain the affected systems immediately while the investigation proceeds, and rotate
+      KRBTGT and high-value account passwords if compromise is confirmed.
+    data_gaps:
+    - source: QRadar offense raw event payloads
+      period_start: '2026-10-06T20:14:18.108000Z'
+      period_end: '2026-10-06T20:14:18.108000Z'
+      reason: not_visible
+    injection_suspected: false
+  offense:
+    offense_id: 35
+    description: 'Success Audit: An operation was performed on an object '
+    offense_type: Username
+    offense_source: svc_backup
+    rule_ids:
+    - 100353
+    rule_names:
+    - AIS0C LAB - DCSync by a non-machine account
+    categories:
+    - Information
+    magnitude: 3
+    start_time: '2026-10-06T20:14:18.108000Z'
+    last_updated_time: '2026-10-06T20:14:18.108000Z'
+    event_count: 3
+    log_source_ids:
+    - 213
+    source_ips:
+    - 198.51.100.101
+    - 198.51.100.58
+    - 198.51.100.72
+    destination_ips:
+    - 198.51.100.101
+    - 198.51.100.58
+    - 198.51.100.72
+    usernames:
+    - svc_backup
+  candidates:
+  - ref:
+      skill_id: windows-dcsync
+      version: 1.0.0
+      content_hash: sha256:0000000000000000000000000000000000000000000000000000000000000000
+    agent_role: investigation
+    required_evidence:
+    - id: replication-events
+      description: 'The 4662 events with a DS-Replication right: time, domain controller and subject account'
+    - id: account-classification
+      description: Whether the subject account is a domain controller machine account, an approved directory
+        sync account or neither
+    - id: request-source
+      description: 'Where the request came from: the source address of the account''s logon on the domain
+        controller'
+    - id: account-scope
+      description: Other domain controllers, other times and other accounts in the window that show the
+        same replication
+    budgets:
+      tokens: 250000
+      tool_calls: 24
+      wall_clock_seconds: 300
+  agents:
+  - agent_id: investigation
+    budgets:
+      tokens: 300000
+      tool_calls: 24
+      wall_clock_seconds: 300
+  - agent_id: verification
+    budgets:
+      tokens: 120000
+      tool_calls: 12
+      wall_clock_seconds: 180
+  plan_budget:
+    tokens: 440000
+    tool_calls: 40
+    seconds: 480
+  evaluated_at: '2026-10-06T20:17:22+00:00'
+expect:
+  expected_agents:
+  - investigation
+  - verification
+  skill_of_agent:
+    investigation: windows-dcsync
+  injection_suspected: false

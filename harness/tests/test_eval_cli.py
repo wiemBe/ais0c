@@ -72,7 +72,7 @@ def test_list_shows_suites_scenarios_and_versions() -> None:
 
     assert code == 0
     for suite in load_suites(REPO_ROOT):
-        assert f"{suite.id}  security  agent triage  version {suite.version}" in out
+        assert f"{suite.id}  {suite.kind}  agent {suite.agent}  version {suite.version}" in out
         for scenario in suite.scenarios:
             assert f"  {scenario.id}  {scenario.version}  " in out
 

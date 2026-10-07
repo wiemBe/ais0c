@@ -16,8 +16,9 @@ results for (or requires) a tool that is not in the agent's gateway profile.
 A scenario's version is the sha256 of its file's bytes. A suite's version is the sha256 of
 `suite.yaml`'s bytes followed by the list of its scenarios' (id, version) pairs as JSON.
 
-Only Triage has an adapter today; a suite for another agent fails with "not supported yet"
-(T-052 and T-053 add the others).
+Only Triage had an adapter after T-030; T-053 adds the Orchestrator, the Reporting agent and
+the Turkish Quality suite, which runs the Reporting agent under its own evaluator. T-052 adds
+replay of recorded lab answers and the Investigation and Verification adapters.
 """
 
 import hashlib
@@ -33,14 +34,20 @@ from pydantic import BaseModel, ConfigDict, StringConstraints, ValidationError
 
 from ais0c_harness.eval.adapter import AgentAdapter
 from ais0c_harness.eval.config import GATEWAY_CONFIG_DIR, GATEWAY_CONNECTORS
+from ais0c_harness.eval.orchestrator import OrchestratorAdapter
+from ais0c_harness.eval.reporting import ReportingAdapter
 from ais0c_harness.eval.scenario import AgentId, ScenarioBase, SuiteId
 from ais0c_harness.eval.triage import TriageAdapter
+from ais0c_harness.eval.turkish import TurkishQualityAdapter
 from ais0c_mcp_gateway.registry import RegistryError, load_registry
 
 SUITES_DIR: Final = "harness/suites"
 SUITE_FILE: Final = "suite.yaml"
-ADAPTERS: Final[Mapping[str, type[AgentAdapter]]] = {TriageAdapter.agent_id: TriageAdapter}
-"""The agents the harness can run, by agent ID."""
+ADAPTERS: Final[Mapping[str, type[AgentAdapter]]] = {
+    adapter.suite_agent: adapter
+    for adapter in (TriageAdapter, OrchestratorAdapter, ReportingAdapter, TurkishQualityAdapter)
+}
+"""The agents the harness can run, keyed by the `agent` a suite.yaml names."""
 
 SuiteKind = Literal["security", "quality"]
 
@@ -93,14 +100,18 @@ class Suite:
 
 
 def adapter_type(agent: str) -> type[AgentAdapter]:
-    """The adapter of `agent`; SuiteError when the harness cannot run it yet."""
+    """The adapter of the agent a suite.yaml names; SuiteError when the harness cannot run it."""
     adapter = ADAPTERS.get(agent)
     if adapter is None:
         raise SuiteError(
-            f"agent {agent!r} is not supported yet: the harness runs "
-            f"{', '.join(sorted(ADAPTERS))} (T-052 and T-053 add the other agents)"
+            f"agent {agent!r} is not supported yet: the harness runs {', '.join(sorted(ADAPTERS))}"
         )
     return adapter
+
+
+def manifest_agent(agent: str) -> str:
+    """The agent the manifest of `agent`'s adapter builds; what a model alias is recorded for."""
+    return adapter_type(agent).agent_id
 
 
 def load_suites(root: Path, ids: Sequence[str] | None = None) -> list[Suite]:
@@ -152,7 +163,10 @@ def _profile_tools(root: Path, manifest_path: str) -> frozenset[str]:
     except (OSError, yaml.YAMLError, RegistryError) as error:
         raise SuiteError(f"cannot read the agent's profile: {error}") from error
     name = manifest.get("toolset_profile") if isinstance(manifest, dict) else None
-    profile = registry.profiles.get(name) if isinstance(name, str) else None
+    if name is None:
+        # The Orchestrator and the Reporting agent have no tools (their manifests say so).
+        return frozenset()
+    profile = registry.profiles.get(name)
     if profile is None:
         raise SuiteError(f"{path} names no gateway profile")
     return frozenset(tool.id for tool in profile.tools.values() if tool.risk == "read")

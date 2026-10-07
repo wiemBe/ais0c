@@ -24,7 +24,7 @@ from ais0c_harness.eval.report import GitState, Outcome, hard_gates, scenario_re
 from ais0c_harness.eval.runner import Job, envelope
 from ais0c_harness.eval.suites import SuiteKind
 
-from .eval_helpers import REPO_ROOT, suite, triage_config
+from .eval_helpers import REPO_ROOT, profile_of, suite, triage_config
 
 MARKER = "sk-litellm-marker-5e1f00d2c3b4a596"
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
@@ -32,7 +32,7 @@ SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
 def scripted(config: AgentConfig, played: ScenarioBase, env: Mapping[str, str]) -> Model:
     assert isinstance(played, TriageScenario)
-    return scripted_model(played, config.profile)
+    return scripted_model(played, profile_of(config))
 
 
 @pytest.fixture(scope="module")
@@ -178,7 +178,7 @@ def record(outcome: Outcome = "pass", **metrics: int) -> RunRecord:
         status=None,
         result=None,
         checks=[],
-        metrics=RunMetrics(**defaults),
+        metrics=RunMetrics.model_validate(defaults),
         infra_retries=[],
     )
 

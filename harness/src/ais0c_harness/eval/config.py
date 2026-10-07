@@ -8,6 +8,11 @@ from the gateway's own registry (`config/connectors/`, `config/policies/`) inste
 `Profile.tool_list()` is exactly what the gateway serves at `GET /v1/tools`, descriptions and
 schemas included.
 
+The Orchestrator and the Reporting agent have no tools (their manifests set `toolset_profile:
+null`), so their config carries no profile and no gateway profile: both fields are None. Their
+evaluators (turkish.py) that need the registry entry of another alias re-read the registry file
+at `registry_path`.
+
 The model is LiteLLM's alias, as in the worker. `build_model` has no default address; the
 runner uses the e2e tests' `http://127.0.0.1:4000` when `LITELLM_BASE_URL` is not set.
 """
@@ -28,6 +33,7 @@ from ais0c_agents import (
     LITELLM_BASE_URL_ENV,
     AgentManifest,
     ManifestError,
+    ModelAlias,
     ModelRegistryEntry,
     ModelRegistryError,
     PromptError,
@@ -57,28 +63,39 @@ class ConfigError(ValueError):
 class AgentConfig:
     """What one agent is built from, as the worker builds it."""
 
+    registry_path: Path
+    """The model registry file the manifest was checked against; evaluators re-read it for
+    another alias's entry."""
     manifest: AgentManifest
     prompt: PromptTemplate
     registry_entry: ModelRegistryEntry
     """The model registry's entry of the manifest's alias: request settings and tool choice."""
     model_release: ModelRelease
     """The release of the manifest's alias (T-24), which every run records."""
-    gateway_profile: Profile
-    """The gateway's profile of the manifest: its tools, schemas and intent rules."""
-    profile: ToolsetProfile
-    """The same profile as the agent receives it from the gateway."""
+    gateway_profile: Profile | None
+    """The gateway's profile of the manifest: its tools, schemas and intent rules; None for an
+    agent without tools."""
+    profile: ToolsetProfile | None
+    """The same profile as the agent receives it from the gateway; None for an agent without
+    tools."""
+
+    @property
+    def toolset_profile_name(self) -> str:
+        """The profile's name, or "" like the worker records for an agent without tools."""
+        return self.profile.name if self.profile is not None else ""
 
     @property
     def toolset_sha256(self) -> str:
         """sha256 of the tool list the agent sees, descriptions and schemas included."""
-        return sha256_json(self.profile.model_dump(mode="json"))
+        return sha256_json([] if self.profile is None else self.profile.model_dump(mode="json"))
 
 
 def load_agent_config(root: Path, manifest_path: str, registry_path: Path) -> AgentConfig:
     """Load the agent of `manifest_path` (under `root`) against the model registry file.
 
-    Raises ConfigError when a file is missing or invalid, the manifest names no toolset
-    profile, or the gateway has no such profile.
+    Raises ConfigError when a file is missing or invalid, the manifest names a toolset profile
+    the gateway does not serve, or the gateway has no such profile. An agent without tools
+    (Orchestrator, Reporting) gets no profile and no gateway profile.
     """
     try:
         registry = load_model_registry(registry_path)
@@ -97,7 +114,16 @@ def load_agent_config(root: Path, manifest_path: str, registry_path: Path) -> Ag
         raise ConfigError(f"{type(error).__name__}: {error}") from error
     name = manifest.toolset_profile
     if name is None:
-        raise ConfigError(f"the {manifest.id} manifest names no toolset profile")
+        return AgentConfig(
+            registry_path=registry_path,
+            manifest=manifest,
+            prompt=prompt,
+            registry_entry=registry[manifest.model_alias],
+            # load_manifest found the alias in the registry, and every entry has a release.
+            model_release=releases[manifest.model_alias],
+            gateway_profile=None,
+            profile=None,
+        )
     gateway_profile = gateway.profiles.get(name)
     if gateway_profile is None:
         raise ConfigError(f"the gateway has no profile {name!r}")
@@ -106,6 +132,7 @@ def load_agent_config(root: Path, manifest_path: str, registry_path: Path) -> Ag
     except ValidationError as error:
         raise ConfigError(f"the gateway's {name} is not an agent profile: {error}") from error
     return AgentConfig(
+        registry_path=registry_path,
         manifest=manifest,
         prompt=prompt,
         registry_entry=registry[manifest.model_alias],
@@ -116,15 +143,18 @@ def load_agent_config(root: Path, manifest_path: str, registry_path: Path) -> Ag
     )
 
 
-def litellm_model(config: AgentConfig, environ: Mapping[str, str]) -> Model:
+def litellm_model(
+    config: AgentConfig, environ: Mapping[str, str], *, alias: ModelAlias | None = None
+) -> Model:
     """The agent's model as the worker builds it: its alias through LiteLLM, with the registry
-    entry's request settings and tool choice."""
+    entry's request settings and tool choice. `alias` runs another alias's entry (the Turkish
+    evaluator's soc-reasoning) with the same files."""
     env = dict(environ)
     if not env.get(LITELLM_BASE_URL_ENV, "").strip():
         env[LITELLM_BASE_URL_ENV] = DEFAULT_LITELLM_BASE_URL
     entry = config.registry_entry
     return build_model(
-        config.manifest.model_alias,
+        alias or config.manifest.model_alias,
         settings=entry.model_settings(),
         environ=env,
         forced_tool_choice=entry.forced_tool_choice,

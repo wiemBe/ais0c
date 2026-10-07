@@ -1,0 +1,281 @@
+id: tq-01-dcsync-tp
+suite: turkish-quality
+agent: turkish-quality
+title: 'The offense 35 summary: a critical true positive in Turkish'
+description: 'The same Reporting input as rep-01-dcsync-tp: the suite judges the Turkish summary''s accuracy,
+  fluency, terminology, honesty about the data gaps and brevity.'
+input:
+  decision:
+    verdict: tp
+    confidence: high
+    notify_level: critical
+  claims:
+  - text: Three simultaneous EventID 4662 Directory Service Access events executed by svc_backup from
+      three different IPs (198.51.100.101, 198.51.100.58, 198.51.100.72) against DC-LAB-01 at 2026-10-06
+      20:14:18, each requesting replication privileges required for DCSync.
+    evidence_ids:
+    - ev_01a112de8e497defa3a9811b22d50e3f
+  - text: No assets exist in IBM QRadar for any of the three IPs, indicating these hosts are not managed/enrolled
+      in asset management, making it harder to identify and contain them.
+    evidence_ids:
+    - ev_01a112ddfdc775a9bde3ff87e17dab79
+    - ev_01a112ddd2747175a3383604c220ca32
+    - ev_01a112ddd27374ae8fc8ba76cc79dd9f
+  evidence:
+  - evidence_id: ev_01a112de8e497defa3a9811b22d50e3f
+    source: qradar
+    query_hash: f339dc9807ce7b5a3fb9b4e9600d259b8d0e8a1955c76a61ca8593bb94671e14
+    query_text: SELECT DATEFORMAT(starttime, 'yyyy-MM-dd HH:mm:ss') AS event_time, username, sourceip,
+      destinationip, QIDNAME(qid) AS event_name, UTF8(payload) AS payload FROM events WHERE username =
+      'svc_backup' LIMIT 100 START 1791317658108 STOP 1791317842000
+    time_start: '2026-10-06T20:14:18.108000+00:00'
+    time_end: '2026-10-06T20:17:22+00:00'
+    identifiers:
+      rows: '3'
+      tool: get_ariel_search_results
+      start: '0'
+      search_id: e475a8e0-c509-49ee-b1a1-a8261b5a23f3
+    excerpt: '[{"destinationip":"198.51.100.72","event_name":"Success Audit: An operation was performed
+      on an object","event_time":"2026-10-06 20:14:18","sourceip":"198.51.100.72","username":"svc_backup"},{"destinationip":"198.51.100.101","event_name":"Success
+      Audit: An operation was performed on an object","event_time":"2026-10-06 20:14:18","sourceip":"198.51.100.101","username":"svc_backup"},{"destinationip":"198.51.100.58","event_name":"Success
+      Audit: An operation was performed on an object","event_time":…'
+    retrieved_at: '2026-10-06T20:18:57.737012+00:00'
+  - evidence_id: ev_01a112ddfdc775a9bde3ff87e17dab79
+    source: qradar
+    query_hash: a73f71d9686a4eeef772ea06cbcf07e199345a9c66c7f47387e2fcbc64d79aa3
+    query_text: 'list_assets {"filter": "interfaces contains ip_addresses contains value = ''198.51.100.101''",
+      "limit": 10}'
+    time_start: '2026-10-06T20:14:18.108000+00:00'
+    time_end: '2026-10-06T20:17:22+00:00'
+    identifiers:
+      rows: '0'
+      tool: list_assets
+      limit: '10'
+      filter: interfaces contains ip_addresses contains value = '198.51.100.101'
+    excerpt: '[]'
+    retrieved_at: '2026-10-06T20:18:20.743917+00:00'
+  - evidence_id: ev_01a112ddd2747175a3383604c220ca32
+    source: qradar
+    query_hash: 516238592ae62f62765376fbbbdda8044b44602757e7c0e86dd3c74c2fd6a336
+    query_text: 'list_assets {"filter": "interfaces contains ip_addresses contains value = ''198.51.100.58''",
+      "limit": 10}'
+    time_start: '2026-10-06T20:14:18.108000+00:00'
+    time_end: '2026-10-06T20:17:22+00:00'
+    identifiers:
+      rows: '0'
+      tool: list_assets
+      limit: '10'
+      filter: interfaces contains ip_addresses contains value = '198.51.100.58'
+    excerpt: '[]'
+    retrieved_at: '2026-10-06T20:18:09.652359+00:00'
+  - evidence_id: ev_01a112ddd27374ae8fc8ba76cc79dd9f
+    source: qradar
+    query_hash: f542d0fe25c376e8b4c225627c79ef7075dbf3192db6a58426909d73d60c2a72
+    query_text: 'list_assets {"filter": "interfaces contains ip_addresses contains value = ''198.51.100.72''",
+      "limit": 10}'
+    time_start: '2026-10-06T20:14:18.108000+00:00'
+    time_end: '2026-10-06T20:17:22+00:00'
+    identifiers:
+      rows: '0'
+      tool: list_assets
+      limit: '10'
+      filter: interfaces contains ip_addresses contains value = '198.51.100.72'
+    excerpt: '[]'
+    retrieved_at: '2026-10-06T20:18:09.651633+00:00'
+  - evidence_id: ev_01a112df81c97553a76cc612aee23f21
+    source: qradar
+    query_hash: 2672d6a33c9e812928e4253f5067fdde6cbd8e1beb14ed4fb560944e9acb3994
+    query_text: SELECT DATEFORMAT(starttime, 'yyyy-MM-dd HH:mm:ss') AS event_time, sourceip, username,
+      QIDNAME(qid) AS event_name, UTF8(payload) AS payload FROM events WHERE logsourceid = 213 AND (sourceip
+      = '198.51.100.101' OR sourceip = '198.51.100.58' OR sourceip = '198.51.100.72') AND UTF8(payload)
+      ILIKE '%4624%' LIMIT 20 START 1791032828138 STOP 1791317842000
+    time_start: '2026-10-03T13:07:08.138000+00:00'
+    time_end: '2026-10-06T20:17:22+00:00'
+    identifiers:
+      rows: '0'
+      tool: get_ariel_search_results
+      start: '0'
+      search_id: faa26f85-1d82-4cfe-a14e-68e3f032c912
+    excerpt: '[]'
+    retrieved_at: '2026-10-06T20:20:00.073130+00:00'
+  urgent_event_candidates:
+  - rank: 1
+    time: '2026-10-06T20:14:18Z'
+    log_source: DC-LAB-01@Windows (id:213)
+    event_name: Active DCSync attack in progress
+    qid: null
+    source: 198.51.100.72, 198.51.100.101, 198.51.100.58
+    destination: DC-LAB-01 (192.168.10.x LAN)
+    username: svc_backup
+    reason: Offense 35 is OPEN and DCSync is actively extracting domain credential hashes from the Domain
+      Controller via svc_backup
+    checklist:
+    - Isolate DC-LAB-01 from network to prevent further credential exfiltration
+    - Reset svc_backup account password immediately
+    - Disable svc_backup account pending full investigation
+    - Begin emergency KRBTGT password reset (twice) to invalidate compromised Kerberos tickets
+    aql: null
+    evidence_id: ev_01a112de8e497defa3a9811b22d50e3f
+  - rank: 2
+    time: '2026-10-06T20:14:18Z'
+    log_source: DC-LAB-01@Windows (id:213)
+    event_name: Suspected attacker machine - full replication request
+    qid: null
+    source: 198.51.100.101
+    destination: null
+    username: svc_backup
+    reason: 198.51.100.101 requested the critical DS-Replication-Get-Changes GUID, which is the primary
+      permission for credential replication in DCSync attacks
+    checklist:
+    - Locate and isolate 198.51.100.101 (requested DS-Replication-Get-Changes - full replication)
+    - Check if this is a compromised server or workstation
+    - Scan for Mimikatz or DCSync tools on this host
+    aql: null
+    evidence_id: ev_01a112de8e497defa3a9811b22d50e3f
+  - rank: 3
+    time: '2026-10-06T20:14:18Z'
+    log_source: DC-LAB-01@Windows (id:213)
+    event_name: Suspected attacker machine - filtered replication request
+    qid: null
+    source: 198.51.100.58
+    destination: null
+    username: svc_backup
+    reason: 198.51.100.58 is repeatedly involved in every DCSync attack since Oct 3, suggesting a persistent
+      compromised machine
+    checklist:
+    - Locate and isolate 198.51.100.58 (requested DS-Replication-Get-Changes-In-Filtered-Set)
+    - Scan for DCSync tools on this host
+    aql: null
+    evidence_id: ev_01a112de8e497defa3a9811b22d50e3f
+  - rank: 4
+    time: '2026-10-06T20:14:18Z'
+    log_source: DC-LAB-01@Windows (id:213)
+    event_name: Suspected attacker machine - filtered replication request
+    qid: null
+    source: 198.51.100.72
+    destination: null
+    username: svc_backup
+    reason: 198.51.100.72 is repeatedly involved in every DCSync attack since Oct 3, suggesting a persistent
+      compromised machine
+    checklist:
+    - Locate and isolate 198.51.100.72 (requested DS-Replication-Get-Changes-In-Filtered-Set)
+    - Scan for DCSync tools on this host
+    aql: null
+    evidence_id: ev_01a112de8e497defa3a9811b22d50e3f
+  - rank: 5
+    time: '2026-10-06T20:14:18Z'
+    log_source: DC-LAB-01@Windows (id:213)
+    event_name: Investigate svc_backup account privileges
+    qid: null
+    source: null
+    destination: BANK domain (bank.example)
+    username: svc_backup
+    reason: svc_backup has the replication rights needed for DCSync and is not a computer account - the
+      account must be audited for exposure
+    checklist:
+    - Audit svc_backup AD group memberships (Check for Backup Operators, Domain Admins, Replicate Directory
+      Changes privileges)
+    - Check svc_backup's password age and last change date
+    - Identify which systems have svc_backup credentials cached or configured as a service account
+    aql: null
+    evidence_id: ev_01a112de8e497defa3a9811b22d50e3f
+  - rank: 6
+    time: '2026-10-06T20:14:18Z'
+    log_source: DC-LAB-01@Windows (id:213)
+    event_name: Search for lateral movement evidence
+    qid: null
+    source: 198.51.100.101, .58, .72
+    destination: DC-LAB-01
+    username: svc_backup
+    reason: No logon events found on DC-LAB-01 from the attacker IPs - DCSync may be performed remotely
+      via RPC rather than interactive logon, indicating network-based lateral movement
+    checklist:
+    - Review all Windows Event ID 4624 and 4625 from DC-LAB-01 for IPs .101, .58, .72
+    - Look for service logons (Logon Type 3 or 9) using svc_backup from these IPs
+    - Check for suspicious scheduled tasks or services on DC-LAB-01 running as svc_backup
+    aql: null
+    evidence_id: ev_01a112df81c97553a76cc612aee23f21
+  data_gaps:
+  - source: Asset inventory for IPs 198.51.100.101, 198.51.100.58, 198.51.100.72
+    period_start: '2026-10-06T20:14:18Z'
+    period_end: '2026-10-06T20:17:22Z'
+    reason: no_data
+  - source: Windows EventID 4624 (logon) events from the three IPs on DC-LAB-01 - no logon events found
+      to determine domain membership or lateral movement
+    period_start: '2026-10-06T20:14:18Z'
+    period_end: '2026-10-06T20:17:22Z'
+    reason: no_data
+  - source: Raw payloads for previous offenses (IDs 18,21,25,27,28,30,31,32,33,34) - only event metadata
+      was visible, not full payloads
+    period_start: '2026-10-03T08:07:08Z'
+    period_end: '2026-10-06T20:17:22Z'
+    reason: not_visible
+  - source: svc_backup account creation date, privilege membership (Backup Operators, Domain Admins),
+      and password rotation history
+    period_start: '2026-10-03T08:07:08Z'
+    period_end: '2026-10-06T20:17:22Z'
+    reason: no_data
+  - source: investigation
+    period_start: '2026-10-06T20:14:18.108000Z'
+    period_end: '2026-10-06T20:17:22Z'
+    reason: budget_exhausted
+  - source: payload
+    period_start: '2026-10-06T20:14:18Z'
+    period_end: '2026-10-06T20:14:18Z'
+    reason: not_parsed
+  - source: offense rule_ids
+    period_start: '2026-10-03T13:07:08Z'
+    period_end: '2026-10-06T20:14:18Z'
+    reason: not_visible
+  - source: verification
+    period_start: '2026-10-06T20:14:18.108000Z'
+    period_end: '2026-10-06T20:17:22Z'
+    reason: budget_exhausted
+  offense:
+    offense_id: 35
+    description: 'Success Audit: An operation was performed on an object '
+    offense_type: Username
+    offense_source: svc_backup
+    rule_ids:
+    - 100353
+    rule_names:
+    - AIS0C LAB - DCSync by a non-machine account
+    categories:
+    - Information
+    magnitude: 3
+    start_time: '2026-10-06T20:14:18.108000Z'
+    last_updated_time: '2026-10-06T20:14:18.108000Z'
+    event_count: 3
+    log_source_ids:
+    - 213
+    source_ips:
+    - 198.51.100.101
+    - 198.51.100.58
+    - 198.51.100.72
+    destination_ips:
+    - 198.51.100.101
+    - 198.51.100.58
+    - 198.51.100.72
+    usernames:
+    - svc_backup
+  enrichment:
+    catalog:
+      rules:
+      - rule_id: 100353
+        mode: analyze
+        min_level: null
+        context_note: null
+        attack_techniques: null
+      log_sources:
+      - log_source_id: 213
+        type_name: Microsoft Windows Security Event Log
+        description: null
+        criticality: null
+        context_note: null
+    critical_asset_hits: []
+    ioc_hits: []
+    entity_resolutions: []
+    group_id: null
+    floor_level: null
+  evaluated_at: '2026-10-06T20:17:22+00:00'
+expect: {}

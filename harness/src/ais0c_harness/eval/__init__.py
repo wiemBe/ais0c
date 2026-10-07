@@ -10,7 +10,13 @@ the model releases that changed since the last recorded runs.
 Run it as `python -m ais0c_harness.eval` (cli.py).
 """
 
-from ais0c_harness.eval.adapter import AgentAdapter, Attempt, RecordingModel, infra_failure
+from ais0c_harness.eval.adapter import (
+    AgentAdapter,
+    Attempt,
+    EvaluatorIdentity,
+    RecordingModel,
+    infra_failure,
+)
 from ais0c_harness.eval.config import (
     AgentConfig,
     ConfigError,
@@ -20,6 +26,13 @@ from ais0c_harness.eval.config import (
 from ais0c_harness.eval.evaluate import Check, Evaluation, RunMetrics
 from ais0c_harness.eval.fixture_gateway import UNSCRIPTED_RESULT, FixtureGateway, GatewayExchange
 from ais0c_harness.eval.gate import GateResult, compare_reports
+from ais0c_harness.eval.orchestrator import (
+    OrchestratorAdapter,
+    OrchestratorExpectation,
+    OrchestratorInput,
+    OrchestratorScenario,
+    orchestrator_checks,
+)
 from ais0c_harness.eval.releases import AgentSuites, agents_by_alias, describe_release_changes
 from ais0c_harness.eval.report import (
     HardGate,
@@ -31,6 +44,13 @@ from ais0c_harness.eval.report import (
     SuiteReport,
     load_report,
     write_report,
+)
+from ais0c_harness.eval.reporting import (
+    ReportingAdapter,
+    ReportingExpectation,
+    ReportingInput,
+    ReportingScenario,
+    reporting_checks,
 )
 from ais0c_harness.eval.runner import EvalRun, Job, RunOptions, run_eval, run_jobs
 from ais0c_harness.eval.scenario import Expectation, ScenarioBase
@@ -50,6 +70,16 @@ from ais0c_harness.eval.triage import (
     TriageScenario,
     evaluate_triage,
 )
+from ais0c_harness.eval.turkish import (
+    EvaluatorError,
+    EvaluatorScores,
+    TurkishQualityAdapter,
+    TurkishQualityScenario,
+    evaluator_identity,
+    run_evaluator,
+    score_checks,
+    turkish_checks,
+)
 
 __all__ = [
     "UNSCRIPTED_RESULT",
@@ -61,14 +91,25 @@ __all__ = [
     "ConfigError",
     "EvalRun",
     "Evaluation",
+    "EvaluatorError",
+    "EvaluatorIdentity",
+    "EvaluatorScores",
     "Expectation",
     "FixtureGateway",
     "GateResult",
     "GatewayExchange",
     "HardGate",
     "Job",
+    "OrchestratorAdapter",
+    "OrchestratorExpectation",
+    "OrchestratorInput",
+    "OrchestratorScenario",
     "RecordingModel",
     "Report",
+    "ReportingAdapter",
+    "ReportingExpectation",
+    "ReportingInput",
+    "ReportingScenario",
     "RunEnvelope",
     "RunFile",
     "RunMetrics",
@@ -84,10 +125,13 @@ __all__ = [
     "TriageExpectation",
     "TriageInput",
     "TriageScenario",
+    "TurkishQualityAdapter",
+    "TurkishQualityScenario",
     "agents_by_alias",
     "compare_reports",
     "describe_release_changes",
     "evaluate_triage",
+    "evaluator_identity",
     "infra_failure",
     "litellm_model",
     "load_agent_config",
@@ -95,8 +139,13 @@ __all__ = [
     "load_scenario",
     "load_suite",
     "load_suites",
+    "orchestrator_checks",
+    "reporting_checks",
     "run_eval",
+    "run_evaluator",
     "run_jobs",
+    "score_checks",
     "scripted_model",
+    "turkish_checks",
     "write_report",
 ]

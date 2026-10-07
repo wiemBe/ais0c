@@ -1,0 +1,8 @@
+# Turkish Quality suite (T-053 criterion 4, decisions D-07, D-44, T-71): is the report's
+# Turkish summary good? Deterministic audits first, then the soc-reasoning evaluator.
+# Format: harness/src/ais0c_harness/eval/suites.py; scenarios: README.md.
+id: turkish-quality
+title: Turkish Quality
+kind: quality
+agent: turkish-quality
+scenario_prefix: tq-

@@ -80,6 +80,11 @@ class RunEnvelope(_Model):
     skill_id: str | None = None
     skill_version: str | None = None
     skill_hash: str | None = None
+    # No LLM evaluator runs with Triage; the Turkish Quality suite fills these (T-053).
+    evaluator_id: str | None = None
+    evaluator_version: str | None = None
+    evaluator_prompt_sha256: str | None = None
+    evaluator_model_alias: str | None = None
 
 
 class InfraRetry(_Model):
@@ -145,6 +150,9 @@ class ScenarioReport(_Model):
     budget_exhausted_gaps: int
     infra_retries: int
     failed_checks: dict[str, int]
+    scores: dict[str, float]
+    """An LLM evaluator's average per criterion over the runs that were scored (T-053); empty
+    without one."""
 
 
 class SuiteReport(_Model):
@@ -299,7 +307,19 @@ def scenario_report(
                 ).items()
             )
         ),
+        scores=_average_scores(runs),
     )
+
+
+def _average_scores(runs: Sequence[RunRecord]) -> dict[str, float]:
+    """The mean of every criterion over the runs an evaluator scored (T-053)."""
+    scored = [run.metrics.scores for run in runs if run.metrics.scores]
+    if not scored:
+        return {}
+    return {
+        criterion: statistics.mean(scores[criterion] for scores in scored if criterion in scores)
+        for criterion in sorted({name for scores in scored for name in scores})
+    }
 
 
 def suite_report(
@@ -449,8 +469,8 @@ def render_markdown(report: Report) -> str:
         "## Scenarios",
         "",
         "| Scenario | Status | Pass rate | Results | Injection | Tokens med/max "
-        "| Seconds med/max | Retries out/tool | Failed checks |",
-        "|---|---|---|---|---|---|---|---|---|",
+        "| Seconds med/max | Retries out/tool | Scores | Failed checks |",
+        "|---|---|---|---|---|---|---|---|---|---|",
     ]
     for scenario in report.scenarios:
         results = "; ".join(
@@ -458,11 +478,12 @@ def render_markdown(report: Report) -> str:
             for name, counts in scenario.distributions.items()
         )
         failed = ", ".join(f"{name} {count}" for name, count in scenario.failed_checks.items())
+        scores = ", ".join(f"{name} {value:.1f}" for name, value in scenario.scores.items())
         lines.append(
             f"| {scenario.scenario_id} | {scenario.status} | {scenario.pass_rate:.0%} "
             f"| {results or '-'} | {scenario.injection_suspected}/{scenario.k} "
             f"| {_spread(scenario.tokens, '{:,.0f}')} | {_spread(scenario.seconds, '{:.1f}')} "
-            f"| {scenario.output_retries}/{scenario.tool_retries} | {failed or '-'} |"
+            f"| {scenario.output_retries}/{scenario.tool_retries} | {scores or '-'} | {failed or '-'} |"
         )
     return "\n".join(lines) + "\n"
 

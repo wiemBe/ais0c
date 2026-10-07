@@ -37,7 +37,13 @@ def copied(tmp_path: Path, source: str = "tl-01-catalog-note-fp") -> Path:
 def test_each_suite_has_a_suite_yaml() -> None:
     suites = {suite.id: suite for suite in load_suites(REPO_ROOT)}
 
-    assert set(suites) == {"trust-layers", "adversarial-fn"}
+    assert set(suites) == {
+        "trust-layers",
+        "adversarial-fn",
+        "orchestrator-gold",
+        "reporting-gold",
+        "turkish-quality",
+    }
     for suite_id, prefix in (("trust-layers", "tl-"), ("adversarial-fn", "afn-")):
         definition = suites[suite_id].definition
         assert definition.id == suites[suite_id].path.name == suite_id
@@ -213,7 +219,7 @@ def test_a_suite_id_other_than_its_directory_is_rejected(tmp_path: Path) -> None
     assert "is not the directory's name" in rejected(directory)
 
 
-@pytest.mark.parametrize("agent", ["investigation", "reporting", "orchestrator"])
+@pytest.mark.parametrize("agent", ["investigation", "verification"])
 def test_a_suite_for_another_agent_is_not_supported_yet(tmp_path: Path, agent: str) -> None:
     directory = copied(tmp_path)
     edit(directory / "suite.yaml", agent=agent)
@@ -221,7 +227,7 @@ def test_a_suite_for_another_agent_is_not_supported_yet(tmp_path: Path, agent: s
     message = rejected(directory)
 
     assert f"agent {agent!r} is not supported yet" in message
-    assert "T-052 and T-053" in message
+    assert "triage" in message
 
 
 def test_an_evaluation_before_the_last_update_is_rejected(tmp_path: Path) -> None:

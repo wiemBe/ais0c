@@ -41,7 +41,13 @@ def test_the_manifest_has_the_values_of_the_task() -> None:
         prompt="prompts/orchestrator/v1.md",
         shared_rules="prompts/_shared/rules/v2.md",
         eval_suites=frozenset(
-            {"skill-selection", "prompt-injection", "failure-recovery", "trust-layers"}
+            {
+                "orchestrator-gold",
+                "skill-selection",
+                "prompt-injection",
+                "failure-recovery",
+                "trust-layers",
+            }
         ),
     )
 

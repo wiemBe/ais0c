@@ -1,0 +1,7 @@
+# Reporting Gold suite (T-053 criterion 3): is the report the deterministic rules demand?
+# Format: harness/src/ais0c_harness/eval/suites.py; scenarios: README.md.
+id: reporting-gold
+title: Reporting Gold
+kind: quality
+agent: reporting
+scenario_prefix: rep-
