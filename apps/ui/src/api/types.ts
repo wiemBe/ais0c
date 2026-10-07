@@ -23,6 +23,8 @@ export type CriticalAssetAdd = Schemas["CriticalAssetAdd"];
 export type RecipientsView = Schemas["RecipientsView"];
 export type NotificationRoute = Schemas["NotificationRoute"];
 export type PlatformFlagState = Schemas["PlatformFlagState"];
+export type ChangeAccepted = Schemas["ChangeAccepted"];
+export type ChangeItem = Schemas["ChangeItem"];
 export type SLAMetrics = Schemas["SLAMetrics"];
 export type UrgentEvent = Schemas["UrgentEvent"];
 export type Me = Schemas["Me"];
@@ -51,5 +53,8 @@ export type GroupValueKind = Schemas["GroupValueKind"];
 export type OffenseStatus = Schemas["OffenseStatus"];
 export type FullAnalysisReason = Schemas["FullAnalysisReason"];
 export type Role = Schemas["Role"];
+export type ChangeObjectType = Schemas["ChangeObjectType"];
+export type ChangeStatus = Schemas["ChangeStatus"];
+export type ChangeRejectReason = Schemas["ChangeRejectReason"];
 
 export type Page<T> = { items: T[]; next_cursor?: string | null };

@@ -70,7 +70,7 @@ describe("catalog (criterion 8)", () => {
       http.get("*/api/v1/catalog/rules", () => json({ items: [rule()], next_cursor: null })),
       http.put("*/api/v1/catalog/rules/100201", async ({ request }) => {
         put(await request.json());
-        return json(rule({ mode: "skip" }));
+        return json({ change_id: "c1" }, 202);
       }),
     );
     renderApp("/catalog", ADMIN);
@@ -80,7 +80,11 @@ describe("catalog (criterion 8)", () => {
     await userEvent.selectOptions(within(dialog).getByLabelText("Taban seviye"), "high");
     await userEvent.type(within(dialog).getByLabelText(/ATT&CK/), "T1059, T1021");
     await userEvent.click(within(dialog).getByRole("button", { name: "Kaydet" }));
-    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    // 202: the edit waits for a second admin and the dialog says so (T-033 criterion 5).
+    const waiting = await screen.findByRole("dialog");
+    expect(await within(waiting).findByText(/Onay bekliyor/)).toBeInTheDocument();
+    await userEvent.click(within(waiting).getByRole("button", { name: "Kapat" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(put).toHaveBeenCalledWith({
       mode: "skip",
       min_level: "high",
@@ -116,13 +120,13 @@ describe("catalog (criterion 8)", () => {
       ),
       http.post("*/api/v1/catalog/rules/100201/accept-draft", () => {
         accepted();
-        return json(rule());
+        return json({ change_id: "c2" }, 202);
       }),
     );
     renderApp("/catalog", ADMIN);
     expect(await screen.findByText(/Güvenlik duvarı kabul sayısı kuralı/)).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Taslağı kabul et" }));
-    expect(await screen.findByText("Taslak kabul edildi.")).toBeInTheDocument();
+    expect(await screen.findByText(/Onay bekliyor/)).toBeInTheDocument();
     expect(accepted).toHaveBeenCalled();
   });
 
@@ -160,7 +164,7 @@ describe("catalog (criterion 8)", () => {
       }),
       http.put("*/api/v1/catalog/log-sources/2001", async ({ request }) => {
         put(await request.json());
-        return json(logSource({ defined: true }));
+        return json({ change_id: "c3" }, 202);
       }),
     );
     renderApp("/catalog", ADMIN);
@@ -216,7 +220,7 @@ describe("administration (criterion 8)", () => {
       http.get("*/api/v1/notification-routes", () => json([])),
       http.put("*/api/v1/admin/platform-flags/writes_enabled", async ({ request }) => {
         put(await request.json());
-        return json({ name: "writes_enabled", enabled: true });
+        return json({ change_id: "c4" }, 202);
       }),
     );
     renderApp("/admin", ADMIN);
@@ -230,13 +234,16 @@ describe("administration (criterion 8)", () => {
     await userEvent.click(screen.getByRole("button", { name: "Yazmaları aç" }));
     const dialog = screen.getByRole("dialog");
     expect(
-      within(dialog).getByText(
-        "Yazmalar açılınca AI notları QRadar'a yazılır ve e-postalar gider.",
-      ),
+      within(dialog).getByText(/İkinci bir admin onaylayınca yazmalar açılır/),
     ).toBeInTheDocument();
     expect(put).not.toHaveBeenCalled();
     await userEvent.click(within(dialog).getByRole("button", { name: "Onayla" }));
     await waitFor(() => expect(put).toHaveBeenCalledWith({ enabled: true, reason: "Canary" }));
+    // 202: the writes stay closed until a second admin approves.
+    expect(
+      await screen.findByText(/yazmalar, ikinci bir admin onaylayınca açılır/),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Yazmalar KAPALI/)).toBeInTheDocument();
   });
 
   it("closes the writes in one step", async () => {
@@ -272,11 +279,11 @@ describe("administration (criterion 8)", () => {
       http.get("*/api/v1/notification-routes", () => json([])),
       http.post("*/api/v1/critical-assets", async ({ request }) => {
         added(await request.json());
-        return json(asset, 201);
+        return json({ change_id: "c5" }, 202);
       }),
       http.delete("*/api/v1/critical-assets/a1", () => {
         removed();
-        return new Response(null, { status: 204 });
+        return json({ change_id: "c6" }, 202);
       }),
     );
     renderApp("/admin", ADMIN);
@@ -295,6 +302,9 @@ describe("administration (criterion 8)", () => {
         level: "high",
       }),
     );
+    expect(
+      await screen.findByText(/kritik varlık listesi, ikinci bir admin onaylayınca/),
+    ).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Sil" }));
     await waitFor(() => expect(removed).toHaveBeenCalled());
   });

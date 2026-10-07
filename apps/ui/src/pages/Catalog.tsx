@@ -24,6 +24,7 @@ import {
 import styles from "../components/ui.module.css";
 import { formatTime } from "../format";
 import { tr } from "../i18n/tr";
+import { PendingMark, pendingKey, usePendingMap } from "./Changes";
 
 type Tri = "" | "true" | "false";
 
@@ -55,6 +56,18 @@ function yesNo(value: boolean): string {
 
 // --- rules ------------------------------------------------------------------------------------
 
+/** What an admin sees after a 202: the request waits for a second admin (D-36). */
+function WaitingDialog({ onClose }: { onClose: () => void }) {
+  return (
+    <Dialog label={tr.catalog.edit}>
+      <Notice>{tr.catalog.pendingNotice}</Notice>
+      <button type="button" onClick={onClose}>
+        {tr.common.close}
+      </button>
+    </Dialog>
+  );
+}
+
 function RuleDialog({ rule, onClose }: { rule: CatalogRule; onClose: () => void }) {
   const save = useSaveRule(rule.rule_id);
   const [mode, setMode] = useState<CatalogMode>(rule.mode);
@@ -62,6 +75,7 @@ function RuleDialog({ rule, onClose }: { rule: CatalogRule; onClose: () => void 
   const [automated, setAutomated] = useState(rule.has_automated_action);
   const [note, setNote] = useState(rule.context_note ?? "");
   const [techniques, setTechniques] = useState((rule.attack_techniques ?? []).join(", "));
+  const [waiting, setWaiting] = useState(false);
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
@@ -76,10 +90,12 @@ function RuleDialog({ rule, onClose }: { rule: CatalogRule; onClose: () => void 
           .map((item) => item.trim())
           .filter(Boolean),
       },
-      { onSuccess: onClose },
+      // The edit waits for a second admin (D-36): the dialog says so and the rule is unchanged.
+      { onSuccess: () => setWaiting(true) },
     );
   };
 
+  if (waiting) return <WaitingDialog onClose={onClose} />;
   return (
     <Dialog label={tr.catalog.edit}>
       <form onSubmit={submit}>
@@ -147,13 +163,14 @@ function AcceptDraftButton({ rule }: { rule: CatalogRule }) {
         {tr.catalog.acceptDraft}
       </button>
       <ErrorNotice error={accept.error} />
-      {accept.isSuccess && <Notice>{tr.catalog.draftAccepted}</Notice>}
+      {accept.isSuccess && <Notice>{tr.catalog.pendingNotice}</Notice>}
     </>
   );
 }
 
 function Rules() {
   const admin = useIsAdmin();
+  const pending = usePendingMap(admin);
   const [defined, setDefined] = useState<Tri>("");
   const [mode, setMode] = useState<CatalogMode | "">("");
   const [enabled, setEnabled] = useState<Tri>("");
@@ -210,6 +227,13 @@ function Rules() {
                 <td>{rule.rule_id}</td>
                 <td>
                   {rule.rule_name}
+                  {pending.has(
+                    pendingKey({ object_type: "catalog_rule", object_id: String(rule.rule_id) }),
+                  ) && (
+                    <div>
+                      <PendingMark />
+                    </div>
+                  )}
                   {rule.missing_since && (
                     <div>
                       <Badge tone="high">{tr.catalog.cols.missing}</Badge>
@@ -261,6 +285,7 @@ function LogSourceDialog({ source, onClose }: { source: CatalogLogSource; onClos
   const [criticality, setCriticality] = useState<Level | "">(source.criticality ?? "");
   const [inScope, setInScope] = useState(source.in_scope);
   const [note, setNote] = useState(source.context_note ?? "");
+  const [waiting, setWaiting] = useState(false);
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
@@ -272,10 +297,11 @@ function LogSourceDialog({ source, onClose }: { source: CatalogLogSource; onClos
         in_scope: inScope,
         context_note: note.trim() ? note : null,
       },
-      { onSuccess: onClose },
+      { onSuccess: () => setWaiting(true) },
     );
   };
 
+  if (waiting) return <WaitingDialog onClose={onClose} />;
   return (
     <Dialog label={tr.catalog.edit}>
       <form onSubmit={submit}>
@@ -327,6 +353,7 @@ function LogSourceDialog({ source, onClose }: { source: CatalogLogSource; onClos
 
 function LogSources() {
   const admin = useIsAdmin();
+  const pending = usePendingMap(admin);
   const [defined, setDefined] = useState<Tri>("");
   const [inScope, setInScope] = useState<Tri>("");
   const [missing, setMissing] = useState<Tri>("");
@@ -375,6 +402,16 @@ function LogSources() {
                 <td>{source.log_source_id}</td>
                 <td>
                   {source.name}
+                  {pending.has(
+                    pendingKey({
+                      object_type: "catalog_log_source",
+                      object_id: String(source.log_source_id),
+                    }),
+                  ) && (
+                    <div>
+                      <PendingMark />
+                    </div>
+                  )}
                   {source.missing_since && (
                     <div>
                       <Badge tone="high">{tr.catalog.cols.missing}</Badge>

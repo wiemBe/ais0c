@@ -37,6 +37,7 @@ file is made.
 | `temporal.py` | The `ScheduleTrigger` seam and the Schedule ID (criterion 8) |
 | `run_ids.py` | The evaluation number in an agent run's ID (decision T-29), checked against the workflows in `tests/api/` |
 | `audit.py` | The `audit_log` actions this API writes |
+| `changes.py` | Double control (D-36, T-033): object versions, queuing a request, applying an approved one |
 | `models.py` | The wire format: these models are not in `packages/contracts` |
 | `routers/` | The endpoints, under the `/api/v1` prefix |
 

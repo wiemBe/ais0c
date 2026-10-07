@@ -13,6 +13,7 @@ import {
 } from "../api/hooks";
 import { useIsAdmin } from "../api/session";
 import type {
+  ChangeAccepted,
   CriticalAssetKind,
   EmailKind,
   Level,
@@ -33,6 +34,7 @@ import {
 import styles from "../components/ui.module.css";
 import { formatTime } from "../format";
 import { tr } from "../i18n/tr";
+import { PendingChanges, PendingMark, pendingKey, usePendingMap } from "./Changes";
 
 // --- kill switch (architecture §26, T-63) ---------------------------------------------------
 
@@ -42,6 +44,10 @@ function KillSwitch({ flag }: { flag: PlatformFlagState }) {
   const [reason, setReason] = useState("");
   const [confirming, setConfirming] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
+  const [waiting, setWaiting] = useState(false);
+  const pending = usePendingMap(admin).get(
+    pendingKey({ object_type: "platform_flag", object_id: flag.name }),
+  );
 
   const change = (enabled: boolean) => {
     if (!reason.trim()) return setProblem(tr.common.reasonRequired);
@@ -49,9 +55,11 @@ function KillSwitch({ flag }: { flag: PlatformFlagState }) {
     set.mutate(
       { enabled, reason },
       {
-        onSuccess: () => {
+        // Closing is written at once; opening answers 202 and waits for a second admin (D-36).
+        onSuccess: (result) => {
           setConfirming(false);
           setReason("");
+          setWaiting("change_id" in (result as ChangeAccepted));
         },
       },
     );
@@ -71,6 +79,7 @@ function KillSwitch({ flag }: { flag: PlatformFlagState }) {
           {formatTime(flag.changed_at)} · {tr.admin.reason}: {flag.reason}
         </p>
       )}
+      {(waiting || pending) && <Notice>{tr.admin.enablePending}</Notice>}
       {admin && (
         <>
           <Field label={tr.admin.reasonLabel}>
@@ -137,6 +146,8 @@ function CriticalAssets() {
   const [value, setValue] = useState("");
   const [label, setLabel] = useState("");
   const [level, setLevel] = useState<Level | "">("");
+  const [waiting, setWaiting] = useState(false);
+  const pending = usePendingMap(admin);
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
@@ -144,9 +155,11 @@ function CriticalAssets() {
     add.mutate(
       { kind, value, label, level },
       {
+        // Adding waits for a second admin (D-36); the list changes when it is approved.
         onSuccess: () => {
           setValue("");
           setLabel("");
+          setWaiting(true);
         },
       },
     );
@@ -174,7 +187,16 @@ function CriticalAssets() {
             {list.data.map((asset) => (
               <tr key={asset.id}>
                 <td>{tr.criticalAssetKind[asset.kind]}</td>
-                <td>{asset.value}</td>
+                <td>
+                  {asset.value}
+                  {pending.has(
+                    pendingKey({ object_type: "critical_asset", object_id: asset.id }),
+                  ) && (
+                    <div>
+                      <PendingMark />
+                    </div>
+                  )}
+                </td>
                 <td>{asset.label}</td>
                 <td>{tr.level[asset.level]}</td>
                 <td>
@@ -183,7 +205,7 @@ function CriticalAssets() {
                       type="button"
                       className="secondary"
                       disabled={remove.isPending}
-                      onClick={() => remove.mutate(asset.id)}
+                      onClick={() => remove.mutate(asset.id, { onSuccess: () => setWaiting(true) })}
                     >
                       {tr.common.remove}
                     </button>
@@ -195,6 +217,7 @@ function CriticalAssets() {
         </table>
       )}
       <ErrorNotice error={remove.error} />
+      {waiting && <Notice>{tr.admin.assetPending}</Notice>}
       {admin && (
         <form onSubmit={submit} className={styles.filters} style={{ marginTop: "0.75rem" }}>
           <EnumSelect
@@ -449,6 +472,8 @@ export function Admin() {
       <CriticalAssets />
       {admin ? (
         <>
+          <h2>{tr.admin.changes.title}</h2>
+          <PendingChanges />
           <h2>{tr.admin.recipients}</h2>
           <Recipients />
           <h2>{tr.admin.routes}</h2>

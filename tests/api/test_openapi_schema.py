@@ -43,6 +43,12 @@ EXPECTED_ENDPOINTS = {
     ("get", "/api/v1/notification-routes"),
     ("put", "/api/v1/notification-routes"),
     ("get", "/api/v1/metrics/sla"),
+    # Double control (T-033).
+    ("get", "/api/v1/changes"),
+    ("get", "/api/v1/changes/{change_id}"),
+    ("post", "/api/v1/changes/{change_id}/approve"),
+    ("post", "/api/v1/changes/{change_id}/reject"),
+    ("post", "/api/v1/changes/{change_id}/withdraw"),
     ("get", "/api/v1/admin/platform-flags"),
     ("put", "/api/v1/admin/platform-flags/{name}"),
     ("get", "/api/v1/me"),

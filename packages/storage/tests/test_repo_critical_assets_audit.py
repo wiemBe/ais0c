@@ -12,7 +12,9 @@ from ais0c_storage.enums import ActorKind, CriticalAssetKind
 from ais0c_storage.repositories import (
     add_critical_asset,
     append_audit,
+    check_critical_asset,
     delete_critical_asset,
+    find_critical_asset,
     list_audit,
     list_critical_assets,
 )
@@ -137,3 +139,43 @@ async def test_audit_entries(session: AsyncSession) -> None:
     assert len(await list_audit(session, limit=1)) == 1
     assert [entry.id for entry in await list_audit(session, since=second.at)] == [second.id]
     assert [entry.id for entry in await list_audit(session, until=second.at)] == [first.id]
+
+
+async def test_an_asset_is_checked_and_found_in_its_stored_form(session: AsyncSession) -> None:
+    """T-033: the API checks a request with `check_critical_asset` and looks for the asset the
+    approval would add with `find_critical_asset`."""
+    value = check_critical_asset(
+        kind=CriticalAssetKind.IP, value="2001:0DB8:0000::0001", label="VPN", level=Level.HIGH
+    )
+    assert value == "2001:db8::1"
+    assert await find_critical_asset(session, kind=CriticalAssetKind.IP, value=value) is None
+
+    added = await add_critical_asset(
+        session,
+        kind=CriticalAssetKind.IP,
+        value="2001:0DB8:0000::0001",
+        label="VPN",
+        level=Level.HIGH,
+    )
+
+    found = await find_critical_asset(session, kind=CriticalAssetKind.IP, value=value)
+    assert found is not None
+    assert found.id == added.id
+    # The same value of another kind is another asset.
+    assert await find_critical_asset(session, kind=CriticalAssetKind.HOST, value=value) is None
+
+
+@pytest.mark.parametrize(
+    ("kind", "value", "level"),
+    [
+        (CriticalAssetKind.IP, "not-an-ip", Level.HIGH),
+        (CriticalAssetKind.CIDR, "192.0.2.10/24", Level.HIGH),
+        (CriticalAssetKind.HOST, "  ", Level.HIGH),
+        (CriticalAssetKind.IP, "192.0.2.10", Level.LOW),
+    ],
+)
+def test_check_critical_asset_refuses_what_add_refuses(
+    kind: CriticalAssetKind, value: str, level: Level
+) -> None:
+    with pytest.raises(ValueError, match=r".+"):
+        check_critical_asset(kind=kind, value=value, label="X", level=level)

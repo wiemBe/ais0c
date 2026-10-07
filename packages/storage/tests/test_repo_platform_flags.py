@@ -188,3 +188,26 @@ async def test_concurrent_changes_take_turns(engine: AsyncEngine) -> None:
             ("admin01", True, False),
             ("admin00", False, None),
         ]
+
+
+async def test_extra_details_join_the_audit_entry(session: AsyncSession) -> None:
+    """T-033: an approval records who asked, next to the entry's own fields."""
+    await set_platform_flag(
+        session,
+        WRITES,
+        enabled=True,
+        reason="Canary.",
+        actor_kind=ActorKind.USER,
+        actor_id="admin02",
+        extra_details={"requested_by": "admin01"},
+    )
+
+    [entry] = await list_audit(
+        session, object_type=PLATFORM_FLAG_OBJECT_TYPE, object_id=WRITES.value
+    )
+    assert entry.details == {
+        "requested_by": "admin01",
+        "enabled": True,
+        "previous": None,
+        "reason": "Canary.",
+    }

@@ -36,8 +36,12 @@ export interface paths {
         get?: never;
         /**
          * Put Flag
-         * @description Switch a platform flag (admin). `reason` is required and may not be blank. An unknown flag
-         *     name is a 404 and nothing is written.
+         * @description Switch a platform flag (admin). `reason` is required and may not be blank.
+         *
+         *     Switching off is written at once (200) and ends a pending request to switch on as stale.
+         *     Switching on is a request (202) that a second admin approves; the approval's actor is the
+         *     flag's `changed_by` and the reason is the request's. An unknown flag name is a 404 and
+         *     nothing is written.
          */
         put: operations["put_flag_api_v1_admin_platform_flags__name__put"];
         post?: never;
@@ -178,7 +182,8 @@ export interface paths {
         get: operations["get_log_source_api_v1_catalog_log_sources__log_source_id__get"];
         /**
          * Put Log Source
-         * @description An admin's edit of a log source. It becomes `defined` and the change is audited.
+         * @description An admin's edit of a log source, waiting for a second admin (202). The log source becomes
+         *     `defined` when the request is approved.
          */
         put: operations["put_log_source_api_v1_catalog_log_sources__log_source_id__put"];
         post?: never;
@@ -223,9 +228,10 @@ export interface paths {
         get: operations["get_rule_api_v1_catalog_rules__rule_id__get"];
         /**
          * Put Rule
-         * @description An admin's edit of a rule. The rule becomes `defined` and the change is audited.
+         * @description An admin's edit of a rule, waiting for a second admin (202).
          *
-         *     An unknown `rule_id` is a 404 and nothing is written.
+         *     An unknown `rule_id` is a 404, a body that breaks the catalog contract a 422, and a rule that
+         *     already has a pending request a 409. The rule changes when the request is approved.
          */
         put: operations["put_rule_api_v1_catalog_rules__rule_id__put"];
         post?: never;
@@ -246,8 +252,9 @@ export interface paths {
         put?: never;
         /**
          * Post Accept Draft
-         * @description Accept the note the AI suggested: it becomes the rule's `context_note` and the draft is
-         *     cleared. A rule with no draft, or an unknown `rule_id`, is a 404.
+         * @description Accepting the note the AI suggested, waiting for a second admin (202): on approval it
+         *     becomes the rule's `context_note` and the draft is cleared. A rule with no draft, or an
+         *     unknown `rule_id`, is a 404.
          */
         post: operations["post_accept_draft_api_v1_catalog_rules__rule_id__accept_draft_post"];
         delete?: never;
@@ -281,6 +288,110 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/changes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Changes
+         * @description The requests, newest first; `status` and `object_type` narrow the list.
+         */
+        get: operations["get_changes_api_v1_changes_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/changes/{change_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get One Change
+         * @description One request; an unknown ID is a 404.
+         */
+        get: operations["get_one_change_api_v1_changes__change_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/changes/{change_id}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Approve
+         * @description Approve and apply a request (an admin other than the requester).
+         *
+         *     The change, the request's end and the audit rows are one transaction. A decided request is a
+         *     409 (`change.already_decided`), the requester's own request a 403 (`change.self_approval`), and
+         *     an object that changed since the request a 409 (`change.stale`) that ends the request.
+         */
+        post: operations["post_approve_api_v1_changes__change_id__approve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/changes/{change_id}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Reject
+         * @description Reject a request (an admin other than the requester); nothing changes.
+         */
+        post: operations["post_reject_api_v1_changes__change_id__reject_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/changes/{change_id}/withdraw": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Withdraw
+         * @description Take a request back (only the admin who asked); nothing changes and nobody decided it.
+         */
+        post: operations["post_withdraw_api_v1_changes__change_id__withdraw_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/critical-assets": {
         parameters: {
             query?: never;
@@ -296,8 +407,11 @@ export interface paths {
         put?: never;
         /**
          * Post Critical Asset
-         * @description Add a critical asset (admin). Storage normalizes an IP or CIDR and validates the level; a
-         *     value it refuses is a 422 and nothing is written.
+         * @description Ask to add a critical asset (admin); a second admin's approval adds it (202).
+         *
+         *     Storage's checks run now, so a value it refuses is a 422 and nothing waits. An asset of this
+         *     kind and value that is already listed is a 409 (`critical_asset.exists`), and one that already
+         *     waits for approval a 409 (`change.pending_exists`).
          */
         post: operations["post_critical_asset_api_v1_critical_assets_post"];
         delete?: never;
@@ -318,7 +432,8 @@ export interface paths {
         post?: never;
         /**
          * Delete Asset
-         * @description Remove a critical asset (admin); an unknown ID is a 404 and nothing is written.
+         * @description Ask to remove a critical asset (admin); a second admin's approval removes it (202). An
+         *     unknown ID is a 404 and nothing waits.
          */
         delete: operations["delete_asset_api_v1_critical_assets__asset_id__delete"];
         options?: never;
@@ -820,6 +935,84 @@ export interface components {
             min_level?: components["schemas"]["Level"] | null;
             mode: components["schemas"]["CatalogMode"];
         };
+        /**
+         * ChangeAccepted
+         * @description The answer (202) of a change that waits for a second admin (D-36, T-77).
+         */
+        ChangeAccepted: {
+            /**
+             * Change Id
+             * Format: uuid
+             */
+            change_id: string;
+        };
+        /**
+         * ChangeItem
+         * @description One `change_approvals` row: a change asked for, and what became of it.
+         *
+         *     `change` is `{ action, before, after }` (a flag change also has `reason`): the object's values
+         *     when the request was made and the ones asked for. `decided_by` is set only by a second admin's
+         *     approval or rejection; a withdrawn or stale request has none.
+         */
+        ChangeItem: {
+            /** Change */
+            change: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+            /** Comment */
+            comment?: string | null;
+            /** Decided At */
+            decided_at?: string | null;
+            /** Decided By */
+            decided_by?: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Object Id */
+            object_id: string;
+            object_type: components["schemas"]["ChangeObjectType"];
+            /** Object Version */
+            object_version: string;
+            reason?: components["schemas"]["ChangeRejectReason"] | null;
+            /**
+             * Requested At
+             * Format: date-time
+             */
+            requested_at: string;
+            /** Requested By */
+            requested_by: string;
+            status: components["schemas"]["ChangeStatus"];
+        };
+        /**
+         * ChangeObjectType
+         * @description `change_approvals.object_type` (D-36, T-77). `skill`, `policy` and `hunt_pack` are files in
+         *     the repository whose approval is a code review; they are listed because data-model.md lists
+         *     them and no endpoint writes them.
+         * @enum {string}
+         */
+        ChangeObjectType: "catalog_rule" | "catalog_log_source" | "critical_asset" | "platform_flag" | "skill" | "policy" | "hunt_pack";
+        /**
+         * ChangeReject
+         * @description `POST /changes/{id}/reject`.
+         */
+        ChangeReject: {
+            /** Comment */
+            comment?: string | null;
+        };
+        /**
+         * ChangeRejectReason
+         * @description `change_approvals.reason`, set only on a `rejected` request.
+         * @enum {string}
+         */
+        ChangeRejectReason: "rejected_by_admin" | "stale" | "withdrawn";
+        /**
+         * ChangeStatus
+         * @description `change_approvals.status`.
+         * @enum {string}
+         */
+        ChangeStatus: "pending" | "approved" | "rejected";
         /** Claim */
         Claim: {
             /** Evidence Ids */
@@ -1110,6 +1303,7 @@ export interface components {
              */
             status: "ok";
         };
+        JsonValue: unknown;
         /**
          * Level
          * @description Severity level. Values compare as strings, not by severity.
@@ -1252,6 +1446,13 @@ export interface components {
             /** Next Cursor */
             next_cursor?: string | null;
         };
+        /** Page[ChangeItem] */
+        Page_ChangeItem_: {
+            /** Items */
+            items: components["schemas"]["ChangeItem"][];
+            /** Next Cursor */
+            next_cursor?: string | null;
+        };
         /** Page[GroupSummary] */
         Page_GroupSummary_: {
             /** Items */
@@ -1312,6 +1513,11 @@ export interface components {
          *     carry them.
          */
         Problem: {
+            /**
+             * Change Id
+             * @default null
+             */
+            change_id: string | null;
             /**
              * Detail
              * @default null
@@ -1635,13 +1841,22 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Successful Response */
+            /** @description Switched off at once. */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
                     "application/json": components["schemas"]["PlatformFlagState"];
+                };
+            };
+            /** @description Switching on waits for a second admin. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChangeAccepted"];
                 };
             };
             /** @description An RFC 9457 problem. `title` is a machine-readable code (`catalog.rule_not_found`); the UI builds the message from it. */
@@ -1905,12 +2120,12 @@ export interface operations {
         };
         responses: {
             /** @description Successful Response */
-            200: {
+            202: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["CatalogLogSource"];
+                    "application/json": components["schemas"]["ChangeAccepted"];
                 };
             };
             /** @description An RFC 9457 problem. `title` is a machine-readable code (`catalog.rule_not_found`); the UI builds the message from it. */
@@ -2008,12 +2223,12 @@ export interface operations {
         };
         responses: {
             /** @description Successful Response */
-            200: {
+            202: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["CatalogRule"];
+                    "application/json": components["schemas"]["ChangeAccepted"];
                 };
             };
             /** @description An RFC 9457 problem. `title` is a machine-readable code (`catalog.rule_not_found`); the UI builds the message from it. */
@@ -2039,12 +2254,12 @@ export interface operations {
         requestBody?: never;
         responses: {
             /** @description Successful Response */
-            200: {
+            202: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["CatalogRule"];
+                    "application/json": components["schemas"]["ChangeAccepted"];
                 };
             };
             /** @description An RFC 9457 problem. `title` is a machine-readable code (`catalog.rule_not_found`); the UI builds the message from it. */
@@ -2074,6 +2289,168 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SyncAccepted"];
+                };
+            };
+            /** @description An RFC 9457 problem. `title` is a machine-readable code (`catalog.rule_not_found`); the UI builds the message from it. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    get_changes_api_v1_changes_get: {
+        parameters: {
+            query?: {
+                status?: components["schemas"]["ChangeStatus"] | null;
+                object_type?: components["schemas"]["ChangeObjectType"] | null;
+                cursor?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_ChangeItem_"];
+                };
+            };
+            /** @description An RFC 9457 problem. `title` is a machine-readable code (`catalog.rule_not_found`); the UI builds the message from it. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    get_one_change_api_v1_changes__change_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                change_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChangeItem"];
+                };
+            };
+            /** @description An RFC 9457 problem. `title` is a machine-readable code (`catalog.rule_not_found`); the UI builds the message from it. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    post_approve_api_v1_changes__change_id__approve_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                change_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChangeItem"];
+                };
+            };
+            /** @description An RFC 9457 problem. `title` is a machine-readable code (`catalog.rule_not_found`); the UI builds the message from it. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    post_reject_api_v1_changes__change_id__reject_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                change_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChangeReject"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChangeItem"];
+                };
+            };
+            /** @description An RFC 9457 problem. `title` is a machine-readable code (`catalog.rule_not_found`); the UI builds the message from it. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    post_withdraw_api_v1_changes__change_id__withdraw_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                change_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChangeItem"];
                 };
             };
             /** @description An RFC 9457 problem. `title` is a machine-readable code (`catalog.rule_not_found`); the UI builds the message from it. */
@@ -2130,12 +2507,12 @@ export interface operations {
         };
         responses: {
             /** @description Successful Response */
-            201: {
+            202: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["CriticalAsset"];
+                    "application/json": components["schemas"]["ChangeAccepted"];
                 };
             };
             /** @description An RFC 9457 problem. `title` is a machine-readable code (`catalog.rule_not_found`); the UI builds the message from it. */
@@ -2161,11 +2538,13 @@ export interface operations {
         requestBody?: never;
         responses: {
             /** @description Successful Response */
-            204: {
+            202: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ChangeAccepted"];
+                };
             };
             /** @description An RFC 9457 problem. `title` is a machine-readable code (`catalog.rule_not_found`); the UI builds the message from it. */
             default: {

@@ -14,6 +14,8 @@ import type {
   CatalogLogSourceUpdate,
   CatalogRule,
   CatalogRuleUpdate,
+  ChangeAccepted,
+  ChangeItem,
   CriticalAsset,
   CriticalAssetAdd,
   FeedbackAnswer,
@@ -100,6 +102,17 @@ export const useRoutes = (enabled: boolean) =>
     queryFn: () => get<NotificationRoute[]>("/notification-routes"),
     enabled,
   });
+export const useChanges = (filters: Filters) =>
+  usePagedList<ChangeItem>(["changes"], "/changes", filters);
+/** The requests that still wait for a second admin (200 at most): the catalog and the asset list
+ * mark their rows with these. Admins only; the endpoint is an admin's. */
+export const usePendingChanges = (enabled: boolean) =>
+  useQuery({
+    queryKey: ["changes-pending"],
+    queryFn: () => get<Page<ChangeItem>>("/changes", { status: "pending", limit: 200 }),
+    enabled,
+    refetchInterval: REFRESH_MS,
+  });
 export const useSla = (filters: Filters) =>
   useQuery({
     queryKey: ["sla", filters],
@@ -133,37 +146,70 @@ export const useResolveQa = (itemId: string) =>
       post<Schemas["QAResolveAnswer"]>(`/qa/${encodeURIComponent(itemId)}/resolve`, body),
     ["qa", "case-feedback"],
   );
+// The endpoints under double control (D-36) answer 202 `{ change_id }`: the change waits for a
+// second admin, so the pending lists are refreshed along with the object's own.
+const PENDING = ["changes", "changes-pending"] as const;
+
 export const useSaveRule = (ruleId: number) =>
   useChange(
-    (body: CatalogRuleUpdate) => put<CatalogRule>(`/catalog/rules/${ruleId}`, body),
-    ["catalog-rules"],
+    (body: CatalogRuleUpdate) => put<ChangeAccepted>(`/catalog/rules/${ruleId}`, body),
+    ["catalog-rules", ...PENDING],
   );
 export const useAcceptDraft = (ruleId: number) =>
-  useChange(() => post<CatalogRule>(`/catalog/rules/${ruleId}/accept-draft`), ["catalog-rules"]);
+  useChange(
+    () => post<ChangeAccepted>(`/catalog/rules/${ruleId}/accept-draft`),
+    ["catalog-rules", ...PENDING],
+  );
 export const useSaveLogSource = (logSourceId: number) =>
   useChange(
     (body: CatalogLogSourceUpdate) =>
-      put<CatalogLogSource>(`/catalog/log-sources/${logSourceId}`, body),
-    ["catalog-log-sources"],
+      put<ChangeAccepted>(`/catalog/log-sources/${logSourceId}`, body),
+    ["catalog-log-sources", ...PENDING],
   );
 export const useStartSync = () =>
   useChange(() => post<Schemas["SyncAccepted"]>("/catalog/sync"), []);
+/** Closing the kill switch is written at once (a flag state); opening it waits for a second
+ * admin (`{ change_id }`). */
 export const useSetFlag = (name: string) =>
   useChange(
     (body: Schemas["PlatformFlagUpdate"]) =>
-      put<PlatformFlagState>(`/admin/platform-flags/${encodeURIComponent(name)}`, body),
-    ["platform-flags"],
+      put<PlatformFlagState | ChangeAccepted>(
+        `/admin/platform-flags/${encodeURIComponent(name)}`,
+        body,
+      ),
+    ["platform-flags", ...PENDING],
   );
 export const useAddAsset = () =>
   useChange(
-    (body: CriticalAssetAdd) => post<CriticalAsset>("/critical-assets", body),
-    ["critical-assets"],
+    (body: CriticalAssetAdd) => post<ChangeAccepted>("/critical-assets", body),
+    ["critical-assets", ...PENDING],
   );
 export const useDeleteAsset = () =>
   useChange(
-    (id: string) => del<void>(`/critical-assets/${encodeURIComponent(id)}`),
-    ["critical-assets"],
+    (id: string) => del<ChangeAccepted>(`/critical-assets/${encodeURIComponent(id)}`),
+    ["critical-assets", ...PENDING],
   );
+// The decision on a request changes the objects it names, so every list they appear in refreshes.
+const DECIDED = [
+  ...PENDING,
+  "catalog-rules",
+  "catalog-log-sources",
+  "critical-assets",
+  "platform-flags",
+] as const;
+
+export const useApproveChange = (changeId: string) =>
+  useChange(() => post<ChangeItem>(`/changes/${encodeURIComponent(changeId)}/approve`), DECIDED);
+export const useRejectChange = (changeId: string) =>
+  useChange(
+    (comment: string) =>
+      post<ChangeItem>(`/changes/${encodeURIComponent(changeId)}/reject`, {
+        comment: comment.trim() ? comment : null,
+      }),
+    DECIDED,
+  );
+export const useWithdrawChange = (changeId: string) =>
+  useChange(() => post<ChangeItem>(`/changes/${encodeURIComponent(changeId)}/withdraw`), DECIDED);
 export const useSaveRecipients = (listName: string) =>
   useChange(
     (emails: string[]) =>
