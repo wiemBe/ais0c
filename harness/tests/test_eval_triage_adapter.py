@@ -9,7 +9,6 @@ from datetime import UTC, datetime, timedelta
 
 from pydantic_ai.messages import ModelMessage, ModelResponse, ToolCallPart
 from pydantic_ai.models.function import AgentInfo, FunctionModel
-from pydantic_ai.models.openai import OpenAIChatModel
 
 from ais0c_activities.model_release import load_model_releases
 from ais0c_activities.triage import evaluation_window
@@ -68,7 +67,6 @@ def test_the_model_is_the_alias_through_litellm_with_the_entry_settings() -> Non
 
     model = litellm_model(config, ENV)
 
-    assert isinstance(model, OpenAIChatModel)
     assert model.model_name == config.manifest.model_alias == "soc-fast"
     assert model.settings == config.registry_entry.model_settings()
     assert model.profile.get("supports_forced_tool_choice") is (

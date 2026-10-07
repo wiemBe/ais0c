@@ -60,18 +60,17 @@ def test_the_same_report_passes(baseline: Report) -> None:
 
 
 def test_another_model_release_is_expected_and_printed(baseline: Report) -> None:
-    release = triage_config().model_release.model_copy(
-        update={
-            "target": "hosted_vllm/deepseek-ai/DeepSeek-V4-Flash",
-            "artifact": "on-prem-artifact",
-        }
+    # Model names come from the registry: provider names stay out of harness/ (hard rule 3).
+    dev_release = triage_config().model_release
+    release = dev_release.model_copy(
+        update={"target": "hosted_vllm/example-org/model-a", "artifact": "on-prem-artifact"}
     )
     candidate = with_agent(baseline, model_release=release)
 
     result = compare_reports(baseline, candidate)
 
     assert result.exit_code == PASS
-    assert "'artifact': 'deepseek/deepseek-v4-flash'" in result.text
+    assert f"'artifact': '{dev_release.artifact}'" in result.text
     assert "'artifact': 'on-prem-artifact'" in result.text
 
 
