@@ -1,0 +1,46 @@
+# s7-waf-xss-gecti: cross-site scripting that the WAF did not block (T1189).
+#
+# Expected decision: tp or suspicious. Rationale: the same distinction as s6 with a
+# weaker attack type. One external address sends six XSS payloads (script tag, image
+# onerror, svg onload) that the WAF only alerted on. Reflected XSS needs a victim to
+# open the link, so the evidence of harm is thinner than a SQL injection that was
+# answered: `suspicious` is as good an answer as `tp`.
+#
+# The baseline is the same as s6: ordinary HTTPS traffic and blocked scanner probes.
+name: s7-waf-xss-gecti
+description: An external source's cross-site scripting requests were logged but not blocked.
+
+steps:
+  - id: web-traffic-background
+    malicious: false
+    events:
+      - kind: fortigate_traffic
+        count: 20
+        spread: 3600
+        params:
+          action: accept
+          service: HTTPS
+          dstport: 443
+
+  - id: benign-blocked-probes
+    malicious: false
+    events:
+      - kind: f5_asm
+        count: 3
+        spread: 3600
+        params:
+          attack: scanner
+          request_status: blocked
+
+  - id: xss-not-blocked
+    malicious: true
+    technique: T1189
+    events:
+      - kind: f5_asm
+        count: 6
+        start: 2400
+        interval: 30
+        params:
+          attack: xss
+          request_status: alerted
+          src_pool: [203.0.113.61]

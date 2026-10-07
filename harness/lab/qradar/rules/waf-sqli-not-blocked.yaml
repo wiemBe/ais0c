@@ -1,0 +1,18 @@
+# Scenario s6-waf-sqli-gecti.
+name: "AIS0C LAB - WAF SQL injection not blocked"
+scenario: s6-waf-sqli-gecti
+description: >-
+  F5 BIG-IP ASM logged SQL-Injection requests from one source and did not block them
+  (request_status alerted) (T1190).
+index_by: source_ip
+conditions:
+  - test: log_source_type
+    value: F5 Networks BIG-IP ASM
+  - test: payload_contains
+    value: attack_type="SQL-Injection"
+  - test: payload_contains
+    value: request_status="alerted"
+  - test: threshold
+    events: 5
+    window_seconds: 600
+    same: source_ip

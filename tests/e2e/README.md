@@ -14,7 +14,7 @@ Test `@pytest.mark.lab` ile işaretlidir. `QRADAR_LAB_URL` ve `QRADAR_LAB_TOKEN`
    - **Case worker** (`python -m ais0c_worker`): intake Schedule'ını kurar, ajanları `TemporalDurability` ile çalıştırır. Skill'ler `AIS0C_SKILLS_MODE=dev` ile yüklenir; dev router repodaki taslakları da aday gösterebilir.
 
    Token'lar her çalıştırmada rastgele üretilir ve pytest'in geçici dizinine yazılır.
-4. Schedule'ı bir kez tetikleyerek devreye alır, ardından T-008'in `s2-dcsync` senaryosunu lab QRadar'a syslog (TCP) ile gönderir.
+4. Schedule'ı bir kez tetikleyerek devreye alır, ardından seçilen lab senaryosunu (varsayılan T-008'in `s2-dcsync`'i) lab QRadar'a syslog (TCP) ile gönderir.
 5. Lab kuralı bir offense açar. Intake, offense'i gateway üzerinden okur (kriter 1) ve vakayı başlatır.
 6. Triage ajanının ilk model isteği sürerken worker'ı `SIGKILL` ile öldürür ve yenisini başlatır (kriter 4). `AIS0C_E2E_RESTART=0` ile bu adım atlanır; gecikme ölçümü için kesintisiz çalıştırma bu şekilde yapılır.
 7. Vaka karar verdiğinde aşağıdaki kontrolleri yapar ve ölçümleri yazar. Zincir SLA'yı aşarsa vaka arada `no_ai_decision` olur; test geç gelen kararı bekler (D-30).
@@ -45,13 +45,13 @@ Test `@pytest.mark.lab` ile işaretlidir. `QRADAR_LAB_URL` ve `QRADAR_LAB_TOKEN`
 
 3. **qradar-mcp fork'u (T-006):** Ayrı repodaki fork'un kurulu çalıştırılabilir dosyası, örneğin `<fork>/.venv/bin/qradar-mcp-fork`.
 
-4. **Lab kuralı:** QRadar'da `AIS0C LAB - DCSync by a non-machine account` adlı etkin bir kural bulunmalıdır. Kural şu koşulların hepsi sağlandığında event'i bir offense'e ekler ve offense'i kullanıcı adına göre indeksler:
+4. **Lab kuralı:** Seçilen senaryonun QRadar'da etkin bir kuralı bulunmalıdır (aşağıda "Senaryo seçimi"). Kurallar `harness/lab/qradar/` altında kaynak olarak durur ve tek bir eklenti zip'i olarak kurulur (README orada). DCSync kuralı (`s2-dcsync`, varsayılan) şu koşulların hepsi sağlandığında event'i bir offense'e ekler ve offense'i kullanıcı adına göre indeksler:
    - Log source tipi Microsoft Windows Security Event Log
    - QID 5000849 (4662, "An operation was performed on an object")
    - Payload `DS-Replication-Get-Changes` içerir
    - Event kullanıcı adı `$` ile bitmez ve `MSOL_` ile başlamaz
 
-   Kural lab yapılandırmasıdır ve repoda tutulmaz. Nasıl oluşturulduğu T-012 PR'ında yazılıdır.
+   Kuralın kaynağı repodadır (T-058); kurulumu lab'ı değiştirir ve kullanıcıdan veya onayıyla planner'dan gelir.
 
 ## Ortam değişkenleri
 
@@ -63,9 +63,28 @@ Test `@pytest.mark.lab` ile işaretlidir. `QRADAR_LAB_URL` ve `QRADAR_LAB_TOKEN`
 | `LITELLM_API_KEY` | `.env`'deki `LITELLM_MASTER_KEY` | yok |
 | `LITELLM_BASE_URL` | LiteLLM | `http://127.0.0.1:4000` |
 | `TEMPORAL_ADDRESS` | Temporal frontend | `127.0.0.1:7233` |
-| `AIS0C_E2E_SEED` | Senaryonun seed'i: `9` (hesap `bkupadmin`), `12` (hesap `svc_backup`) veya `75` (hesap `svc_sql`). Bu seed'lerde üç DCSync event'i aynı hesabı kullanır, bu yüzden tek offense açılır. | `9` |
+| `AIS0C_E2E_SCENARIO` | Lab senaryosu: `s2-dcsync`, `s4-kerberoasting`, `s5-password-spraying`, `s6-waf-sqli-gecti`, `s7-waf-xss-gecti`, `s8-waf-tarama-engellendi` veya `s9-onayli-tarayici` | `s2-dcsync` |
+| `AIS0C_E2E_SEED` | Senaryonun seed'i. Senaryonun offense anahtarı (kullanıcı adı veya kaynak IP) bu seed'de tek bir değer olmalıdır, yoksa kural birden çok offense açar ve test başlamadan durur. DCSync için `9` (`bkupadmin`), `12` (`svc_backup`) ve `75` (`svc_sql`) böyledir; diğer senaryolarda her seed uygundur. | `9` |
 | `AIS0C_E2E_RESTART` | `0`: worker'ı öldürüp yeniden başlatma adımını atlar | `1` |
 | `AIS0C_E2E_SYSLOG` | Syslog hedefi `host:port` | `<QRADAR_LAB_URL>:514` |
+
+## Senaryo seçimi
+
+`AIS0C_E2E_SCENARIO` senaryoyu seçer. Her senaryonun lab kuralı, offense'in anahtarı ve beklenen kararı şöyledir (kararın gerekçesi senaryo dosyasının başındadır):
+
+| Senaryo | Kural (`AIS0C LAB - ` ile başlar) | Offense anahtarı | Beklenen karar |
+|---|---|---|---|
+| `s2-dcsync` | DCSync by a non-machine account | kullanıcı (seed'e bağlı) | `tp` |
+| `s4-kerberoasting` | Kerberoasting RC4 service tickets | kullanıcı `branch.user05` | `tp` |
+| `s5-password-spraying` | Password spraying from one source | kaynak IP `10.50.7.23` | `tp` |
+| `s6-waf-sqli-gecti` | WAF SQL injection not blocked | kaynak IP `198.51.100.23` | `tp`, high |
+| `s7-waf-xss-gecti` | WAF cross-site scripting not blocked | kaynak IP `203.0.113.61` | `tp` veya `suspicious` |
+| `s8-waf-tarama-engellendi` | WAF signature volume from an external source | kaynak IP `192.0.2.88` | `fp` veya low |
+| `s9-onayli-tarayici` | WAF signature volume from an internal source | kaynak IP `10.30.5.10` | `fp` |
+
+Beklenen karar assert edilmez: ölçümdür. Rapor (`report.json` ve çıktı) `scenario` alanında senaryonun beklenen kararını ve zincirin kararını yan yana yazar. Senaryo seçimi `test_scenario_selection.py` ile (lab'sız) sınanır. `s3-vpn-yeni-ulke` ve `s1-arka-plan` seçilemez: offense açan kuralları yoktur.
+
+Bir senaryonun açık offense'i varsa test başlamadan durur; QRadar aynı anahtarın açık offense'ine event ekler. Offense'leri yalnızca planner kapatır.
 
 ## Çalıştırma
 

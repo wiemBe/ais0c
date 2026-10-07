@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import os
+import random
 import ssl
 import time
 import urllib.error
@@ -24,8 +25,11 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
+from ais0c_harness.loggen import synthetic
 from ais0c_harness.loggen.__main__ import build
+from ais0c_harness.loggen.formats import render
 from ais0c_harness.loggen.sender import open_target
+from ais0c_harness.loggen.templates import TEMPLATES, LogKind
 
 pytestmark = pytest.mark.lab
 
@@ -155,3 +159,80 @@ def test_windows_security_events_parse_with_the_windows_dsm() -> None:
     assert _has(rows, "logged on"), f"no parsed Windows logon event: {rows}"
     # The DCSync 4662 event (hunt pack H2) is the one the triage must catch.
     assert _has(rows, "operation was performed on an object"), f"no parsed 4662 event: {rows}"
+
+
+# --- T-058: the kinds the lab scenario set added ------------------------------------------
+#
+# Each kind sends at most two events, so no lab rule can open an offense from them
+# (offenses are opened by the planner only); the attack volume of a scenario is never
+# sent here. The marker is a value only that kind's events carry in the payload, which
+# keeps leftovers of earlier runs out of the result.
+
+
+def _send_events(kind: LogKind, params: dict[str, object], *, count: int = 2) -> None:
+    host = os.environ["QRADAR_LAB_URL"].split("://")[-1].split(":")[0]
+    rng = random.Random(58)  # noqa: S311 - reproducible test data
+    when = datetime.now(UTC) - timedelta(minutes=1)
+    lines = [
+        render(TEMPLATES[kind](rng, params, when + timedelta(seconds=n))) for n in range(count)
+    ]
+    for line in lines:
+        synthetic.assert_text_is_synthetic(line, where="lab format check")
+    with open_target(host, 514, "tcp") as target:
+        for line in lines:
+            target.send(line)
+
+
+def _parsed(log_source_type: str, marker: str, count: int) -> list[dict[str, object]]:
+    aql = (
+        "SELECT qid, QIDNAME(qid) AS q, username, sourceip, COUNT(*) AS n FROM events "  # noqa: S608
+        f"WHERE LOGSOURCETYPENAME(devicetype)='{log_source_type}' "
+        f"AND UTF8(payload) ILIKE '%{marker}%' GROUP BY qid, username, sourceip LAST 8 MINUTES"
+    )
+    rows = _poll_until(aql, lambda r: sum(_as_int(x["n"]) for x in r) >= count)
+    assert sum(_as_int(x["n"]) for x in rows) >= count, f"{log_source_type}: not ingested: {rows}"
+    assert all(_as_int(row["qid"]) != 0 for row in rows), f"landed unparsed: {rows}"
+    print(f"\n{log_source_type} {marker}: {rows}")
+    return rows
+
+
+def test_kerberos_service_tickets_parse_with_the_windows_dsm() -> None:
+    _send_events(
+        LogKind.WINDOWS_KERBEROS_TGS,
+        {
+            "encryption_type": "0x17",
+            "users": ["branch.user05"],
+            "services": ["svc_web", "svc_app"],
+            "hosts": ["DC-LAB-01"],
+        },
+    )
+    rows = _parsed("Microsoft Windows Security Event Log", "Ticket Encryption Type: 0x17", 2)
+    assert _has(rows, "kerberos service ticket")
+
+
+def test_kerberos_preauth_failures_parse_with_the_windows_dsm() -> None:
+    _send_events(
+        LogKind.WINDOWS_LOGON,
+        {
+            "event_id": "4771",
+            "users": ["branch.user06"],
+            "hosts": ["DC-LAB-01"],
+            "src_pool": ["10.50.7.24"],
+        },
+    )
+    rows = _parsed("Microsoft Windows Security Event Log", "Pre-Authentication Type: 2", 2)
+    assert _has(rows, "pre-authentication")
+
+
+def test_f5_asm_requests_parse_with_the_f5_dsm() -> None:
+    _send_events(
+        LogKind.F5_ASM,
+        {
+            "attack": "sqli",
+            "request_status": "alerted",
+            "src_pool": ["198.51.100.99"],
+            "user_agent": "lab-format-check",
+        },
+    )
+    rows = _parsed("F5 Networks BIG-IP ASM", "lab-format-check", 2)
+    assert rows

@@ -14,19 +14,134 @@ import urllib.error
 import urllib.request
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import IO, Final
 
 import httpx2
 import yaml
 
+from ais0c_harness.loggen.scenario import generate, load_scenario
+
 REPO_ROOT: Final = Path(__file__).resolve().parents[2]
 MODEL_REGISTRY: Final = "config/models/registry.dev.yaml"
-# The lab's test rule (tests/e2e/README.md, "Lab kuralı").
-LAB_RULE_NAME: Final = "AIS0C LAB - DCSync by a non-machine account"
-SCENARIO: Final = "s2-dcsync"
-# Seeds whose three DCSync events share one account, so the rule opens one offense.
+LAB_RULES_DIR: Final = REPO_ROOT / "harness" / "lab" / "qradar" / "rules"
+DEFAULT_SCENARIO: Final = "s2-dcsync"
+# Seeds the DCSync scenario's three events share one account for, so its rule opens one offense.
+# Seed 9 is the default and also the default of the other scenarios, whose key does not vary.
 SINGLE_ACCOUNT_SEEDS: Final = {"9": "bkupadmin", "12": "svc_backup", "75": "svc_sql"}
+
+
+@dataclass(frozen=True)
+class ScenarioSpec:
+    """A lab scenario the chain test can run (T-058): what it should decide, where its offense's
+    key comes from and which lab rule opens the offense.
+
+    The expected decision is a measurement reference, never an assertion: the report prints it
+    next to what the chain decided.
+    """
+
+    name: str
+    expected_verdict: str
+    expected_level: str
+    rationale: str
+    #: The steps whose events carry the offense's key (a user name or a source address).
+    key_steps: tuple[str, ...]
+
+    def lab_rule(self) -> tuple[str, str]:
+        """The name of the lab rule for this scenario and what it indexes offenses by
+        (`username` or `source_ip`), from the rule sources under harness/lab/qradar/rules."""
+        for path in sorted(LAB_RULES_DIR.glob("*.yaml")):
+            rule = yaml.safe_load(path.read_text(encoding="utf-8"))
+            if isinstance(rule, dict) and rule.get("scenario") == self.name:
+                return str(rule["name"]), str(rule["index_by"])
+        raise E2ESetupError(f"no lab rule source for {self.name} under {LAB_RULES_DIR}")
+
+    def offense_key(self, seed: int) -> str:
+        """The user name or source address the offense is indexed by with this seed. The
+        scenario's key steps must agree on one value, or the rule would open several offenses."""
+        _, index_by = self.lab_rule()
+        scenario = load_scenario(self.name)
+        events = generate(scenario, seed=seed, base_time=datetime(2026, 1, 1, tzinfo=UTC))
+        keys = {
+            generated.event.username if index_by == "username" else generated.event.src
+            for generated in events
+            if generated.label.step in self.key_steps
+        }
+        if len(keys) != 1:
+            raise E2ESetupError(
+                f"{self.name} with seed {seed} has {len(keys)} offense keys ({sorted(keys)}); "
+                "the lab rule would open one offense per key"
+            )
+        return keys.pop()
+
+    def comparison(self, verdict: str, level: str) -> dict[str, str]:
+        """The scenario's expected decision and the chain's, side by side, for the report."""
+        return {
+            "scenario": self.name,
+            "expected_verdict": self.expected_verdict,
+            "expected_level": self.expected_level,
+            "chain_verdict": verdict,
+            "chain_level": level,
+            "rationale": self.rationale,
+        }
+
+
+# The decisions are the scenario files' headers (harness/scenarios/s*.yaml) and T-78.
+SCENARIO_SPECS: Final = {
+    spec.name: spec
+    for spec in (
+        ScenarioSpec(
+            "s2-dcsync",
+            "tp",
+            "high",
+            "A non-machine account used directory-replication rights on a domain controller.",
+            ("dcsync-attack",),
+        ),
+        ScenarioSpec(
+            "s4-kerberoasting",
+            "tp",
+            "high",
+            "One account asked for RC4 tickets of eight service accounts in half a minute.",
+            ("kerberoast-requests",),
+        ),
+        ScenarioSpec(
+            "s5-password-spraying",
+            "tp",
+            "high",
+            "One source failed logons on twelve accounts, then one logon succeeded.",
+            ("spray-failed-logons", "spray-kerberos-preauth-failures", "spray-success"),
+        ),
+        ScenarioSpec(
+            "s6-waf-sqli-gecti",
+            "tp",
+            "high",
+            "SQL injection that the WAF only alerted on; the application answered it.",
+            ("sqli-not-blocked",),
+        ),
+        ScenarioSpec(
+            "s7-waf-xss-gecti",
+            "tp or suspicious",
+            "medium",
+            "Cross-site scripting that the WAF only alerted on.",
+            ("xss-not-blocked",),
+        ),
+        ScenarioSpec(
+            "s8-waf-tarama-engellendi",
+            "fp or low",
+            "low",
+            "An external scanner whose every request the WAF blocked.",
+            ("external-scan-blocked",),
+        ),
+        ScenarioSpec(
+            "s9-onayli-tarayici",
+            "fp",
+            "low",
+            "The bank's own scanner in its maintenance window, every request blocked.",
+            ("approved-scan-blocked",),
+        ),
+    )
+}
 
 
 class E2ESetupError(RuntimeError):
@@ -45,6 +160,7 @@ class LabSettings:
     temporal_address: str
     syslog_target: str
     seed: str
+    scenario: str
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> "LabSettings":
@@ -63,9 +179,16 @@ class LabSettings:
         if missing:
             raise E2ESetupError(f"set {', '.join(missing)} (tests/e2e/README.md)")
         host = env["QRADAR_LAB_URL"].strip().removeprefix("https://").rstrip("/")
+        scenario = env.get("AIS0C_E2E_SCENARIO", "").strip() or DEFAULT_SCENARIO
+        if scenario not in SCENARIO_SPECS:
+            raise E2ESetupError(
+                f"AIS0C_E2E_SCENARIO must be one of {', '.join(SCENARIO_SPECS)}, not {scenario!r}"
+            )
         seed = env.get("AIS0C_E2E_SEED", "9").strip()
-        if seed not in SINGLE_ACCOUNT_SEEDS:
-            raise E2ESetupError(f"AIS0C_E2E_SEED must be one of {', '.join(SINGLE_ACCOUNT_SEEDS)}")
+        if not seed.isdecimal():
+            raise E2ESetupError("AIS0C_E2E_SEED must be a number")
+        # One offense key per run: for DCSync only some seeds give the three events one account.
+        SCENARIO_SPECS[scenario].offense_key(int(seed))
         return cls(
             qradar_host=host,
             qradar_token=env["QRADAR_LAB_TOKEN"].strip(),
@@ -77,12 +200,22 @@ class LabSettings:
             temporal_address=env.get("TEMPORAL_ADDRESS", "").strip() or "127.0.0.1:7233",
             syslog_target=env.get("AIS0C_E2E_SYSLOG", "").strip() or f"{host.split(':')[0]}:514",
             seed=seed,
+            scenario=scenario,
         )
 
     @property
-    def attacker(self) -> str:
-        """The account the scenario's DCSync events use with this seed."""
-        return SINGLE_ACCOUNT_SEEDS[self.seed]
+    def spec(self) -> ScenarioSpec:
+        return SCENARIO_SPECS[self.scenario]
+
+    @property
+    def rule_name(self) -> str:
+        """The lab rule that opens this scenario's offense."""
+        return self.spec.lab_rule()[0]
+
+    @property
+    def offense_key(self) -> str:
+        """The user name or source address this run's offense is indexed by."""
+        return self.spec.offense_key(int(self.seed))
 
 
 def agent_profile(agent: str) -> str:

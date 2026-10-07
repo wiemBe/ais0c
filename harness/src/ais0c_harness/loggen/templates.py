@@ -7,7 +7,7 @@ never how the bytes look. Keeping the two apart means a scenario can be read
 without knowing FortiGate or WinCollect syntax, and a format can be checked
 without replaying a scenario.
 
-Two real vendors cover the three scenarios:
+Three real vendors cover the scenarios:
 
 * **FortiGate** (``fortigate_vpn``, ``fortigate_traffic``) — one appliance does
   SSL VPN and firewalling, and its logs carry ``srccountry`` as an explicit
@@ -15,7 +15,13 @@ Two real vendors cover the three scenarios:
   without relying on GeoIP over synthetic documentation addresses.
 * **Microsoft Windows Security Event Log via WinCollect** (``windows_logon``,
   ``windows_dcsync``) — the stock QRadar DSM parses this, and event 4662 with
-  the directory-replication access rights is the H2 DCSync signal.
+  the directory-replication access rights is the H2 DCSync signal. Kerberos
+  service tickets (``windows_kerberos_tgs``, 4769) and pre-authentication
+  failures (4771, a ``windows_logon`` event id) came with T-058.
+* **F5 BIG-IP ASM** (``f5_asm``) — the web application firewall syslog, for the
+  WAF scenarios of T-058. The bank's own WAF brand is unknown (T-78), so this is
+  the lab's installed DSM; another brand changes only this template and its
+  renderer.
 """
 
 from __future__ import annotations
@@ -45,6 +51,8 @@ class LogKind(enum.StrEnum):
     FORTIGATE_TRAFFIC = "fortigate_traffic"
     WINDOWS_LOGON = "windows_logon"
     WINDOWS_DCSYNC = "windows_dcsync"
+    WINDOWS_KERBEROS_TGS = "windows_kerberos_tgs"
+    F5_ASM = "f5_asm"
 
 
 @dataclass(frozen=True)
@@ -63,6 +71,8 @@ DSM_BINDINGS: dict[LogKind, DsmBinding] = {
     LogKind.FORTIGATE_TRAFFIC: DsmBinding("Fortinet FortiGate Security Gateway", 73),
     LogKind.WINDOWS_LOGON: DsmBinding("Microsoft Windows Security Event Log", 12),
     LogKind.WINDOWS_DCSYNC: DsmBinding("Microsoft Windows Security Event Log", 12),
+    LogKind.WINDOWS_KERBEROS_TGS: DsmBinding("Microsoft Windows Security Event Log", 12),
+    LogKind.F5_ASM: DsmBinding("F5 Networks BIG-IP ASM", 213),
 }
 
 
@@ -194,10 +204,10 @@ def build_fortigate_traffic(
 
 
 def build_windows_logon(rng: random.Random, params: Mapping[str, object], when: datetime) -> Event:
-    """A Windows logon event (4624 success / 4625 failure)."""
+    """A Windows logon event (4624 success, 4625 failure, 4771 Kerberos pre-auth failure)."""
     event_id = str(params.get("event_id", "4624"))
-    if event_id not in {"4624", "4625"}:
-        raise ValueError("windows_logon event_id must be '4624' or '4625'")
+    if event_id not in {"4624", "4625", "4771"}:
+        raise ValueError("windows_logon event_id must be '4624', '4625' or '4771'")
     logon_type = str(params.get("logon_type", "3"))
     user = _pick_user(rng, params)
     host = _pick_host(rng, params)
@@ -211,6 +221,86 @@ def build_windows_logon(rng: random.Random, params: Mapping[str, object], when: 
         username=user,
         action="success" if event_id == "4624" else "failure",
         extra={"event_id": event_id, "logon_type": logon_type},
+    )
+
+
+def build_windows_kerberos_tgs(
+    rng: random.Random, params: Mapping[str, object], when: datetime
+) -> Event:
+    """A Kerberos service-ticket request (4769).
+
+    ``encryption_type`` is the ticket's cipher: ``0x12`` (AES256) is the normal
+    request, ``0x17`` (RC4) is what Kerberoasting asks for (T1558.003).
+    """
+    encryption_type = str(params.get("encryption_type", "0x12"))
+    if encryption_type not in TICKET_ENCRYPTION_TYPES:
+        raise ValueError(
+            f"windows_kerberos_tgs encryption_type must be one of {sorted(TICKET_ENCRYPTION_TYPES)}"
+        )
+    user = _pick_user(rng, params)
+    service = rng.choice(_str_list(params, "services"))
+    if service not in synthetic.SYNTHETIC_SPN_ACCOUNTS:
+        raise synthetic.SyntheticDataError(f"scenario services: non-synthetic service {service!r}")
+    host = _pick_host(rng, params)
+    return Event(
+        kind=LogKind.WINDOWS_KERBEROS_TGS,
+        when=when,
+        host=host,
+        src=_internal_src(rng),
+        dst=host,
+        username=user,
+        action="ticket-request",
+        extra={
+            "event_id": "4769",
+            "service": service,
+            "encryption_type": encryption_type,
+            "client_port": str(rng.randint(49152, 65535)),
+        },
+    )
+
+
+def build_f5_asm(rng: random.Random, params: Mapping[str, object], when: datetime) -> Event:
+    """A BIG-IP ASM request log: one request, with the policy's decision on it.
+
+    ``attack`` names the signature family (``sqli``, ``xss`` or ``scan``, the last
+    drawing a different family per request, as a scanner does). ``request_status``
+    is ``blocked`` (the policy stopped the request) or ``alerted`` (it was logged and
+    passed on, so the application saw it).
+    """
+    attack = str(_require(params, "attack"))
+    if attack != "scan" and attack not in ASM_ATTACKS:
+        raise ValueError(f"f5_asm attack must be 'scan' or one of {sorted(ASM_ATTACKS)}")
+    status = str(_require(params, "request_status"))
+    if status not in {"blocked", "alerted"}:
+        raise ValueError("f5_asm request_status must be 'blocked' or 'alerted'")
+    family = rng.choice(sorted(ASM_ATTACKS)) if attack == "scan" else attack
+    profile = ASM_ATTACKS[family]
+    payload = rng.choice(profile.payloads)
+    host = _pick_host(rng, params, "hosts") if "hosts" in params else "waf-prod-01"
+    user_agent = str(params.get("user_agent", "Mozilla/5.0 (X11; Linux x86_64)"))
+    synthetic.assert_text_is_synthetic(user_agent, where="scenario user_agent")
+    return Event(
+        kind=LogKind.F5_ASM,
+        when=when,
+        host=host,
+        src=_doc_ip(rng, params, "src_pool"),
+        dst=f"10.10.{rng.randint(0, 7)}.{rng.randint(2, 254)}",
+        username="N/A",
+        action=status,
+        extra={
+            "attack_type": profile.attack_type,
+            "violations": profile.violations,
+            "sig_ids": profile.sig_id,
+            "sig_names": profile.sig_name,
+            "severity": profile.severity,
+            "violation_rating": profile.rating,
+            "uri": rng.choice(ASM_URIS),
+            "query_string": payload,
+            "method": "GET",
+            "user_agent": user_agent,
+            "src_port": str(rng.randint(1024, 65535)),
+            "support_id": str(rng.randint(10**18, 10**19 - 1)),
+        },
     )
 
 
@@ -237,6 +327,86 @@ def build_windows_dcsync(rng: random.Random, params: Mapping[str, object], when:
     )
 
 
+#: Ticket encryption types of 4769 that a scenario may ask for.
+TICKET_ENCRYPTION_TYPES: frozenset[str] = frozenset({"0x12", "0x17"})
+
+
+@dataclass(frozen=True)
+class AsmAttack:
+    """One ASM attack signature family and the request content that trips it."""
+
+    attack_type: str
+    violations: str
+    sig_id: str
+    sig_name: str
+    severity: str
+    rating: str
+    payloads: tuple[str, ...]
+
+
+# Names and ids follow the ASM attack-signature set (SQL-Injection, XSS, ...). The
+# payloads are textbook probes with no working exploit content. They carry no double
+# quote, which would end the quoted field in the ASM key="value" syslog line.
+ASM_ATTACKS: dict[str, AsmAttack] = {
+    "sqli": AsmAttack(
+        "SQL-Injection",
+        "Attack signature detected",
+        "200002147",
+        "SQL-INJ union select (Parameter)",
+        "Critical",
+        "5",
+        (
+            "id=1' or '1'='1",
+            "id=1 union select null,null",
+            "user=admin'--",
+            "q=1; select pg_sleep(5)",
+        ),
+    ),
+    "xss": AsmAttack(
+        "Cross Site Scripting (XSS)",
+        "Attack signature detected",
+        "200000098",
+        "XSS script tag (Parameter) (Parameter)",
+        "Critical",
+        "4",
+        (
+            "q=<script>alert(1)</script>",
+            "name=<img src=x onerror=alert(1)>",
+            "s=<svg onload=alert(1)>",
+        ),
+    ),
+    "traversal": AsmAttack(
+        "Path Traversal",
+        "Attack signature detected",
+        "200018000",
+        "Directory traversal attempt (URI)",
+        "Error",
+        "3",
+        ("file=../../etc/passwd", "path=..%2f..%2fboot%2fconfig"),
+    ),
+    "command": AsmAttack(
+        "Command Execution",
+        "Attack signature detected",
+        "200004015",
+        "Command execution attempt (Parameter)",
+        "Critical",
+        "5",
+        ("cmd=;cat /etc/passwd", "host=127.0.0.1|id"),
+    ),
+    "scanner": AsmAttack(
+        "Vulnerability Scan",
+        "Attack signature detected",
+        "200010003",
+        "Vulnerability scanner probe (Header)",
+        "Warning",
+        "2",
+        ("debug=1", "test=cgi-bin/test-cgi"),
+    ),
+}
+
+ASM_URIS: tuple[str, ...] = ("/login", "/search", "/account/statement", "/api/v1/branches", "/help")
+
+
 def _internal_src(rng: random.Random) -> str:
     return f"192.168.10.{rng.randint(2, 254)}"
 
@@ -260,4 +430,6 @@ TEMPLATES: dict[LogKind, Builder] = {
     LogKind.FORTIGATE_TRAFFIC: build_fortigate_traffic,
     LogKind.WINDOWS_LOGON: build_windows_logon,
     LogKind.WINDOWS_DCSYNC: build_windows_dcsync,
+    LogKind.WINDOWS_KERBEROS_TGS: build_windows_kerberos_tgs,
+    LogKind.F5_ASM: build_f5_asm,
 }

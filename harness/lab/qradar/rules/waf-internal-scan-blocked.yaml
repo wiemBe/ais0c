@@ -1,0 +1,19 @@
+# Scenario s9-onayli-tarayici.
+name: "AIS0C LAB - WAF signature volume from an internal source"
+scenario: s9-onayli-tarayici
+description: >-
+  Many attack-signature requests from one source inside the private ranges, all
+  blocked by the F5 BIG-IP ASM policy. Opens an offense for the internal scanner; the
+  maintenance window is not something a rule can know.
+index_by: source_ip
+conditions:
+  - test: log_source_type
+    value: F5 Networks BIG-IP ASM
+  - test: payload_contains
+    value: request_status="blocked"
+  - test: source_ip_in
+    value: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16]
+  - test: threshold
+    events: 20
+    window_seconds: 300
+    same: source_ip

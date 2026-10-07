@@ -1,0 +1,18 @@
+# Scenario s7-waf-xss-gecti.
+name: "AIS0C LAB - WAF cross-site scripting not blocked"
+scenario: s7-waf-xss-gecti
+description: >-
+  F5 BIG-IP ASM logged Cross Site Scripting requests from one source and did not
+  block them (request_status alerted) (T1189).
+index_by: source_ip
+conditions:
+  - test: log_source_type
+    value: F5 Networks BIG-IP ASM
+  - test: payload_contains
+    value: attack_type="Cross Site Scripting (XSS)"
+  - test: payload_contains
+    value: request_status="alerted"
+  - test: threshold
+    events: 4
+    window_seconds: 600
+    same: source_ip

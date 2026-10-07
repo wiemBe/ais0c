@@ -1,0 +1,127 @@
+# s4-kerberoasting: Kerberoasting against service accounts (T1558.003).
+#
+# Expected decision: tp. Rationale: one user account requests service tickets for
+# eight different service accounts in 24 seconds (two tickets for each, one block
+# per service so that all eight are always present), every ticket encrypted with
+# RC4 (0x17), while the same user has no history of ticket requests. A clear Active
+# Directory attack that the chain must not miss.
+#
+# The baseline is ordinary: logons, AES256 (0x12) ticket requests by three users for
+# three services, and two old-application RC4 requests, so "RC4" alone is not the
+# signal; the burst of distinct services from one account is.
+name: s4-kerberoasting
+description: A user account requests RC4 service tickets for many services in seconds.
+
+steps:
+  - id: windows-logon-background
+    malicious: false
+    events:
+      - kind: windows_logon
+        count: 10
+        spread: 3600
+        params:
+          event_id: "4624"
+          logon_type: "3"
+          users: [analyst1, helpdesk1]
+          hosts: [DC-LAB-01, FILE-SRV-01]
+
+  - id: benign-ticket-requests-aes
+    malicious: false
+    events:
+      - kind: windows_kerberos_tgs
+        count: 12
+        spread: 3600
+        params:
+          encryption_type: "0x12"
+          users: [analyst1, helpdesk1, vpn.user1]
+          services: [svc_web, svc_file, svc_mail]
+          hosts: [DC-LAB-01]
+
+  - id: benign-legacy-rc4
+    malicious: false
+    events:
+      - kind: windows_kerberos_tgs
+        count: 2
+        spread: 3600
+        params:
+          encryption_type: "0x17"
+          users: [analyst1]
+          services: [svc_file]
+          hosts: [DC-LAB-01]
+
+  - id: kerberoast-requests
+    malicious: true
+    technique: T1558.003
+    events:
+      - kind: windows_kerberos_tgs
+        count: 2
+        start: 2400
+        interval: 1
+        params:
+          encryption_type: "0x17"
+          users: [branch.user05]
+          services: [svc_web]
+          hosts: [DC-LAB-01]
+      - kind: windows_kerberos_tgs
+        count: 2
+        start: 2403
+        interval: 1
+        params:
+          encryption_type: "0x17"
+          users: [branch.user05]
+          services: [svc_app]
+          hosts: [DC-LAB-01]
+      - kind: windows_kerberos_tgs
+        count: 2
+        start: 2406
+        interval: 1
+        params:
+          encryption_type: "0x17"
+          users: [branch.user05]
+          services: [svc_file]
+          hosts: [DC-LAB-01]
+      - kind: windows_kerberos_tgs
+        count: 2
+        start: 2409
+        interval: 1
+        params:
+          encryption_type: "0x17"
+          users: [branch.user05]
+          services: [svc_print]
+          hosts: [DC-LAB-01]
+      - kind: windows_kerberos_tgs
+        count: 2
+        start: 2412
+        interval: 1
+        params:
+          encryption_type: "0x17"
+          users: [branch.user05]
+          services: [svc_mail]
+          hosts: [DC-LAB-01]
+      - kind: windows_kerberos_tgs
+        count: 2
+        start: 2415
+        interval: 1
+        params:
+          encryption_type: "0x17"
+          users: [branch.user05]
+          services: [svc_report]
+          hosts: [DC-LAB-01]
+      - kind: windows_kerberos_tgs
+        count: 2
+        start: 2418
+        interval: 1
+        params:
+          encryption_type: "0x17"
+          users: [branch.user05]
+          services: [svc_sql]
+          hosts: [DC-LAB-01]
+      - kind: windows_kerberos_tgs
+        count: 2
+        start: 2421
+        interval: 1
+        params:
+          encryption_type: "0x17"
+          users: [branch.user05]
+          services: [svc_backup]
+          hosts: [DC-LAB-01]

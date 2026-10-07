@@ -31,10 +31,8 @@ from typing import Any
 import pytest
 from e2e_support import (
     AGENTS_WITH_TOOLS,
-    LAB_RULE_NAME,
     MODEL_REGISTRY,
     REPO_ROOT,
-    SCENARIO,
     E2ESetupError,
     LabSettings,
     Process,
@@ -134,6 +132,7 @@ async def test_a_lab_offense_is_triaged_end_to_end(
 ) -> None:
     rule_id = await _lab_rule_id(settings)
     await _no_open_offense_for(settings, rule_id)
+    print(f"scenario {settings.scenario}, offense key {settings.offense_key}")
     secrets_dir = tmp_path / "secrets"
     secrets_dir.mkdir(mode=0o700)
     logs = tmp_path / "logs"
@@ -289,6 +288,9 @@ async def test_a_lab_offense_is_triaged_end_to_end(
         assert max(_attempts(history)) >= 2
 
     report = _report(seen, case, run, calls, evidence, history, sent_at, restart)
+    # The expected decision is a measurement reference, not an assertion (T-058 criterion 5).
+    level = None if case.ai_level is None else case.ai_level.value
+    report["scenario"] = settings.spec.comparison(case.verdict.value, str(level))
     report["chain"] = chain.summary()
     (tmp_path / "report.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
     print(json.dumps(report, indent=2))
@@ -301,10 +303,10 @@ async def _lab_rule_id(settings: LabSettings) -> int:
     rules = await qradar_get(
         settings,
         "/analytics/rules",
-        {"fields": "id,name,enabled", "filter": f'name = "{LAB_RULE_NAME}"'},
+        {"fields": "id,name,enabled", "filter": f'name = "{settings.rule_name}"'},
     )
     if not rules or rules[0].get("enabled") is not True or not isinstance(rules[0].get("id"), int):
-        pytest.skip(f"the lab has no enabled rule {LAB_RULE_NAME!r} (tests/e2e/README.md)")
+        pytest.skip(f"the lab has no enabled rule {settings.rule_name!r} (tests/e2e/README.md)")
     rule_id = rules[0]["id"]
     assert isinstance(rule_id, int)
     return rule_id
@@ -325,9 +327,9 @@ async def _no_open_offense_for(settings: LabSettings, rule_id: int) -> None:
             if isinstance(rules, list)
             else set()
         )
-        if rule_id in ids and offense.get("offense_source") == settings.attacker:
+        if rule_id in ids and offense.get("offense_source") == settings.offense_key:
             pytest.fail(
-                f"offense {offense.get('id')} of the lab rule for {settings.attacker} is still "
+                f"offense {offense.get('id')} of the lab rule for {settings.offense_key} is still "
                 "open; close it in QRadar or use the other AIS0C_E2E_SEED (tests/e2e/README.md)"
             )
 
@@ -385,7 +387,6 @@ def _send_scenario(settings: LabSettings, tmp_path: Path) -> None:
             "ais0c_harness.loggen",
             "run",
             "--scenario",
-            SCENARIO,
             "--target",
             settings.syslog_target,
             "--seed",

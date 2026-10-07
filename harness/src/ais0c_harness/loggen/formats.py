@@ -6,6 +6,8 @@ formats are modelled on real samples:
 
 * FortiGate: the ``key=value`` FortiOS event/traffic format from the FortiOS Log
   Message Reference and IBM's FortiGate DSM sample messages.
+* F5 BIG-IP ASM: the ``ASM:key="value",...`` request log of the ASM logging
+  profile, as in IBM's F5 BIG-IP ASM DSM sample messages.
 * Windows: the WinCollect ``AgentDevice=WindowsLog`` MSEVEN6 format the stock
   Microsoft Windows Security Event Log DSM parses.
 
@@ -17,6 +19,8 @@ from __future__ import annotations
 
 from datetime import UTC
 
+from .synthetic import LAB_DOMAIN as _LAB_DOMAIN
+from .synthetic import LAB_NETBIOS_DOMAIN as _NETBIOS_DOMAIN
 from .templates import Event, LogKind
 
 # Facility 16 (local0) / severity 6 (info) -> PRI 134, as appliances send.
@@ -116,6 +120,7 @@ def render_fortigate_traffic(event: Event) -> str:
 _WINDOWS_LOGON_MESSAGE = {
     "4624": "An account was successfully logged on.",
     "4625": "An account failed to log on.",
+    "4771": "Kerberos pre-authentication failed.",
 }
 
 # WinCollect separates its name=value fields with a tab, and the QRadar Microsoft
@@ -155,6 +160,8 @@ def _wincollect_prefix(event: Event, *, keywords: str, task: str) -> list[str]:
 
 def render_windows_logon(event: Event) -> str:
     event_id = event.extra["event_id"]
+    if event_id == "4771":
+        return _render_kerberos_preauth_failure(event)
     success = event_id == "4624"
     keywords = "Audit Success" if success else "Audit Failure"
     message = (
@@ -170,6 +177,96 @@ def render_windows_logon(event: Event) -> str:
         f"Message={message}",
     ]
     return _render_wincollect(event, fields)
+
+
+def _render_kerberos_preauth_failure(event: Event) -> str:
+    """4771: the domain controller refused a pre-authentication (bad password, 0x18)."""
+    message = (
+        f"{_WINDOWS_LOGON_MESSAGE['4771']} "
+        f"Account Information: Security ID: {_sid(event.username)} "
+        f"Account Name: {event.username} "
+        "Service Information: Service Name: krbtgt/BANK "
+        f"Network Information: Client Address: ::ffff:{event.src} Client Port: 49152 "
+        "Additional Information: Ticket Options: 0x40810010 Failure Code: 0x18 "
+        "Pre-Authentication Type: 2"
+    )
+    fields = [
+        *_wincollect_prefix(event, keywords="Audit Failure", task="SE_ADT_ACCOUNT_LOGON"),
+        f"Message={message}",
+    ]
+    return _render_wincollect(event, fields)
+
+
+def render_windows_kerberos_tgs(event: Event) -> str:
+    """4769: a service ticket was requested for ``ServiceName``."""
+    message = (
+        "A Kerberos service ticket was requested. "
+        f"Account Information: Account Name: {event.username} "
+        f"Account Domain: {_NETBIOS_DOMAIN} "
+        "Logon GUID: {00000000-0000-0000-0000-000000000000} "
+        f"Service Information: Service Name: {event.extra['service']} "
+        f"Service ID: {_sid(event.extra['service'])} "
+        f"Network Information: Client Address: ::ffff:{event.src} "
+        f"Client Port: {event.extra['client_port']} "
+        "Additional Information: Ticket Options: 0x40810000 "
+        f"Ticket Encryption Type: {event.extra['encryption_type']} "
+        "Failure Code: 0x0 Transited Services: -"
+    )
+    fields = [
+        *_wincollect_prefix(event, keywords="Audit Success", task="SE_ADT_ACCOUNT_LOGON"),
+        f"Message={message}",
+    ]
+    return _render_wincollect(event, fields)
+
+
+def render_f5_asm(event: Event) -> str:
+    """The ASM request log. ``request_status`` carries the policy's decision."""
+    moment = event.when.astimezone(UTC)
+    stamp = f"{moment:%Y-%m-%d %H:%M:%S}"
+    uri = event.extra["uri"]
+    query = event.extra["query_string"]
+    request = (
+        f"{event.extra['method']} {uri}?{query} HTTP/1.1 User-Agent: {event.extra['user_agent']}"
+    )
+    blocked = event.action == "blocked"
+    fields = [
+        ("unit_hostname", f"{event.host}.{_LAB_DOMAIN}"),
+        ("management_ip_address", "10.10.0.5"),
+        ("http_class_name", "/Common/bank_web_policy"),
+        ("web_application_name", "/Common/bank_web_policy"),
+        ("policy_name", "/Common/bank_web_policy"),
+        ("policy_apply_date", "2026-01-01 00:00:00"),
+        ("violations", event.extra["violations"]),
+        ("support_id", event.extra["support_id"]),
+        ("request_status", event.action),
+        ("response_code", "0" if blocked else "200"),
+        ("ip_client", event.src),
+        ("route_domain", "0"),
+        ("method", event.extra["method"]),
+        ("protocol", "HTTP"),
+        ("query_string", query),
+        ("x_forwarded_for_header_value", "N/A"),
+        ("sig_ids", event.extra["sig_ids"]),
+        ("sig_names", event.extra["sig_names"]),
+        ("date_time", stamp),
+        ("severity", event.extra["severity"]),
+        ("attack_type", event.extra["attack_type"]),
+        ("geo_location", "N/A"),
+        ("ip_address_intelligence", "N/A"),
+        ("username", event.username),
+        ("session_id", "0"),
+        ("src_port", event.extra["src_port"]),
+        ("dest_port", "443"),
+        ("dest_ip", event.dst),
+        ("sub_violations", "N/A"),
+        ("virus_name", "N/A"),
+        ("violation_rating", event.extra["violation_rating"]),
+        ("vs_name", "/Common/bank_web_vs"),
+        ("uri", uri),
+        ("request", request),
+    ]
+    body = ",".join(f'{key}="{value}"' for key, value in fields)
+    return f"{_rfc3164_header(event)} ASM:{body}"
 
 
 def render_windows_dcsync(event: Event) -> str:
@@ -206,6 +303,8 @@ RENDERERS = {
     LogKind.FORTIGATE_TRAFFIC: render_fortigate_traffic,
     LogKind.WINDOWS_LOGON: render_windows_logon,
     LogKind.WINDOWS_DCSYNC: render_windows_dcsync,
+    LogKind.WINDOWS_KERBEROS_TGS: render_windows_kerberos_tgs,
+    LogKind.F5_ASM: render_f5_asm,
 }
 
 

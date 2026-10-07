@@ -1,0 +1,40 @@
+# s9-onayli-tarayici: the bank's own vulnerability scanner, in its maintenance window.
+#
+# Expected decision: fp. Rationale: the harmlessness is in the logs, not in a note.
+# Every request comes from 10.30.5.10, an address inside the bank's network; all 40
+# are blocked by the WAF (`request_status="blocked"`); every request matches an attack
+# signature and there is no other request from that address (no logon, no page visit);
+# and each carries the scanner's own user agent with the change ticket of the
+# maintenance window, `LabVulnScan/3.2 (maintenance-window CHG-LAB-0042)`. A lab run
+# sends the events at the time it is run, so the window cannot be shown by the
+# timestamp; the user agent's change ticket is what the logs say about it.
+#
+# This is the one scenario where a verdict of `fp` is right and a sure one: nothing
+# is malicious, and the chain should say so on this evidence.
+name: s9-onayli-tarayici
+description: An internal scanner's blocked signature traffic during a maintenance window.
+
+steps:
+  - id: web-traffic-background
+    malicious: false
+    events:
+      - kind: fortigate_traffic
+        count: 20
+        spread: 3600
+        params:
+          action: accept
+          service: HTTPS
+          dstport: 443
+
+  - id: approved-scan-blocked
+    malicious: false
+    events:
+      - kind: f5_asm
+        count: 40
+        start: 2400
+        interval: 3
+        params:
+          attack: scan
+          request_status: blocked
+          src_pool: [10.30.5.10]
+          user_agent: LabVulnScan/3.2 (maintenance-window CHG-LAB-0042)

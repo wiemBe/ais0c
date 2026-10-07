@@ -309,6 +309,31 @@ The first three scenarios (acceptance criterion 5):
 | `s2-dcsync` | A non-machine account using directory-replication rights on a DC (event 4662, hunt pack H2 / T1003.006). Includes the benign replication the H2 rule must not flag: the `MSOL_` Azure AD Connect account and the DCs' own machine accounts. |
 | `s3-vpn-yeni-ulke` | A user's first VPN login from a never-before-seen country (T1133), followed by that account reaching internal hosts (T1078). Hunt pack H1. |
 
+The lab scenario set of T-058 (decision T-78). Each file's header states the decision the
+chain is expected to reach and why; the e2e test prints it next to the chain's own decision
+(`tests/e2e/README.md`). The expected decision is a measurement reference, not an assertion.
+
+| Scenario | Logs | Expected | What it measures |
+|---|---|---|---|
+| `s4-kerberoasting` | Windows 4769: one user account asks for RC4 (0x17) tickets of eight service accounts in 24 seconds | `tp` | Not missing a clear AD attack |
+| `s5-password-spraying` | Windows 4625 and 4771: one source, twelve accounts, a few tries each, then one 4624 | `tp` | A clear attack; storm and grouping (T-027) |
+| `s6-waf-sqli-gecti` | F5 ASM: eight SQL-Injection requests from one external source, `request_status="alerted"` | `tp`, high | A web attack that reached the application |
+| `s7-waf-xss-gecti` | F5 ASM: six XSS requests, `alerted` | `tp` or `suspicious` | The same split with another attack type |
+| `s8-waf-tarama-engellendi` | F5 ASM: 40 signature hits of five families from an external scanner, all `blocked` | `fp` or low | Calling noise noise |
+| `s9-onayli-tarayici` | F5 ASM: 40 signature hits from the bank's internal scanner, all `blocked`, with the maintenance window's change ticket in the user agent | `fp` | A real false positive that the logs prove harmless |
+
+`s2-dcsync` (`tp`) and `s3-vpn-yeni-ulke` (unclear) stay in the set; `s3` has no lab rule, so the
+chain test does not select it. `s8` steps are labelled `malicious` (hostile reconnaissance) while
+the expected decision is `fp`/low: the label is about the traffic's origin, the decision about
+its impact. `s9` is labelled benign throughout.
+
+A lab run sends events at the time it is run, so `s9` cannot show its maintenance window with the
+timestamp; the scanner's user agent carries the change ticket instead. With `--base-time` an
+offline run places the events inside any window.
+
+The lab's offenses come from rules that are not in QRadar by default: they are the sources under
+`harness/lab/qradar/` (README there) and installed from one extension zip.
+
 ## Log source types, DSMs and formats (acceptance criterion 6)
 
 The bank's real firewall and VPN vendors are not yet known, so the first version
@@ -322,6 +347,9 @@ lab QRadar 7.6.0 FP1 (API 29.0): the events map to a real QID, not the unparsed
 | `fortigate_traffic` | FortiOS `key=value` forward-traffic log (`logid` 0000000013) | Fortinet FortiGate Security Gateway (73) | Firewall Permit, Firewall Deny |
 | `windows_logon` | WinCollect MSEVEN6 syslog (Security 4624 / 4625) | Microsoft Windows Security Event Log (12) | Success/Failed logon (4624/4625) |
 | `windows_dcsync` | WinCollect MSEVEN6 syslog (Security 4662) | Microsoft Windows Security Event Log (12) | An operation was performed on an object (4662) |
+| `windows_kerberos_tgs` (T-058) | WinCollect MSEVEN6 syslog (Security 4769, `Ticket Encryption Type`, `Service Name`) | Microsoft Windows Security Event Log (12) | QID 5000938 "Success Audit: A Kerberos service ticket was granted" |
+| `windows_logon` with `event_id: "4771"` (T-058) | WinCollect MSEVEN6 syslog (Security 4771, `Failure Code: 0x18`) | Microsoft Windows Security Event Log (12) | QID 5000940 "Success Audit: Kerberos pre-authentication failed" |
+| `f5_asm` (T-058) | F5 BIG-IP ASM `ASM:key="value",...` request log (`attack_type`, `request_status`, `ip_client`, `violations`, `uri`) | F5 Networks BIG-IP ASM (213) | QID 55250100 "SQL-Injection" (one QID per attack type) |
 
 Notes from the lab, important for anyone changing a format:
 
@@ -337,6 +365,15 @@ Notes from the lab, important for anyone changing a format:
   host names match the lab's Windows log sources (`DC-LAB-01`, `DC-LAB-02`,
   `WEB-SRV-01`, `FILE-SRV-01`, `SQL-SRV-01`, `APP-SRV-01`). Events for an unknown
   Windows identifier are dropped into `SIM Generic Log DSM`, not parsed.
+- **F5 ASM does not auto-discover either.** The lab has one F5 log source,
+  `waf-prod-01@F5-WAF` (id 214, a lab name despite the word "prod"), and events route to it by
+  the syslog hostname `waf-prod-01`. Sent under any other host, the lines land as
+  `Unknown log event` in the `SIM Generic Log DSM` (measured with `WAF-LAB-01`). QRadar takes
+  the offense's source address from `ip_client`. The bank's WAF brand is unknown (T-78); another
+  brand changes `build_f5_asm` and `render_f5_asm`, not the scenarios.
+- **4769 and 4771 map to "Success Audit" QIDs.** The Windows DSM names them by event, not by
+  the audit outcome, so 4771 (a failure) is "Success Audit: Kerberos pre-authentication
+  failed". The username is the plain account name (`branch.user05`, no realm).
 - FortiGate custom fields such as `srccountry` are **not** QRadar catalog fields
   until a custom property is defined; AQL can read them from the payload until
   the Sigma pipeline (`config/sigma/`, T-005) maps them.
@@ -371,6 +408,9 @@ time.
 - `test_loggen_synthetic.py` — the synthetic-data scanner and generator, with
   negative tests that forbidden input is rejected and the generator fails closed.
 - `test_loggen_scenarios.py` — scenario loading/validation and the label file.
+- `test_loggen_lab_scenarios.py` — the T-058 log kinds (wire format, DSM bindings) and the
+  scenarios s4-s9 (event counts, labels, the evidence of each decision).
+- `test_lab_rules.py` — the lab rules' sources and the extension zip (`harness/lab/qradar/`).
 - `test_loggen_lab.py` — `@pytest.mark.lab`; sends to the lab and asserts the
   DSMs parse the events (skipped unless `QRADAR_LAB_URL` and `QRADAR_LAB_TOKEN`
   are set).

@@ -75,11 +75,29 @@ SYNTHETIC_USERS: tuple[str, ...] = (
     "helpdesk1",
 )
 
+#: Branch staff accounts: the many-account pool of the password-spraying scenario
+#: (T-058). Every name ends in a digit, like ``vpn.user1``, so the scanner does not
+#: read it as a domain.
+SYNTHETIC_BRANCH_USERS: tuple[str, ...] = tuple(f"branch.user{n:02d}" for n in range(1, 13))
+
 #: Service and administrative accounts used by the DCSync scenario.
 SYNTHETIC_SERVICE_ACCOUNTS: tuple[str, ...] = (
     "svc_backup",
     "svc_sql",
     "bkupadmin",
+)
+
+#: Accounts that own service principal names. They appear only as the ``ServiceName``
+#: of a Kerberos service-ticket request (4769), never as a subject account.
+SYNTHETIC_SPN_ACCOUNTS: tuple[str, ...] = (
+    "svc_web",
+    "svc_app",
+    "svc_file",
+    "svc_print",
+    "svc_mail",
+    "svc_report",
+    "svc_sql",
+    "svc_backup",
 )
 
 #: The Azure AD Connect synchronisation account. A real deployment names it
@@ -97,6 +115,9 @@ SYNTHETIC_HOSTS: tuple[str, ...] = (
     "SQL-SRV-01",
     "WEB-SRV-01",
     "VPN-GW-01",
+    # The lab's existing F5 BIG-IP ASM log source (id 214) is identified by this name, so
+    # the events route to it; the lab has no auto-discovered one.
+    "waf-prod-01",
 )
 
 #: Machine accounts (end in ``$``). Used as the true-benign DCSync case that the
@@ -108,7 +129,14 @@ SYNTHETIC_MACHINE_ACCOUNTS: tuple[str, ...] = (
 
 #: Every name the generator is allowed to place in a username field.
 ALL_SYNTHETIC_ACCOUNTS: frozenset[str] = frozenset(
-    (*SYNTHETIC_USERS, *SYNTHETIC_SERVICE_ACCOUNTS, *SYNTHETIC_MACHINE_ACCOUNTS, MSOL_ACCOUNT)
+    (
+        *SYNTHETIC_USERS,
+        *SYNTHETIC_BRANCH_USERS,
+        *SYNTHETIC_SERVICE_ACCOUNTS,
+        *SYNTHETIC_SPN_ACCOUNTS,
+        *SYNTHETIC_MACHINE_ACCOUNTS,
+        MSOL_ACCOUNT,
+    )
 )
 
 #: Every name the generator is allowed to place in a host field. The short host

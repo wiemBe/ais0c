@@ -1,0 +1,18 @@
+# Scenario s8-waf-tarama-engellendi.
+name: "AIS0C LAB - WAF signature volume from an external source"
+scenario: s8-waf-tarama-engellendi
+description: >-
+  Many attack-signature requests from one source outside the private ranges, all
+  blocked by the F5 BIG-IP ASM policy (T1595.002).
+index_by: source_ip
+conditions:
+  - test: log_source_type
+    value: F5 Networks BIG-IP ASM
+  - test: payload_contains
+    value: request_status="blocked"
+  - test: source_ip_not_in
+    value: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16]
+  - test: threshold
+    events: 20
+    window_seconds: 300
+    same: source_ip

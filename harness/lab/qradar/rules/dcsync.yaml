@@ -1,0 +1,19 @@
+# The DCSync rule installed in the lab on 2026-10-03 (PR-T-012, "Lab rule"). Scenario s2-dcsync.
+name: "AIS0C LAB - DCSync by a non-machine account"
+scenario: s2-dcsync
+description: >-
+  A domain controller's directory-replication right used by an account that is neither
+  a machine account nor the Azure AD Connect sync account (T1003.006).
+index_by: username
+conditions:
+  - test: log_source_type
+    value: Microsoft Windows Security Event Log
+  - test: qid
+    value: 5000849
+    meaning: 4662, "An operation was performed on an object"
+  - test: payload_contains
+    value: DS-Replication-Get-Changes
+  - test: username_not_ends_with
+    value: "$"
+  - test: username_not_starts_with
+    value: MSOL_

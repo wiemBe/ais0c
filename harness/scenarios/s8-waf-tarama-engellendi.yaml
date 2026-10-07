@@ -1,0 +1,38 @@
+# s8-waf-tarama-engellendi: an external scanner whose every request was blocked
+# (T1595.002).
+#
+# Expected decision: fp or low. Rationale: one external address sends 40 requests
+# that match attack signatures of five families in two minutes, with the Nikto user
+# agent, and the WAF blocked all of them: `request_status="blocked"`, response code
+# 0, nothing reached the application and no request outside the attack signatures
+# was made. It is hostile reconnaissance, so the steps are labelled malicious, but it
+# is internet background noise with no impact; the right answer is `fp` or a low
+# level, and calling it critical is the failure this scenario measures.
+name: s8-waf-tarama-engellendi
+description: An external vulnerability scanner's requests, every one blocked by the WAF.
+
+steps:
+  - id: web-traffic-background
+    malicious: false
+    events:
+      - kind: fortigate_traffic
+        count: 20
+        spread: 3600
+        params:
+          action: accept
+          service: HTTPS
+          dstport: 443
+
+  - id: external-scan-blocked
+    malicious: true
+    technique: T1595.002
+    events:
+      - kind: f5_asm
+        count: 40
+        start: 2400
+        interval: 3
+        params:
+          attack: scan
+          request_status: blocked
+          src_pool: [192.0.2.88]
+          user_agent: Nikto/2.5.0

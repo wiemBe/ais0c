@@ -1,0 +1,48 @@
+# s6-waf-sqli-gecti: SQL injection that the WAF did not block (T1190).
+#
+# Expected decision: tp, high. Rationale: one external address sends eight requests
+# that trip the SQL-Injection signatures (union select, tautologies, sleep probes)
+# with sqlmap's user agent, and the WAF only alerted: `request_status="alerted"`,
+# response code 200, so the application received and answered every one. An attack
+# that reached the application is not noise.
+#
+# The baseline is ordinary HTTPS traffic through the firewall and three scanner
+# probes from other addresses that the WAF blocked.
+name: s6-waf-sqli-gecti
+description: An external source's SQL injection requests were logged but not blocked.
+
+steps:
+  - id: web-traffic-background
+    malicious: false
+    events:
+      - kind: fortigate_traffic
+        count: 20
+        spread: 3600
+        params:
+          action: accept
+          service: HTTPS
+          dstport: 443
+
+  - id: benign-blocked-probes
+    malicious: false
+    events:
+      - kind: f5_asm
+        count: 3
+        spread: 3600
+        params:
+          attack: scanner
+          request_status: blocked
+
+  - id: sqli-not-blocked
+    malicious: true
+    technique: T1190
+    events:
+      - kind: f5_asm
+        count: 8
+        start: 2400
+        interval: 20
+        params:
+          attack: sqli
+          request_status: alerted
+          src_pool: [198.51.100.23]
+          user_agent: sqlmap/1.7.2 (https://sqlmap.example.com)

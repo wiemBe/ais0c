@@ -1,0 +1,23 @@
+# Scenario s4-kerberoasting.
+name: "AIS0C LAB - Kerberoasting RC4 service tickets"
+scenario: s4-kerberoasting
+description: >-
+  One account requests RC4 (0x17) service tickets for several different service
+  accounts in a short time (T1558.003).
+index_by: username
+conditions:
+  - test: log_source_type
+    value: Microsoft Windows Security Event Log
+  - test: qid
+    value: 5000938
+    meaning: 4769, "A Kerberos service ticket was granted" (measured on the lab, T-058)
+  - test: payload_contains
+    value: "Ticket Encryption Type: 0x17"
+  - test: username_not_ends_with
+    value: "$"
+  - test: threshold
+    events: 5
+    window_seconds: 120
+    same: username
+    distinct: Service Name
+    distinct_count: 5
