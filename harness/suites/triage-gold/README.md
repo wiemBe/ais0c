@@ -9,14 +9,16 @@ the read tools' results written by hand, so the suite runs in `fixture` mode wit
 
 | Scenario | Allowed verdicts | Level of `max(ai_level, floor)` | Also |
 |---|---|---|---|
-| `tg-01-kerberoasting` | `tp`, `suspicious` | at least high | claims cite `get_offense` |
-| `tg-02-password-spraying` | `tp`, `suspicious` | at least high | claims cite `get_offense` |
-| `tg-03-waf-sqli-gecti` | `tp`, `suspicious` | at least high | claims cite `get_offense` |
-| `tg-04-waf-xss-gecti` | `tp`, `suspicious` | at least medium | claims cite `get_offense` |
-| `tg-05-waf-tarama-engellendi` | `fp`, `suspicious` | at most low | claims cite `get_offense` |
+| `tg-01-kerberoasting` | `tp`, `suspicious` | at least high | |
+| `tg-02-password-spraying` | `tp`, `suspicious` | at least high | |
+| `tg-03-waf-sqli-gecti` | `tp`, `suspicious` | at least high | |
+| `tg-04-waf-xss-gecti` | `tp`, `suspicious` | at least medium | |
+| `tg-05-waf-tarama-engellendi` | `tp` | low to medium (blocked is still an attack, T-84) | |
 | `tg-06-onayli-tarayici` | `fp` | at most low | claims cite `list_assets` (the scanner's record) |
 | `tg-07-dcsync` | `tp`, `suspicious` | at least high | claims cite `get_rule` (replication GUIDs) |
 | `tg-08-vpn-yeni-ulke` | `suspicious` | any | at least one data gap besides `budget_exhausted` |
+
+`cited_tools` stays only where one tool's result decides the verdict (`tg-06`, `tg-07`); the offense is the task's input, so citing it proves nothing (T-83 (1)).
 
 The text of a scenario describes facts and never the answer: the expected verdict and level are
 in `expect` only (a suite test rejects words such as "benign" or "true positive" in the

@@ -105,7 +105,7 @@ def test_completed_run_returns_a_triage_result() -> None:
         result.model_dump(exclude=RUN_FIELDS)
         == TriageOutput.model_validate(triage_output(OFFENSE_EVIDENCE)).model_dump()
     )
-    assert (run.prompt_version, run.prompt_hash) == ("triage/v3", triage_prompt().sha256)
+    assert (run.prompt_version, run.prompt_hash) == ("triage/v4", triage_prompt().sha256)
 
 
 def test_model_output_is_triage_result_without_the_run_fields() -> None:

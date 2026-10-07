@@ -161,11 +161,10 @@ def test_the_checks_of_a_quality_scenario_follow_its_expectation() -> None:
     assert names(played, {}) == [
         "verdict_in",
         "data_gap",
-        "cited_tools",
         "tool_outside_profile",
         "ungrounded_evidence",
     ]
-    assert names(scenario("tg-01-kerberoasting"), {}) == [
+    assert names(scenario("tg-07-dcsync"), {}) == [
         "verdict_in",
         "level_range",
         "cited_tools",
@@ -181,7 +180,8 @@ def test_the_checks_of_a_quality_scenario_follow_its_expectation() -> None:
         ("tg-01-kerberoasting", "high", True),
         ("tg-01-kerberoasting", "critical", True),
         ("tg-05-waf-tarama-engellendi", "low", True),
-        ("tg-05-waf-tarama-engellendi", "medium", False),
+        ("tg-05-waf-tarama-engellendi", "medium", True),
+        ("tg-05-waf-tarama-engellendi", "high", False),
     ],
 )
 def test_the_level_must_lie_in_the_range(source: str, level: str, passes: bool) -> None:

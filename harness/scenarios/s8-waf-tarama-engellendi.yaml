@@ -1,13 +1,13 @@
 # s8-waf-tarama-engellendi: an external scanner whose every request was blocked
 # (T1595.002).
 #
-# Expected decision: fp or low. Rationale: one external address sends 40 requests
+# Expected decision: tp, level low (T-84). Rationale: one external address sends 40 requests
 # that match attack signatures of five families in two minutes, with the Nikto user
 # agent, and the WAF blocked all of them: `request_status="blocked"`, response code
 # 0, nothing reached the application and no request outside the attack signatures
-# was made. It is hostile reconnaissance, so the steps are labelled malicious, but it
-# is internet background noise with no impact; the right answer is `fp` or a low
-# level, and calling it critical is the failure this scenario measures.
+# was made. A blocked attack is still an attack, so the verdict is `tp`; blocking
+# sets the level: no impact, so low. Calling it fp (it was blocked) or critical are
+# the failures this scenario measures.
 name: s8-waf-tarama-engellendi
 description: An external vulnerability scanner's requests, every one blocked by the WAF.
 

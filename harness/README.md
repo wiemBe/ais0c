@@ -319,7 +319,7 @@ chain is expected to reach and why; the e2e test prints it next to the chain's o
 | `s5-password-spraying` | Windows 4625 and 4771: one source, twelve accounts, a few tries each, then one 4624 | `tp` | A clear attack; storm and grouping (T-027) |
 | `s6-waf-sqli-gecti` | F5 ASM: eight SQL-Injection requests from one external source, `request_status="alerted"` | `tp`, high | A web attack that reached the application |
 | `s7-waf-xss-gecti` | F5 ASM: six XSS requests, `alerted` | `tp` or `suspicious` | The same split with another attack type |
-| `s8-waf-tarama-engellendi` | F5 ASM: 40 signature hits of five families from an external scanner, all `blocked` | `fp` or low | Calling noise noise |
+| `s8-waf-tarama-engellendi` | F5 ASM: 40 signature hits of five families from an external scanner, all `blocked` | `tp`, low | A blocked attack is still an attack; blocking sets the level (T-84) |
 | `s9-onayli-tarayici` | F5 ASM: 40 signature hits from the bank's internal scanner, all `blocked`, with the maintenance window's change ticket in the user agent | `fp` | A real false positive that the logs prove harmless |
 
 `s2-dcsync` (`tp`) and `s3-vpn-yeni-ulke` (unclear) stay in the set; `s3` has no lab rule, so the

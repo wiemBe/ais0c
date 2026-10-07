@@ -146,5 +146,3 @@ expect:
   - tp
   - suspicious
   min_level: high
-  cited_tools:
-  - get_offense

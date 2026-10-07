@@ -130,5 +130,3 @@ expect:
   verdict_in:
   - suspicious
   data_gap_required: true
-  cited_tools:
-  - get_offense

@@ -133,7 +133,7 @@ def test_the_config_check_returns_the_profile_of_an_agent_with_tools() -> None:
     ("update", "message"),
     [
         ({"input_schema": "TriageTask"}, "declares TriageTask -> CaseSummary"),
-        ({"prompt": "prompts/triage/v3.md"}, "uses prompts/triage/v3.md, not"),
+        ({"prompt": "prompts/triage/v4.md"}, "uses prompts/triage/v4.md, not"),
         ({"shared_rules": "prompts/_shared/rules/v1.md"}, "uses prompts/_shared/rules/v1.md"),
     ],
 )

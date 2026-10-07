@@ -39,7 +39,7 @@ EXPECTED: Final = {
     "tg-02-password-spraying": (TP_OR_SUSPICIOUS, Level.HIGH, None),
     "tg-03-waf-sqli-gecti": (TP_OR_SUSPICIOUS, Level.HIGH, None),
     "tg-04-waf-xss-gecti": (TP_OR_SUSPICIOUS, Level.MEDIUM, None),
-    "tg-05-waf-tarama-engellendi": (FP_OR_SUSPICIOUS, None, Level.LOW),
+    "tg-05-waf-tarama-engellendi": (frozenset({CaseVerdict.TP}), Level.LOW, Level.MEDIUM),
     "tg-06-onayli-tarayici": (frozenset({CaseVerdict.FP}), None, Level.LOW),
     "tg-07-dcsync": (TP_OR_SUSPICIOUS, Level.HIGH, None),
     "tg-08-vpn-yeni-ulke": (frozenset({CaseVerdict.SUSPICIOUS}), None, None),

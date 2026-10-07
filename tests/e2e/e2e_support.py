@@ -128,9 +128,9 @@ SCENARIO_SPECS: Final = {
         ),
         ScenarioSpec(
             "s8-waf-tarama-engellendi",
-            "fp or low",
+            "tp",
             "low",
-            "An external scanner whose every request the WAF blocked.",
+            "An external scanner whose every request the WAF blocked: still an attack, no impact.",
             ("external-scan-blocked",),
         ),
         ScenarioSpec(

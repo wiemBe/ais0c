@@ -54,6 +54,7 @@ PROMPTS_DOC = REPO_ROOT / "docs/impl/prompts.md"
 SHARED_RULES_V1 = "prompts/_shared/rules/v1.md"
 TRIAGE_PROMPT_V1 = "prompts/triage/v1.md"
 TRIAGE_PROMPT_V2 = "prompts/triage/v2.md"
+TRIAGE_PROMPT_V3 = "prompts/triage/v3.md"
 VERIFICATION_PROMPT_V1 = "prompts/verification/v1.md"
 INVESTIGATION_PROMPT_V1 = "prompts/investigation/v1.md"
 # sha256 of prompts/_shared/rules.md, prompts/triage/v1.md and prompts/triage/v2.md before the
@@ -63,6 +64,7 @@ OLD_FILES_SHA256 = {
     SHARED_RULES_V1: "3b42df82c2ee0701f205c5ac4913576a5f6fdbed657c6c864104d1da63c01e10",
     TRIAGE_PROMPT_V1: "6df8fcd93dc3c9dbd280b51747f33c4addd2835f21587f08ebde657d9c85a51f",
     TRIAGE_PROMPT_V2: "1a70f010c4526580445e88063ef2284b035f5e67ef1b7ea1d35d9ea4a8590019",
+    TRIAGE_PROMPT_V3: "1db8fedb895579537488e7143a134393cc3f4f75752688e42797406532751aad",
     VERIFICATION_PROMPT_V1: "5c4bd44b762dc34a00dfd8bfef64a0784fb3ddd8736c78833510812ac9ca27d5",
     INVESTIGATION_PROMPT_V1: "46bdd3f33502a3dca4ce309f890c1d17a03e2f83b0c8520ecf1b4bef8fae1fd1",
 }
@@ -417,7 +419,7 @@ def test_triage_prompt_inputs() -> None:
     prompt = triage_prompt()
 
     assert prompt.path == triage_manifest().prompt
-    assert prompt.version == "triage/v3"
+    assert prompt.version == "triage/v4"
     assert prompt.placeholders == {
         "shared_rules",
         "org_context",
@@ -432,12 +434,12 @@ def test_triage_prompt_inputs() -> None:
 # --- T-054 criteria 1 and 2: prompt v3, the manifest selects it ---------------------------------
 
 
-def test_the_manifest_selects_prompt_v3() -> None:
-    """T-054 criterion 1: the manifest chooses v3; T-31: a prompt change is a minor bump."""
+def test_the_manifest_selects_prompt_v4() -> None:
+    """T-063: the manifest chooses v4 (T-054 chose v3); T-31: a prompt change is a minor bump."""
     manifest = triage_manifest()
 
-    assert manifest.version == "1.2.0"
-    assert manifest.prompt == "prompts/triage/v3.md"
+    assert manifest.version == "1.3.0"
+    assert manifest.prompt == "prompts/triage/v4.md"
     assert manifest.shared_rules == SHARED_RULES
 
 
@@ -483,6 +485,63 @@ def test_triage_prompt_v3_carries_the_five_rules(rule: str, texts: list[str]) ->
 
     for text in texts:
         assert text in template, f"{rule}: {text!r} is missing"
+
+
+# --- T-063: prompt v4, blocking sets the level and absence claims need the tool ---------------
+
+V4_RULES = [
+    (
+        "blocked attack traffic is still an attack: tp, and blocking alone is no reason for fp",
+        [
+            "is an attack even when a WAF or firewall blocked it",
+            "The verdict is tp",
+            "never a reason for fp",
+        ],
+    ),
+    (
+        "all requests blocked, nothing reached the application, nothing else from the source: low",
+        ['request_status "blocked" with response code 0', 'action "deny"', "the level is\n  low"],
+    ),
+    (
+        "an attack that reached the application is high",
+        ['request_status "alerted", a 2xx response) is high'],
+    ),
+    (
+        "one unblocked request or other activity sets the level by the unblocked part",
+        ["sets the level by that unblocked part"],
+    ),
+    (
+        "fp needs non-attack traffic, such as an authorized scan shown by logs and records",
+        ["Choose fp only when the traffic is not an attack", "the logs and the records show"],
+    ),
+    (
+        "an absence claim rests on the result of the tool that would show it",
+        ["must rest on the result", "asset record", "list_assets", "write a data\ngap"],
+    ),
+]
+
+
+@pytest.mark.parametrize(("rule", "texts"), V4_RULES, ids=[rule for rule, _ in V4_RULES])
+def test_triage_prompt_v4_carries_the_blocking_and_absence_rules(
+    rule: str, texts: list[str]
+) -> None:
+    template = triage_prompt().template
+
+    for text in texts:
+        assert text in template, f"{rule}: {text!r} is missing"
+
+
+def test_triage_prompt_v4_keeps_the_v3_rules_and_names_no_scenario_text() -> None:
+    v3 = (REPO_ROOT / TRIAGE_PROMPT_V3).read_text(encoding="utf-8")
+    v4 = triage_prompt().template
+
+    for _, texts in V3_RULES:
+        for text in texts:
+            assert text in v4
+    assert "Blocking sets the level" in v4
+    assert "Blocking sets the level" not in v3
+    for word in ("Nikto", "SCAN-LAB", "WEB-SRV", "203.0.113", "198.51.100", "192.0.2"):
+        assert word not in v4
 
 
 # --- T-056: the length limits the prompts state are the contract's -----------------------------

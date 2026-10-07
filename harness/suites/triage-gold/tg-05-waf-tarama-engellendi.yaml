@@ -135,8 +135,6 @@ input:
 expect:
   floor_level: null
   verdict_in:
-  - fp
-  - suspicious
-  max_level: low
-  cited_tools:
-  - get_offense
+  - tp
+  min_level: low
+  max_level: medium
