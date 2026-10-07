@@ -120,7 +120,8 @@ const notificationStatus: Record<NotificationStatus, string> = {
 const emailKind: Record<EmailKind, string> = {
   case_alert: "Vaka uyarısı",
   group_alert: "Grup uyarısı",
-  hunt_report: "Av raporu",
+  hunt_report: "Hunt raporu",
+  health_alarm: "Sağlık alarmı",
 };
 
 const runStatus: Record<RunStatus, string> = {

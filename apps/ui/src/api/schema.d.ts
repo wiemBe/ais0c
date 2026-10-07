@@ -899,7 +899,7 @@ export interface components {
          * EmailKind
          * @enum {string}
          */
-        EmailKind: "case_alert" | "group_alert" | "hunt_report";
+        EmailKind: "case_alert" | "group_alert" | "hunt_report" | "health_alarm";
         /**
          * EvidenceItem
          * @description One evidence row of the case detail: where to find the event at the source.

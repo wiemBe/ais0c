@@ -31,13 +31,13 @@ Token yalnızca yapıştıran kullanıcının sekmesinde, `sessionStorage`'da du
 
 ## Yapı
 
-| Yol | İçerik |
-|---|---|
-| `src/api/` | `client.ts` (istek, `problem+json`), `session.tsx` (token, `/me`, roller), `hooks.ts` (sorgular, 15 saniyelik yenileme), `errors.ts`, `schema.d.ts` (üretilmiş), `types.ts` (üretilmiş tiplerin adları) |
-| `src/i18n/tr.ts` | Kullanıcıya görünen bütün metinler; API'nin `title` kodlarının Türkçe mesajları ve enum etiketleri. Bileşende satır içi Türkçe metin yoktur. |
-| `src/pages/` | Ekranlar: Offense kuyruğu, Vaka detayı, QA kuyruğu, Gruplar, Analiz Kataloğu, Yönetim, SLA |
-| `src/components/` | Düzen ve ortak bileşenler (CSS Modules) |
-| `src/test/` | MSW sunucusu, sentetik fixture'lar ve testler |
+| Yol               | İçerik                                                                                                                                                                                                  |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/api/`        | `client.ts` (istek, `problem+json`), `session.tsx` (token, `/me`, roller), `hooks.ts` (sorgular, 15 saniyelik yenileme), `errors.ts`, `schema.d.ts` (üretilmiş), `types.ts` (üretilmiş tiplerin adları) |
+| `src/i18n/tr.ts`  | Kullanıcıya görünen bütün metinler; API'nin `title` kodlarının Türkçe mesajları ve enum etiketleri. Bileşende satır içi Türkçe metin yoktur.                                                            |
+| `src/pages/`      | Ekranlar: Offense kuyruğu, Vaka detayı, QA kuyruğu, Gruplar, Analiz Kataloğu, Yönetim, SLA                                                                                                              |
+| `src/components/` | Düzen ve ortak bileşenler (CSS Modules)                                                                                                                                                                 |
+| `src/test/`       | MSW sunucusu, sentetik fixture'lar ve testler                                                                                                                                                           |
 
 ## Kurallar
 
