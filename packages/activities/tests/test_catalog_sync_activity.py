@@ -8,6 +8,7 @@ gateway is replaced by `QRadarLists`; the lab test uses the fork itself.
 
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
+from types import MappingProxyType
 
 import pytest
 from catalog_gateway import (
@@ -37,8 +38,9 @@ from ais0c_activities.catalog import MIN_CALL_INTERVAL
 from ais0c_agents import ToolsetProfile
 from ais0c_agents.gateway_http import HttpGatewayClient
 from ais0c_contracts import CatalogMode, RunStatus, ToolStatus
+from ais0c_knowledge.catalog import ClassDefaults
 from ais0c_mcp_gateway.registry import load_registry
-from ais0c_storage import PolicyDecision
+from ais0c_storage import PolicyDecision, TelemetryClass
 from ais0c_storage.models import AgentRunRow
 from ais0c_storage.repositories import (
     list_agent_runs,
@@ -71,12 +73,14 @@ def sync_activities(
     profile: ToolsetProfile,
     *,
     sleep: Callable[[float], object] | None = None,
+    class_defaults: ClassDefaults = MappingProxyType({}),
 ) -> CatalogSyncActivities:
     if sleep is None:
         return CatalogSyncActivities(
             sessions=sessions,
             gateway=gateway,
             profile=profile,
+            class_defaults=class_defaults,
             clock=lambda: NOW,
             min_call_interval=timedelta(0),
         )
@@ -225,6 +229,42 @@ async def test_the_reads_are_one_recorded_run_of_the_catalog_sync_pseudo_agent(
     assert {(call.intent.case_id, call.intent.agent_id) for call in calls} == {
         (KNOWLEDGE_SYNC_CONTEXT, CATALOG_SYNC_AGENT_ID)
     }
+
+
+async def test_log_sources_get_qradars_enabled_state_and_their_types_default_classes(
+    sessions: SessionFactory,
+) -> None:
+    """T-95 through the activity: the gateway serves `enabled`, and the sync writes it and the
+    classes of each log source's type."""
+    qradar = lab_like(rules=1, log_sources=6, extra_types=0)
+    for row in qradar.lists["list_log_sources"]:
+        row["enabled"] = as_int(row["id"]) != 2002
+    defaults: ClassDefaults = {
+        type_name(12): frozenset({TelemetryClass.WINDOWS}),
+        type_name(73): frozenset({TelemetryClass.FIREWALL, TelemetryClass.VPN}),
+    }
+    gateway, profile = await inventory_client(sessions, qradar, now=lambda: NOW)
+    activities = sync_activities(sessions, gateway, profile, class_defaults=defaults)
+
+    first = await activities.sync_analysis_catalog()
+    second = await activities.sync_analysis_catalog()
+
+    async with sessions() as session:
+        rows = await list_catalog_log_sources(session)
+    assert [(row.log_source_id, row.qradar_enabled) for row in rows] == [
+        (2001 + n, 2001 + n != 2002) for n in range(6)
+    ]
+    expected = {
+        type_name(12): ["windows"],
+        type_name(73): ["firewall", "vpn"],
+        type_name(11): [],
+    }
+    assert all(row.default_telemetry_classes == expected[row.type_name] for row in rows)
+    assert all(row.telemetry_classes is None for row in rows)
+    assert (first["log_sources_added"], second["log_sources_changed"]) == (6, 0)
+    enabled_reads = [arguments["fields"] for arguments in qradar.calls_of("list_log_sources")]
+    assert enabled_reads
+    assert all("enabled" in str(fields).split(",") for fields in enabled_reads)
 
 
 async def test_a_second_run_changes_nothing(sessions: SessionFactory) -> None:

@@ -7,6 +7,7 @@ made up, type names are QRadar product names.
 
 import asyncio
 from datetime import UTC, datetime, timedelta
+from types import MappingProxyType
 from typing import Any
 
 import pytest
@@ -21,10 +22,11 @@ from ais0c_knowledge.catalog import (
     RULE_SYNC_ACTION,
     SYNC_ACTOR,
     CatalogSyncReport,
+    ClassDefaults,
     QRadarInventory,
     sync_catalog,
 )
-from ais0c_storage import ActorKind
+from ais0c_storage import ActorKind, TelemetryClass
 from ais0c_storage.models import AuditLogRow, CatalogLogSourceRow, CatalogRuleRow
 from ais0c_storage.repositories import (
     SyncedLogSource,
@@ -71,11 +73,14 @@ LOG_SOURCE_QRADAR_COLUMNS = {
     "log_source_id",
     "name",
     "type_name",
+    "qradar_enabled",
+    "default_telemetry_classes",
     "missing_since",
     "updated_by",
     "updated_at",
 }
 LOG_SOURCE_OPERATOR_COLUMNS = {
+    "telemetry_classes",
     "defined",
     "description",
     "owner",
@@ -90,6 +95,7 @@ def inventory(
     sources: dict[int, tuple[str, str]],
     untyped: tuple[int, ...] = (),
     disabled: tuple[int, ...] = (),
+    disabled_sources: tuple[int, ...] = (),
 ) -> QRadarInventory:
     return QRadarInventory(
         rules=tuple(
@@ -97,7 +103,7 @@ def inventory(
             for rule_id, name in sorted(rules.items())
         ),
         log_sources=tuple(
-            SyncedLogSource(source_id, name, type_name)
+            SyncedLogSource(source_id, name, type_name, source_id not in disabled_sources)
             for source_id, (name, type_name) in sorted(sources.items())
         ),
         untyped_log_sources=untyped,
@@ -113,9 +119,14 @@ LAB_SOURCES = {2001: ("DC-LAB-01", WINDOWS_SECURITY), 2002: ("WIN-FW-01", FORTIG
 LAB = inventory(LAB_RULES, LAB_SOURCES, disabled=(100001,))
 
 
-async def sync(sessions: Sessions, items: QRadarInventory, at: datetime = T0) -> CatalogSyncReport:
+async def sync(
+    sessions: Sessions,
+    items: QRadarInventory,
+    at: datetime = T0,
+    class_defaults: ClassDefaults = MappingProxyType({}),
+) -> CatalogSyncReport:
     async with sessions.begin() as session:
-        return await sync_catalog(session, items, synced_at=at)
+        return await sync_catalog(session, items, synced_at=at, class_defaults=class_defaults)
 
 
 def columns(row: CatalogRuleRow | CatalogLogSourceRow) -> Columns:
@@ -233,6 +244,9 @@ async def test_new_rules_and_log_sources_are_added_undefined_and_analyzed(
             "log_source_id": source_id,
             "name": name,
             "type_name": type_name,
+            "qradar_enabled": True,
+            "default_telemetry_classes": [],
+            "telemetry_classes": None,
             "defined": False,
             "description": None,
             "owner": None,
@@ -530,14 +544,26 @@ async def test_each_change_is_audited_as_the_sync(sessions: Sessions) -> None:
             LOG_SOURCE_SYNC_ACTION,
             LOG_SOURCE_OBJECT,
             "2001",
-            {"change": "added", "name": "DC-LAB-01", "type_name": WINDOWS_SECURITY},
+            {
+                "change": "added",
+                "name": "DC-LAB-01",
+                "type_name": WINDOWS_SECURITY,
+                "qradar_enabled": True,
+                "default_telemetry_classes": [],
+            },
         ),
         (
             *system,
             LOG_SOURCE_SYNC_ACTION,
             LOG_SOURCE_OBJECT,
             "2002",
-            {"change": "added", "name": "WIN-FW-01", "type_name": FORTIGATE},
+            {
+                "change": "added",
+                "name": "WIN-FW-01",
+                "type_name": FORTIGATE,
+                "qradar_enabled": True,
+                "default_telemetry_classes": [],
+            },
         ),
         (
             *system,
@@ -561,8 +587,12 @@ async def test_each_change_is_audited_as_the_sync(sessions: Sessions) -> None:
                 "change": "changed",
                 "name": "WIN-FW-01",
                 "type_name": LINUX,
+                "qradar_enabled": True,
+                "default_telemetry_classes": [],
                 "previous_name": "WIN-FW-01",
                 "previous_type_name": FORTIGATE,
+                "previous_qradar_enabled": True,
+                "previous_default_telemetry_classes": [],
             },
         ),
     ]
@@ -616,3 +646,149 @@ async def _until_a_sync_waits(sessions: Sessions) -> None:
                 if await observer.scalar(waiting):
                     return
             await asyncio.sleep(0.05)
+
+
+DEFAULTS: ClassDefaults = MappingProxyType(
+    {
+        WINDOWS_SECURITY: frozenset({TelemetryClass.WINDOWS}),
+        FORTIGATE: frozenset({TelemetryClass.VPN, TelemetryClass.FIREWALL}),
+    }
+)
+
+
+async def log_source_rows_of(sessions: Sessions) -> dict[int, Columns]:
+    _, sources = await catalog(sessions)
+    return {source["log_source_id"]: source for source in sources}
+
+
+async def test_sync_writes_defaults_and_enabled(sessions: Sessions) -> None:
+    items = inventory(
+        {},
+        {
+            2001: ("DC-LAB-01", WINDOWS_SECURITY),
+            2002: ("WIN-FW-01", FORTIGATE),
+            2003: ("SRV-LAB-01", "Universal LEEF"),
+        },
+        disabled_sources=(2002,),
+    )
+
+    report = await sync(sessions, items, class_defaults=DEFAULTS)
+
+    found = await log_source_rows_of(sessions)
+    assert {
+        source_id: (
+            row["qradar_enabled"],
+            row["default_telemetry_classes"],
+            row["telemetry_classes"],
+        )
+        for source_id, row in found.items()
+    } == {
+        2001: (True, ["windows"], None),
+        # The enum's order, whatever the file's.
+        2002: (False, ["firewall", "vpn"], None),
+        2003: (True, [], None),
+    }
+    assert report.log_sources_added == (2001, 2002, 2003)
+    audited = {
+        entry.object_id: entry.details
+        for entry in await audit_entries(sessions)
+        if entry.action == LOG_SOURCE_SYNC_ACTION
+    }
+    assert audited["2002"] == {
+        "change": "added",
+        "name": "WIN-FW-01",
+        "type_name": FORTIGATE,
+        "qradar_enabled": False,
+        "default_telemetry_classes": ["firewall", "vpn"],
+    }
+
+
+async def test_disabling_in_qradar_is_a_change(sessions: Sessions) -> None:
+    sources = {2001: ("DC-LAB-01", WINDOWS_SECURITY), 2002: ("WIN-FW-01", FORTIGATE)}
+    await sync(sessions, inventory({}, sources), class_defaults=DEFAULTS)
+
+    report = await sync(
+        sessions, inventory({}, sources, disabled_sources=(2001,)), at=T1, class_defaults=DEFAULTS
+    )
+
+    assert report.log_sources_changed == (2001,)
+    assert report.changed
+    found = await log_source_rows_of(sessions)
+    assert (found[2001]["qradar_enabled"], found[2001]["updated_at"]) == (False, T1)
+    assert found[2002]["updated_at"] == T0
+    changes = [
+        entry.details
+        for entry in await audit_entries(sessions)
+        if entry.action == LOG_SOURCE_SYNC_ACTION and entry.object_id == "2001"
+    ]
+    assert changes[-1] == {
+        "change": "changed",
+        "name": "DC-LAB-01",
+        "type_name": WINDOWS_SECURITY,
+        "qradar_enabled": False,
+        "default_telemetry_classes": ["windows"],
+        "previous_name": "DC-LAB-01",
+        "previous_type_name": WINDOWS_SECURITY,
+        "previous_qradar_enabled": True,
+        "previous_default_telemetry_classes": ["windows"],
+    }
+
+
+async def test_a_changed_mapping_updates_the_defaults_at_the_next_sync(
+    sessions: Sessions,
+) -> None:
+    items = inventory({}, {2002: ("WIN-FW-01", FORTIGATE)})
+    await sync(sessions, items, class_defaults=DEFAULTS)
+
+    report = await sync(
+        sessions,
+        items,
+        at=T1,
+        class_defaults={FORTIGATE: frozenset({TelemetryClass.FIREWALL})},
+    )
+
+    assert report.log_sources_changed == (2002,)
+    assert (await log_source_rows_of(sessions))[2002]["default_telemetry_classes"] == ["firewall"]
+
+
+async def test_admin_classes_survive_the_sync(sessions: Sessions) -> None:
+    items = inventory({}, {2001: ("DC-LAB-01", "Universal LEEF")})
+    await sync(sessions, items)
+    async with sessions.begin() as session:
+        row = await session.get(CatalogLogSourceRow, 2001)
+        assert row is not None
+        row.telemetry_classes = ["windows", "dns"]
+
+    # The type gets a default, QRadar disables the log source and renames it.
+    await sync(
+        sessions,
+        inventory(
+            {},
+            {2001: ("DC-LAB-02", "Universal LEEF")},
+            disabled_sources=(2001,),
+        ),
+        at=T1,
+        class_defaults={"Universal LEEF": frozenset({TelemetryClass.OTHER})},
+    )
+
+    row_after = (await log_source_rows_of(sessions))[2001]
+    assert row_after["telemetry_classes"] == ["windows", "dns"]
+    assert row_after["default_telemetry_classes"] == ["other"]
+    assert (row_after["name"], row_after["qradar_enabled"]) == ("DC-LAB-02", False)
+
+
+async def test_second_sync_changes_nothing(sessions: Sessions) -> None:
+    items = inventory(
+        LAB_RULES,
+        {2001: ("DC-LAB-01", WINDOWS_SECURITY), 2002: ("WIN-FW-01", FORTIGATE)},
+        disabled_sources=(2002,),
+    )
+    await sync(sessions, items, class_defaults=DEFAULTS)
+    before = await catalog(sessions)
+    audit_before = len(await audit_entries(sessions))
+
+    report = await sync(sessions, items, at=T1, class_defaults=DEFAULTS)
+
+    assert not report.changed
+    assert await catalog(sessions) == before
+    assert len(await audit_entries(sessions)) == audit_before

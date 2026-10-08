@@ -228,3 +228,23 @@ class ActorKind(StrEnum):
     USER = "user"
     SYSTEM = "system"
     AGENT = "agent"
+
+
+class TelemetryClass(StrEnum):
+    """`catalog_log_sources.telemetry_classes` and `default_telemetry_classes` (T-95)."""
+
+    WINDOWS = "windows"
+    LINUX = "linux"
+    FIREWALL = "firewall"
+    IDS = "ids"
+    VPN = "vpn"
+    WAF = "waf"
+    EMAIL_SECURITY = "email-security"
+    PROXY = "proxy"
+    DNS = "dns"
+    EDR = "edr"
+    IDENTITY_CLOUD = "identity-cloud"
+    DATABASE = "database"
+    NETWORK_DEVICE = "network-device"
+    SIEM_INTERNAL = "siem-internal"
+    OTHER = "other"

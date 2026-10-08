@@ -31,6 +31,7 @@ from ais0c_storage.enums import (
     PolicyDecision,
     QAStatus,
     SliceStatus,
+    TelemetryClass,
     TuningProposalStatus,
 )
 from ais0c_storage.errors import ConfigurationError, DuplicateError, NotFoundError, StorageError
@@ -60,6 +61,7 @@ __all__ = [
     "QAStatus",
     "SliceStatus",
     "StorageError",
+    "TelemetryClass",
     "TuningProposalStatus",
     "create_engine",
     "create_session_factory",

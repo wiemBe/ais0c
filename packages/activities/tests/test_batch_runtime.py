@@ -33,12 +33,22 @@ from ais0c_activities.names import (
 from ais0c_agents import ToolsetProfile, ToolSpec
 from ais0c_contracts import CostClass
 from ais0c_executor.syslog import SyslogProtocol, SyslogSettings
-from ais0c_storage import ConfigurationError
+from ais0c_storage import ConfigurationError, TelemetryClass
 
 pytestmark = pytest.mark.anyio
 
 TOKEN = "test-inventory-token-0123456789abcdef"  # noqa: S105 - a test value
 TOKEN_FILE = f"gateway-token-{INVENTORY_PROFILE}"
+
+
+REPO_ROOT = Path(__file__).resolve().parents[3]
+CLASS_DEFAULTS = "types:\n  Microsoft Windows Security Event Log: [windows]\n"
+
+
+def write_class_defaults(root: Path, text: str) -> None:
+    path = root / "config" / "telemetry" / "log-source-classes.yaml"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
 
 
 def profile(name: str = INVENTORY_PROFILE, *tool_ids: str) -> ToolsetProfile:
@@ -110,10 +120,12 @@ def gateway() -> Iterator[StubGateway]:
 @pytest.fixture
 def environ(database_url: URL, gateway: StubGateway, tmp_path: Path) -> dict[str, str]:
     (tmp_path / TOKEN_FILE).write_text(TOKEN + "\n", encoding="utf-8")
+    write_class_defaults(tmp_path, CLASS_DEFAULTS)
     return {
         "AIS0C_DATABASE_URL": database_url.render_as_string(hide_password=False),
         "AIS0C_GATEWAY_URL": gateway.url,
         "AIS0C_WORKER_SECRETS_DIR": str(tmp_path),
+        "AIS0C_WORKER_ROOT": str(tmp_path),
     }
 
 
@@ -132,6 +144,61 @@ async def test_the_runtime_syncs_the_catalog_with_the_inventory_token(
         assert gateway.requests == [("/v1/tools", f"Bearer {TOKEN}")]
     finally:
         await runtime.close()
+
+
+async def test_batch_runtime_loads_the_class_defaults(
+    environ: dict[str, str], gateway: StubGateway
+) -> None:
+    runtime = await load_batch_runtime(environ)
+    try:
+        defaults = runtime.catalog_sync.class_defaults
+        assert defaults == {"Microsoft Windows Security Event Log": {TelemetryClass.WINDOWS}}
+    finally:
+        await runtime.close()
+
+
+async def test_the_repo_class_defaults_load_from_the_repo_root(
+    environ: dict[str, str], gateway: StubGateway
+) -> None:
+    environ["AIS0C_WORKER_ROOT"] = str(REPO_ROOT)
+
+    runtime = await load_batch_runtime(environ)
+    try:
+        defaults = runtime.catalog_sync.class_defaults
+        assert defaults["Fortinet FortiGate Security Gateway"] == {
+            TelemetryClass.FIREWALL,
+            TelemetryClass.VPN,
+        }
+    finally:
+        await runtime.close()
+
+
+@pytest.mark.parametrize(
+    ("text", "reason"),
+    [
+        (None, "cannot be read"),
+        ("types:\n  Some DSM: [windwos]\n", "unknown class 'windwos'"),
+        ("types:\n  Some DSM: []\n", "non-empty list"),
+        ("types: [unclosed\n", "invalid YAML"),
+        ("other: 1\n", "the only top-level key is `types`"),
+    ],
+)
+async def test_batch_runtime_stops_on_an_invalid_class_file(
+    environ: dict[str, str],
+    gateway: StubGateway,
+    tmp_path: Path,
+    text: str | None,
+    reason: str,
+) -> None:
+    path = tmp_path / "config" / "telemetry" / "log-source-classes.yaml"
+    if text is None:
+        path.unlink()
+    else:
+        path.write_text(text, encoding="utf-8")
+
+    with pytest.raises(RuntimeConfigError, match=f"log-source-classes.yaml.*{reason}"):
+        await load_batch_runtime(environ)
+    assert gateway.requests == []
 
 
 async def test_another_profile_stops_the_runtime(

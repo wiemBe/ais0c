@@ -22,8 +22,9 @@ manifest, prompt, token or skill stops the worker at start-up with a RuntimeConf
 
 The batch worker (`load_batch_runtime`, T-022) runs KnowledgeSync's catalog sync and, since
 T-032, the HealthCheck workflow's checks and syslog channel. It needs the database, the gateway
-and the token of the `qradar-inventory-read` profile; the root, the model registry and LiteLLM
-are not used. The health settings and the alarm syslog's are in `ais0c_activities.health`.
+and the token of the `qradar-inventory-read` profile. From the root it reads only
+`config/telemetry/log-source-classes.yaml`, the default telemetry classes the sync writes
+(T-95); the model registry and LiteLLM are not used. The health settings and the alarm syslog's are in `ais0c_activities.health`.
 
 The tools, their descriptions and schemas come from the gateway (`GET /v1/tools`), which reads
 them from the platform's registry, never from the MCP server (architecture §13.3).
@@ -75,6 +76,7 @@ from ais0c_agents import (
 from ais0c_agents.gateway_http import HttpGatewayClient
 from ais0c_contracts import ModelRelease
 from ais0c_executor.syslog import SyslogSender, SyslogSettings
+from ais0c_knowledge.catalog import ClassDefaults, TelemetryConfigError, load_class_defaults
 from ais0c_knowledge.skills import Mode, SkillError, load_skills
 from ais0c_storage import create_engine, create_session_factory, database_url
 
@@ -91,6 +93,8 @@ REPORTING_MANIFEST: Final = "config/agents/reporting.yaml"
 # The gateway policy whose investigate profile checks Investigation's suggested AQL (T-39).
 QRADAR_POLICY: Final = "config/policies/qradar.yaml"
 SKILLS_DIR: Final = "skills"
+# The default telemetry classes of the log source types, under the batch worker's root (T-95).
+CLASS_DEFAULTS_PATH: Final = "config/telemetry/log-source-classes.yaml"
 MIN_TOKEN_LENGTH: Final = 32
 _TOKEN = re.compile(r"[\x21-\x7e]+")
 
@@ -308,10 +312,12 @@ async def load_batch_runtime(environ: Mapping[str, str] | None = None) -> BatchR
 
     Asks the gateway for the tools of the token's profile, so the gateway must be up; fails
     unless the token is one of `qradar-inventory-read` with the lists the sync reads and the
-    reads of the health checks (`list_offenses`). Invalid health settings fail it too.
+    reads of the health checks (`list_offenses`). Invalid health settings fail it too, and so
+    does a missing or invalid class defaults file under the root (T-95).
     """
     env = os.environ if environ is None else environ
     url = database_url(env)
+    class_defaults = _class_defaults(env)
     health = _configured(lambda: HealthSettings.from_env(env))
     syslog = _syslog_settings(env)
     secrets_dir = Path(env.get(SECRETS_DIR_ENV, "/run/secrets") or "/run/secrets")
@@ -332,13 +338,23 @@ async def load_batch_runtime(environ: Mapping[str, str] | None = None) -> BatchR
     sessions = create_session_factory(engine)
     return BatchRuntime(
         sessions=sessions,
-        catalog_sync=CatalogSyncActivities(sessions=sessions, gateway=gateway, profile=profile),
+        catalog_sync=CatalogSyncActivities(
+            sessions=sessions, gateway=gateway, profile=profile, class_defaults=class_defaults
+        ),
         health=health,
         syslog=syslog,
         gateway=gateway,
         profile=profile,
         engine=engine,
     )
+
+
+def _class_defaults(env: Mapping[str, str]) -> ClassDefaults:
+    path = Path(env.get(ROOT_ENV, ".") or ".") / CLASS_DEFAULTS_PATH
+    try:
+        return load_class_defaults(path)
+    except TelemetryConfigError as error:
+        raise RuntimeConfigError(str(error)) from None
 
 
 def _syslog_settings(env: Mapping[str, str]) -> SyslogSettings | None:

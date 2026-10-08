@@ -23,6 +23,7 @@ import asyncio
 import logging
 from collections.abc import Awaitable, Callable
 from datetime import datetime, timedelta
+from types import MappingProxyType
 from typing import Final
 
 from pydantic import JsonValue
@@ -36,6 +37,7 @@ from ais0c_agents import GatewayClient, ToolsetProfile
 from ais0c_contracts import Budget, TimeWindow, ToolResult
 from ais0c_knowledge.catalog import (
     MAX_PAGES,
+    ClassDefaults,
     InventoryReadError,
     ListCall,
     read_inventory,
@@ -53,6 +55,8 @@ SYNC_WINDOW: Final = timedelta(days=1)
 MIN_CALL_INTERVAL: Final = timedelta(seconds=1)
 # Declared, not enforced: three lists of at most MAX_PAGES pages each.
 SYNC_BUDGET: Final = Budget(tokens=0, tool_calls=3 * MAX_PAGES, seconds=1800)
+# For a sync that is given no classes: no log source type has a default class.
+_NO_CLASS_DEFAULTS: Final[ClassDefaults] = MappingProxyType({})
 # How many missing IDs one log line names.
 _LOGGED_IDS: Final = 20
 
@@ -63,7 +67,8 @@ type Sleep = Callable[[float], Awaitable[None]]
 
 class CatalogSyncActivities:
     """The catalog sync, reading with `gateway` and `profile`, the `qradar-inventory-read`
-    profile and its token's client."""
+    profile and its token's client. `class_defaults` gives each log source the default
+    telemetry classes of its type (T-95)."""
 
     def __init__(
         self,
@@ -71,6 +76,7 @@ class CatalogSyncActivities:
         sessions: SessionFactory,
         gateway: GatewayClient,
         profile: ToolsetProfile,
+        class_defaults: ClassDefaults = _NO_CLASS_DEFAULTS,
         clock: Callable[[], datetime] = utc_now,
         min_call_interval: timedelta = MIN_CALL_INTERVAL,
         sleep: Sleep = asyncio.sleep,
@@ -80,9 +86,15 @@ class CatalogSyncActivities:
         self._sessions = sessions
         self._gateway = gateway
         self._profile = profile
+        self._class_defaults = class_defaults
         self._clock = clock
         self._interval = min_call_interval.total_seconds()
         self._sleep = sleep
+
+    @property
+    def class_defaults(self) -> ClassDefaults:
+        """The default telemetry classes the sync writes to each log source."""
+        return self._class_defaults
 
     def activities(self) -> list[Callable[..., object]]:
         return [self.sync_analysis_catalog]
@@ -111,7 +123,9 @@ class CatalogSyncActivities:
                 ) from None
         _heartbeat("catalog")
         async with self._sessions.begin() as session:
-            report = await sync_catalog(session, inventory, synced_at=self._clock())
+            report = await sync_catalog(
+                session, inventory, synced_at=self._clock(), class_defaults=self._class_defaults
+            )
         _log.info("catalog sync in run %s: %s", run.run_id, report.counts())
         for message, ids in (
             (

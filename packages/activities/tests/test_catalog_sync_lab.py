@@ -1,5 +1,6 @@
 """T-022 criterion 7: the lab QRadar's system rules and log sources reach the catalog, with
-each rule's enabled state (T-041 criterion 6).
+each rule's enabled state (T-041 criterion 6) and each log source's enabled state and default
+telemetry classes (T-068 criterion 6).
 
 `@pytest.mark.lab`: skipped unless `QRADAR_LAB_URL` and `QRADAR_LAB_TOKEN` are set (see
 ais0c_harness.pytest_plugin), and skipped with a reason without the qradar-mcp fork
@@ -39,9 +40,11 @@ from temporalio.worker import Worker
 from ais0c_activities import KNOWLEDGE_SYNC_CONTEXT, CatalogSyncActivities, SessionFactory
 from ais0c_activities.gateway import utc_now
 from ais0c_contracts import CatalogMode, RunStatus
-from ais0c_knowledge.catalog import clean_name
+from ais0c_knowledge.catalog import CLASS_DEFAULTS_FILE, clean_name, load_class_defaults
+from ais0c_knowledge.catalog.__main__ import report_lines
 from ais0c_mcp_gateway.upstream import McpUpstream
 from ais0c_storage.repositories import (
+    effective_telemetry_classes,
     list_agent_runs,
     list_catalog_log_sources,
     list_catalog_rules,
@@ -52,6 +55,7 @@ from ais0c_workflows.names import BATCH_TASK_QUEUE
 
 pytestmark = [pytest.mark.lab, pytest.mark.anyio]
 
+REPO_ROOT = Path(__file__).resolve().parents[3]
 FORK_ENV = "AIS0C_E2E_QRADAR_MCP"
 API_VERSION = "29.0"
 
@@ -140,7 +144,12 @@ async def test_the_lab_rules_and_log_sources_reach_the_catalog(
     endpoint, mcp_token = fork_url
     upstream = McpUpstream(endpoint, SecretStr(mcp_token), timeout_seconds=60)
     gateway, profile = await inventory_client(sessions, upstream, now=utc_now)
-    activities = CatalogSyncActivities(sessions=sessions, gateway=gateway, profile=profile)
+    activities = CatalogSyncActivities(
+        sessions=sessions,
+        gateway=gateway,
+        profile=profile,
+        class_defaults=load_class_defaults(REPO_ROOT / CLASS_DEFAULTS_FILE),
+    )
 
     started = time.monotonic()
     async with (
@@ -165,7 +174,7 @@ async def test_the_lab_rules_and_log_sources_reach_the_catalog(
     lab = Lab()
     rules = await lab.get("analytics/rules", "id,name,origin,enabled")
     sources = await lab.get(
-        "config/event_sources/log_source_management/log_sources", "id,name,type_id"
+        "config/event_sources/log_source_management/log_sources", "id,name,type_id,enabled"
     )
     types = await lab.get("config/event_sources/log_source_management/log_source_types", "id,name")
     type_names = {row["id"]: clean_name(str(row["name"])) for row in types}
@@ -193,6 +202,26 @@ async def test_the_lab_rules_and_log_sources_reach_the_catalog(
         row["id"]: (clean_name(str(row["name"])), type_names[row["type_id"]]) for row in sources
     }
     assert {(row.defined, row.in_scope) for row in catalog_sources} == {(False, True)}
+    # Each log source's enabled state is QRadar's; the disabled ones are in the catalog too.
+    assert {row.log_source_id: row.qradar_enabled for row in catalog_sources} == {
+        row["id"]: row["enabled"] for row in sources
+    }
+    disabled_sources = sum(1 for row in sources if row["enabled"] is False)
+    assert disabled_sources
+    assert {row.log_source_id for row in catalog_sources if not row.qradar_enabled} == {
+        row["id"] for row in sources if row["enabled"] is False
+    }
+    # The enabled log sources without a default class are of one type: the Universal DSM, which
+    # carries several products and is classified per log source (T-95).
+    unclassified = {
+        row.type_name
+        for row in catalog_sources
+        if row.qradar_enabled and not effective_telemetry_classes(row)
+    }
+    assert unclassified == {"Universal LEEF"}
+    assert all(
+        not effective_telemetry_classes(row) for row in catalog_sources if not row.qradar_enabled
+    )
     # The second run read QRadar again and changed nothing.
     assert first.catalog["rules_added"] == len(rules)
     assert first.catalog["log_sources_added"] == len(sources)
@@ -205,6 +234,8 @@ async def test_the_lab_rules_and_log_sources_reach_the_catalog(
     assert [run.status for run in runs] == [RunStatus.COMPLETED] * 2
     assert {call.policy_decision.value for call in calls} == {"allow"}
 
+    # The type lines and the summary of `python -m ais0c_knowledge.catalog telemetry`.
+    print("\n" + "\n".join(report_lines(catalog_sources)))
     print(
         "\n"
         + json.dumps(
@@ -213,6 +244,13 @@ async def test_the_lab_rules_and_log_sources_reach_the_catalog(
                 "second_run": second.catalog,
                 "system_rules": len(system_rules),
                 "disabled_rules": disabled_rules,
+                "log_sources": len(sources),
+                "disabled_log_sources": disabled_sources,
+                "unclassified_enabled_log_sources": sum(
+                    1
+                    for row in catalog_sources
+                    if row.qradar_enabled and not effective_telemetry_classes(row)
+                ),
                 "log_source_types": len(types),
                 "gateway_calls_per_run": [run.tool_calls for run in runs],
                 "first_run_seconds": round(took, 1),

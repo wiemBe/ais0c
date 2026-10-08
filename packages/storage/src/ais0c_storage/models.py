@@ -388,6 +388,17 @@ class CatalogLogSourceRow(Base):
     # `name` and `type_name` are synced from QRadar.
     name: Mapped[str]
     type_name: Mapped[str]
+    # Synced from QRadar: whether the log source is enabled there. A disabled log source has
+    # no telemetry classes (T-95, migration 0012).
+    qradar_enabled: Mapped[bool] = mapped_column(server_default=text("true"))
+    # The classes of the log source's type, from `config/telemetry/log-source-classes.yaml`;
+    # the sync writes them (T-95, migration 0012).
+    default_telemetry_classes: Mapped[list[str]] = mapped_column(
+        ARRAY(Text), server_default=text("'{}'")
+    )
+    # The classes an admin assigned; NULL means `default_telemetry_classes` apply. The sync never
+    # changes them (T-95, migration 0012).
+    telemetry_classes: Mapped[list[str] | None] = mapped_column(ARRAY(Text))
     defined: Mapped[bool]
     description: Mapped[str | None]
     owner: Mapped[str | None]

@@ -6,8 +6,9 @@ fields that reach a prompt are checked against the `CatalogRule` and `CatalogLog
 contracts before they are stored.
 
 The QRadar sync (`KnowledgeSync`) writes only what comes from QRadar: names, a log source's
-type, a rule's enabled state (`qradar_enabled`), and `missing_since` on entries QRadar no
-longer lists. An entry is never deleted (T-37).
+type, the enabled state of a rule or log source (`qradar_enabled`), the default telemetry
+classes of a log source's type, and `missing_since` on entries QRadar no longer lists. An entry
+is never deleted (T-37). A log source's own `telemetry_classes` are an admin's (T-95).
 """
 
 from collections.abc import Collection, Iterable
@@ -16,12 +17,13 @@ from datetime import datetime
 from itertools import batched
 
 from pydantic import TypeAdapter
-from sqlalchemy import or_, select, update
-from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy import Text, cast, func, literal, or_, select, update
+from sqlalchemy.dialects.postgresql import ARRAY, insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import InstrumentedAttribute
 
 from ais0c_contracts import CatalogLogSource, CatalogMode, CatalogRule, Level, Summary
+from ais0c_storage.enums import TelemetryClass
 from ais0c_storage.models import CatalogLogSourceRow, CatalogRuleRow
 from ais0c_storage.repositories._common import fetch_all, get_row, update_one
 
@@ -49,6 +51,10 @@ class SyncedLogSource:
     log_source_id: int
     name: str
     type_name: str
+    qradar_enabled: bool = True
+    """QRadar's `enabled`; true, the column's default, when the reader does not know it."""
+    default_telemetry_classes: tuple[TelemetryClass, ...] = ()
+    """The classes of the log source's type (T-95)."""
 
 
 # --- Rules
@@ -299,12 +305,26 @@ async def get_catalog_log_sources(
     return await fetch_all(session, statement)
 
 
+def effective_telemetry_classes(row: CatalogLogSourceRow) -> frozenset[TelemetryClass]:
+    """The log source's classes: none when QRadar disabled it or no longer lists it;
+    otherwise the admin's `telemetry_classes`, or the type's defaults when those are NULL."""
+    if not row.qradar_enabled or row.missing_since is not None:
+        return frozenset()
+    classes = row.telemetry_classes
+    if classes is None:
+        classes = row.default_telemetry_classes
+    return frozenset(TelemetryClass(value) for value in classes)
+
+
 async def list_catalog_log_sources(
     session: AsyncSession,
     *,
     defined: bool | None = None,
     in_scope: bool | None = None,
     missing: bool | None = None,
+    qradar_enabled: bool | None = None,
+    telemetry_class: TelemetryClass | None = None,
+    unclassified: bool | None = None,
     search: str | None = None,
     after_log_source_id: int | None = None,
     limit: int | None = None,
@@ -312,8 +332,10 @@ async def list_catalog_log_sources(
     """Log sources matching every given filter, by log source ID.
 
     `search` matches part of the name or the type name, ignoring case. `missing` is
-    `catalog_rules`' (T-37). `after_log_source_id` starts the page after that ID; `limit` leaves
-    it unlimited.
+    `catalog_rules`' (T-37). `qradar_enabled` is QRadar's enabled state. `telemetry_class` keeps
+    the log sources with that effective class and `unclassified=true` those enabled in QRadar,
+    still listed and without one (`effective_telemetry_classes`, T-95). `after_log_source_id`
+    starts the page after that ID; `limit` leaves it unlimited.
     """
     statement = select(CatalogLogSourceRow)
     if defined is not None:
@@ -323,6 +345,20 @@ async def list_catalog_log_sources(
     if missing is not None:
         marked = CatalogLogSourceRow.missing_since.is_not(None)
         statement = statement.where(marked if missing else ~marked)
+    if qradar_enabled is not None:
+        statement = statement.where(CatalogLogSourceRow.qradar_enabled == qradar_enabled)
+    if telemetry_class is not None or unclassified is not None:
+        counted = CatalogLogSourceRow.qradar_enabled & CatalogLogSourceRow.missing_since.is_(None)
+        classes = func.coalesce(
+            CatalogLogSourceRow.telemetry_classes, CatalogLogSourceRow.default_telemetry_classes
+        )
+        if telemetry_class is not None:
+            statement = statement.where(
+                counted, classes.contains(cast(literal([telemetry_class.value]), ARRAY(Text)))
+            )
+        if unclassified is not None:
+            empty = func.cardinality(classes) == 0
+            statement = statement.where(counted & empty if unclassified else ~(counted & empty))
     if search:
         statement = statement.where(
             or_(
@@ -348,8 +384,9 @@ async def sync_catalog_log_sources(
     """Bring the catalog in line with the log sources read from QRadar (`KnowledgeSync`).
 
     A new log source is added undefined and in scope, so it is analyzed until an operator
-    says otherwise, like an undefined rule. Changed names and type names are updated.
-    Operator fields are never changed and nothing is deleted. Returns the IDs of the new log
+    says otherwise, like an undefined rule. Changed names, type names, enabled states and
+    default telemetry classes are updated. Operator fields, `telemetry_classes` among them, are
+    never changed and nothing is deleted. Returns the IDs of the new log
     sources.
     """
     latest = {source.log_source_id: source for source in log_sources}
@@ -360,6 +397,10 @@ async def sync_catalog_log_sources(
                 "log_source_id": source.log_source_id,
                 "name": source.name,
                 "type_name": source.type_name,
+                "qradar_enabled": source.qradar_enabled,
+                "default_telemetry_classes": [
+                    telemetry.value for telemetry in source.default_telemetry_classes
+                ],
                 "defined": False,
                 "in_scope": True,
                 "updated_by": synced_by,
@@ -380,12 +421,18 @@ async def sync_catalog_log_sources(
             set_={
                 "name": upsert.excluded.name,
                 "type_name": upsert.excluded.type_name,
+                "qradar_enabled": upsert.excluded.qradar_enabled,
+                "default_telemetry_classes": upsert.excluded.default_telemetry_classes,
                 "updated_by": upsert.excluded.updated_by,
                 "updated_at": upsert.excluded.updated_at,
             },
             where=or_(
                 CatalogLogSourceRow.name.is_distinct_from(upsert.excluded.name),
                 CatalogLogSourceRow.type_name.is_distinct_from(upsert.excluded.type_name),
+                CatalogLogSourceRow.qradar_enabled.is_distinct_from(upsert.excluded.qradar_enabled),
+                CatalogLogSourceRow.default_telemetry_classes.is_distinct_from(
+                    upsert.excluded.default_telemetry_classes
+                ),
             ),
         )
         await session.execute(changed)

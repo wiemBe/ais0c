@@ -2,7 +2,7 @@
 
 `read_inventory` reads three lists with the tools of the MCP Policy Gateway's
 `qradar-inventory-read` profile: the rules with their enabled state (`list_rules`), the log
-sources (`list_log_sources`) and the log source types (`list_log_source_types`), which name
+sources, also with their enabled state (`list_log_sources`), and the log source types (`list_log_source_types`), which name
 each log source's type. The caller hands in the call function: `ais0c_activities` makes the
 calls in a run of the pseudo agent `catalog-sync` (D-33), so this package needs no gateway
 client.
@@ -104,9 +104,9 @@ _RULES: Final = _List(
 )
 _LOG_SOURCES: Final = _List(
     "list_log_sources",
-    {"fields": "id,name,type_id", "sort": "+id"},
+    {"fields": "id,name,type_id,enabled", "sort": "+id"},
     reason="Read QRadar's log sources for the Analysis Catalog sync.",
-    expected_evidence="The ID, name and type ID of every log source.",
+    expected_evidence="The ID, name, type ID and enabled state of every log source.",
 )
 _LOG_SOURCE_TYPES: Final = _List(
     "list_log_source_types",
@@ -132,6 +132,8 @@ class _Rule(_Named):
 
 class _LogSource(_Named):
     type_id: _Id
+    # Synced as `catalog_log_sources.qradar_enabled` (T-95).
+    enabled: bool
 
 
 async def read_inventory(
@@ -158,7 +160,12 @@ async def read_inventory(
             for rule in _by_id(rules)
         ),
         log_sources=tuple(
-            SyncedLogSource(source.id, clean_name(source.name), type_names[source.type_id])
+            SyncedLogSource(
+                source.id,
+                clean_name(source.name),
+                type_names[source.type_id],
+                qradar_enabled=source.enabled,
+            )
             for source in _by_id(sources)
             if source.type_id in type_names
         ),

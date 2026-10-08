@@ -7,10 +7,11 @@
   note; a new log source is added undefined and in scope. The UI lists undefined entries for
   an operator to fill in (T-029); until then they are analyzed (§9).
 - An existing entry gets only what comes from QRadar: a rule its name and whether it is
-  enabled (`qradar_enabled`), a log source its name and type name. The fields operators fill
-  in never change: a rule's mode, floor, context note, automated action and ATT&CK techniques
-  (T-26); a log source's description, owner, criticality, scope and context note; whether an
-  entry is defined; the AI's draft note. A rule disabled in QRadar is still analyzed the way
+  enabled (`qradar_enabled`), a log source its name, type name, enabled state and the default
+  telemetry classes of its type (`class_defaults`, T-95). The fields operators fill in never
+  change: a rule's mode, floor, context note, automated action and ATT&CK techniques (T-26); a
+  log source's description, owner, criticality, scope, context note and assigned
+  `telemetry_classes`; whether an entry is defined; the AI's draft note. A rule disabled in QRadar is still analyzed the way
   its catalog entry says (T-37).
 - Nothing is deleted. An entry QRadar no longer lists is marked: its `missing_since` becomes
   the sync's time, unless it has one, so the mark keeps the sync that first missed it. An
@@ -34,8 +35,9 @@ attempt still runs, never interleave, and each one's report is exact.
 
 import hashlib
 from collections.abc import Collection, Iterable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
+from types import MappingProxyType
 from typing import Final
 
 from pydantic import JsonValue
@@ -43,7 +45,8 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ais0c_knowledge.catalog.inventory import QRadarInventory
-from ais0c_storage import ActorKind
+from ais0c_knowledge.catalog.telemetry import ClassDefaults
+from ais0c_storage import ActorKind, TelemetryClass
 from ais0c_storage.repositories import (
     SyncedLogSource,
     SyncedRule,
@@ -61,6 +64,7 @@ RULE_SYNC_ACTION: Final = "catalog.rule.sync"
 LOG_SOURCE_SYNC_ACTION: Final = "catalog.log_source.sync"
 RULE_OBJECT: Final = "catalog_rule"
 LOG_SOURCE_OBJECT: Final = "catalog_log_source"
+_NO_DEFAULTS: Final[ClassDefaults] = MappingProxyType({})
 _LOCK_KEY: Final = int.from_bytes(
     hashlib.sha256(b"ais0c.catalog-sync").digest()[:8], "big", signed=True
 )
@@ -85,7 +89,8 @@ class CatalogSyncReport:
     """Marked missing before and listed by QRadar again; the mark is gone."""
     log_sources_added: tuple[int, ...] = ()
     log_sources_changed: tuple[int, ...] = ()
-    """Renamed, or given another type, in QRadar."""
+    """Renamed, given another type, enabled or disabled in QRadar, or given other default
+    classes."""
     log_sources_missing: tuple[int, ...] = ()
     """In the catalog but no longer listed by QRadar; kept, and marked (`missing_since`)."""
     log_sources_marked_missing: tuple[int, ...] = ()
@@ -128,11 +133,15 @@ class CatalogSyncReport:
         }
 
 
+type _RuleFields = tuple[str, bool]
+type _SourceFields = tuple[str, str, bool, tuple[TelemetryClass, ...]]
+
+
 @dataclass(frozen=True)
-class _Known:
+class _Known[F]:
     """An entry as the catalog holds it before the sync."""
 
-    qradar: tuple[str | bool, ...]
+    qradar: F
     """Its fields that come from QRadar."""
     missing_since: datetime | None
 
@@ -155,10 +164,12 @@ async def sync_catalog(
     *,
     synced_at: datetime,
     actor: str = SYNC_ACTOR,
+    class_defaults: ClassDefaults = _NO_DEFAULTS,
 ) -> CatalogSyncReport:
     """Apply `inventory`, a complete read of QRadar, to the catalog in the caller's
     transaction. `synced_at` becomes the `updated_at` of the entries it adds, changes or marks,
-    and the `missing_since` of the entries it marks."""
+    and the `missing_since` of the entries it marks. `class_defaults` gives each log source the
+    default telemetry classes of its type; a type it does not name has none."""
     await session.execute(select(func.pg_advisory_xact_lock(_LOCK_KEY)))
     # Plain values, taken before anything is written.
     known_rules = {
@@ -166,11 +177,25 @@ async def sync_catalog(
         for row in await list_catalog_rules(session)
     }
     known_sources = {
-        row.log_source_id: _Known((row.name, row.type_name), row.missing_since)
+        row.log_source_id: _Known(
+            (
+                row.name,
+                row.type_name,
+                row.qradar_enabled,
+                _ordered(TelemetryClass(value) for value in row.default_telemetry_classes),
+            ),
+            row.missing_since,
+        )
         for row in await list_catalog_log_sources(session)
     }
     rules = {rule.rule_id: rule for rule in inventory.rules}
-    sources = {source.log_source_id: source for source in inventory.log_sources}
+    sources = {
+        source.log_source_id: replace(
+            source,
+            default_telemetry_classes=_ordered(class_defaults.get(source.type_name, ())),
+        )
+        for source in inventory.log_sources
+    }
     listed_sources = inventory.log_source_ids()
 
     new_rules = [rule for rule_id, rule in rules.items() if rule_id not in known_rules]
@@ -231,18 +256,30 @@ async def sync_catalog(
     for source in new_sources:
         await audit.log_source(
             source.log_source_id,
-            {"change": "added", "name": source.name, "type_name": source.type_name},
+            {
+                "change": "added",
+                "name": source.name,
+                "type_name": source.type_name,
+                "qradar_enabled": source.qradar_enabled,
+                "default_telemetry_classes": _names(source.default_telemetry_classes),
+            },
         )
     for source in changed_sources:
-        previous_name, previous_type_name = known_sources[source.log_source_id].qradar
+        previous_name, previous_type_name, previous_enabled, previous_classes = known_sources[
+            source.log_source_id
+        ].qradar
         await audit.log_source(
             source.log_source_id,
             {
                 "change": "changed",
                 "name": source.name,
                 "type_name": source.type_name,
+                "qradar_enabled": source.qradar_enabled,
+                "default_telemetry_classes": _names(source.default_telemetry_classes),
                 "previous_name": previous_name,
                 "previous_type_name": previous_type_name,
+                "previous_qradar_enabled": previous_enabled,
+                "previous_default_telemetry_classes": _names(previous_classes),
             },
         )
     await audit.marks(
@@ -266,15 +303,26 @@ async def sync_catalog(
     )
 
 
-def _rule_fields(rule: SyncedRule) -> tuple[str | bool, ...]:
+def _rule_fields(rule: SyncedRule) -> _RuleFields:
     return (rule.rule_name, rule.qradar_enabled)
 
 
-def _source_fields(source: SyncedLogSource) -> tuple[str | bool, ...]:
-    return (source.name, source.type_name)
+def _source_fields(source: SyncedLogSource) -> _SourceFields:
+    return (source.name, source.type_name, source.qradar_enabled, source.default_telemetry_classes)
 
 
-def _marks(known: Mapping[int, _Known], listed: Collection[int]) -> _Marks:
+def _ordered(classes: Iterable[TelemetryClass]) -> tuple[TelemetryClass, ...]:
+    """`classes` as a tuple in the enum's order, so equal sets compare equal."""
+    found = set(classes)
+    return tuple(telemetry for telemetry in TelemetryClass if telemetry in found)
+
+
+def _names(classes: Iterable[TelemetryClass]) -> list[JsonValue]:
+    """Class names for an audit entry."""
+    return [telemetry.value for telemetry in classes]
+
+
+def _marks[F](known: Mapping[int, _Known[F]], listed: Collection[int]) -> _Marks:
     missing = _ids(known.keys() - set(listed))
     return _Marks(
         missing=missing,
@@ -305,7 +353,7 @@ class _Audit:
         action: str,
         object_type: str,
         marks: _Marks,
-        known: Mapping[int, _Known],
+        known: Mapping[int, _Known[object]],
         synced_at: datetime,
     ) -> None:
         """`missing` for the entries the sync marked, `returned` for those it unmarked."""
