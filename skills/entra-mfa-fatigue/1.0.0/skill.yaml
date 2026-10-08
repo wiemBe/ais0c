@@ -14,17 +14,13 @@ triggers:
   log_source_types: []
   attack_techniques: [T1621, T1621.001]
 required_telemetry:
-  - log_source_type: Microsoft Entra ID Sign-in Log
+  - telemetry_class: identity-cloud
     events:
       - "Cloud sign-in log: the account's authentication attempts with second-factor prompt outcomes - denied storms, approvals, times and the requesting addresses"
     required: true
-  - log_source_type: Microsoft Entra ID Sign-in Log
+  - telemetry_class: identity-cloud
     events:
       - "The approved session's activity afterwards"
-    required: false
-  - log_source_type: E-mail Security Appliance
-    events:
-      - "Mailbox activity from the approved session, where the gateway sees it"
     required: false
 required_evidence:
   - id: prompt-storm

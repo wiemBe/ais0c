@@ -14,11 +14,11 @@ triggers:
   # connects the one whose Purpose names this WAF attack type.
   attack_techniques: [T1190]
 required_telemetry:
-  - log_source_type: F5 Networks BIG-IP ASM
+  - telemetry_class: waf
     events:
       - "Request log with attack_type SQL-Injection: sig_names, request_status, response_code, ip_client, uri, query_string and user_agent"
     required: true
-  - log_source_type: Fortinet FortiGate Security Gateway
+  - telemetry_class: firewall
     events:
       - "Traffic from the web server to external addresses after the requests, for data leaving the network"
     required: false

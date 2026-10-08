@@ -29,7 +29,7 @@ top of `skills/`, such as this README, are not skills.
 | `owner` | The person or team that maintains the skill |
 | `allowed_agent_roles` | The agents that may use it, e.g. `[investigation]` |
 | `triggers` | `rule_ids`, `log_source_types`, `attack_techniques`: when the router offers the skill |
-| `required_telemetry` | Log source types and the events the method reads. Without a `required: true` source the agent reports a data gap instead of concluding; a `required: false` source only adds detail. |
+| `required_telemetry` | Telemetry classes and the events the method reads; each item's `telemetry_class` is one of the classes of `ais0c_storage.TelemetryClass` except `siem-internal` (decision T-95). Without a `required: true` source the agent reports a data gap instead of concluding; a `required: false` source only adds detail. |
 | `required_evidence` | What the agent collects, or reports as a data gap, before it concludes; each item has an `id` |
 | `budgets` | `tokens`, `tool_calls`, `wall_clock_seconds`: upper limits for one agent run that uses the skill |
 | `output_schema` | The agent result model, e.g. `InvestigationResult` |

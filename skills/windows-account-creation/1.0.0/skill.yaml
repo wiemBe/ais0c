@@ -12,11 +12,11 @@ triggers:
   log_source_types: []
   attack_techniques: [T1136, T1136.001, T1136.002]
 required_telemetry:
-  - log_source_type: Microsoft Windows Security Event Log
+  - telemetry_class: windows
     events:
       - "4720 on domain controllers and members: a user account was created, with the subject, the new account and the host"
     required: true
-  - log_source_type: Microsoft Windows Security Event Log
+  - telemetry_class: windows
     events:
       - "4722 account enabled, 4724 password reset, 4728, 4732 and 4756 group additions of the new account"
       - "4624 logons of the new account after its creation"

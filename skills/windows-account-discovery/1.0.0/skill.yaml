@@ -13,11 +13,11 @@ triggers:
   log_source_types: []
   attack_techniques: [T1069, T1069.002, T1087, T1087.002]
 required_telemetry:
-  - log_source_type: Microsoft Windows Security Event Log
+  - telemetry_class: windows
     events:
       - "4688 process creation with enumeration argument shapes: account and group listing commands, directory-module account queries, trust listings, and privilege display commands, with the subject and host"
     required: true
-  - log_source_type: Microsoft Windows Security Event Log
+  - telemetry_class: windows
     events:
       - "4104 script blocks of enumeration scripts, where PowerShell logging reaches QRadar"
     required: false

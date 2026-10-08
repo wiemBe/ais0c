@@ -14,11 +14,11 @@ triggers:
   log_source_types: []
   attack_techniques: [T1098.003]
 required_telemetry:
-  - log_source_type: Microsoft Entra ID Audit Log
+  - telemetry_class: identity-cloud
     events:
       - "Cloud audit log: role assignments and activations - the role, the assignee, the assigner, permanence or eligibility, and the time"
     required: true
-  - log_source_type: Microsoft Entra ID Sign-in Log
+  - telemetry_class: identity-cloud
     events:
       - "The assignee's privileged sign-ins and administrative actions afterwards"
     required: false

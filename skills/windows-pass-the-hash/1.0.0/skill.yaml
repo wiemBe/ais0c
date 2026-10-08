@@ -12,12 +12,12 @@ triggers:
   log_source_types: []
   attack_techniques: [T1550.002]
 required_telemetry:
-  - log_source_type: Microsoft Windows Security Event Log
+  - telemetry_class: windows
     events:
       - "4624 network logons (type 3) of privileged accounts whose authentication package is NTLM, with the source address"
       - "4776 NTLM credential validation on domain controllers, with the account and the workstation"
     required: true
-  - log_source_type: Microsoft Windows Security Event Log
+  - telemetry_class: windows
     events:
       - "4768 TGT requests of the same accounts in the same window, to show whether Kerberos was used at all"
       - "5140 and 5145 administrative share access that followed the logons"

@@ -44,7 +44,7 @@ def test_skill_and_no_skill_sections_use_the_common_renderer_text() -> None:
     assert f"# Skill\n{render_skill(None)}\n\n# Context" in instruction_text(without_skill)
     assert "# Skill\nFind DCSync replication and its source account." in text
     assert "## Required telemetry" in text
-    assert "Microsoft Windows Security Event Log (required)" in text
+    assert "windows (required)" in text
     assert "## Required evidence" in text
     assert "replication-events: The 4662 events" in text
     assert NO_SKILL in instruction_text(without_skill)

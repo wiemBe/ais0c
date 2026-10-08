@@ -14,11 +14,11 @@ triggers:
   log_source_types: []
   attack_techniques: [T1219]
 required_telemetry:
-  - log_source_type: Fortinet FortiGate Security Gateway
+  - telemetry_class: firewall
     events:
       - "Traffic log: connections to the remote-access services' known endpoints and ports from internal hosts, with duration and volume"
     required: true
-  - log_source_type: Microsoft Windows Security Event Log
+  - telemetry_class: windows
     events:
       - "4688 process creation of the remote-access tools' program names, and their installation events (7045, msi shapes)"
     required: false

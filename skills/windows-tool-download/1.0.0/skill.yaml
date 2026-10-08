@@ -14,15 +14,15 @@ triggers:
   log_source_types: []
   attack_techniques: [T1105]
 required_telemetry:
-  - log_source_type: Microsoft Windows Security Event Log
+  - telemetry_class: windows
     events:
       - "4688 process creation with download argument shapes: certificate, transfer, background-transfer and archive utilities given remote sources and local destinations, and browsers writing into non-profile paths"
     required: true
-  - log_source_type: Fortinet FortiGate Security Gateway
+  - telemetry_class: firewall
     events:
       - "Traffic of the host to the fetch's destinations: addresses, ports and byte volume"
     required: false
-  - log_source_type: Microsoft Windows Security Event Log
+  - telemetry_class: windows
     events:
       - "4688 execution of the fetched file afterwards, and archive extraction events"
     required: false

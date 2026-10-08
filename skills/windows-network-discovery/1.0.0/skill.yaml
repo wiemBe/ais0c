@@ -13,11 +13,11 @@ triggers:
   log_source_types: []
   attack_techniques: [T1016, T1018]
 required_telemetry:
-  - log_source_type: Microsoft Windows Security Event Log
+  - telemetry_class: windows
     events:
       - "4688 process creation with discovery argument shapes: network listing and name-resolution commands, share and session listings, address-sweep script shapes, with the subject and host"
     required: true
-  - log_source_type: Fortinet FortiGate Security Gateway
+  - telemetry_class: firewall
     events:
       - "The same host's internal scanning at the firewall, for sweeps the process events do not show (the firewall-port-scan skill's method)"
     required: false

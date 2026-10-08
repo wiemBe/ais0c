@@ -12,11 +12,11 @@ triggers:
   log_source_types: []
   attack_techniques: [T1098]
 required_telemetry:
-  - log_source_type: Microsoft Windows Security Event Log
+  - telemetry_class: windows
     events:
       - "4728, 4732 and 4756 on domain controllers and members: a member was added to a security group, with the subject, the member and the group name"
     required: true
-  - log_source_type: Microsoft Windows Security Event Log
+  - telemetry_class: windows
     events:
       - "4624 logons and 4768 ticket requests of the added member after the change"
     required: false

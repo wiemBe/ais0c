@@ -13,11 +13,11 @@ triggers:
   log_source_types: []
   attack_techniques: [T1595.002]
 required_telemetry:
-  - log_source_type: F5 Networks BIG-IP ASM
+  - telemetry_class: waf
     events:
       - "Request log: attack_type (Vulnerability Scan or several families), request_status, response_code, ip_client, uri, user_agent and violation_rating"
     required: true
-  - log_source_type: Fortinet FortiGate Security Gateway
+  - telemetry_class: firewall
     events:
       - "Traffic of the scanning source at the firewall, for connections the WAF does not see"
     required: false

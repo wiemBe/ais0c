@@ -13,15 +13,15 @@ triggers:
   log_source_types: []
   attack_techniques: [T1059, T1059.001]
 required_telemetry:
-  - log_source_type: Microsoft Windows Security Event Log
+  - telemetry_class: windows
     events:
       - "4688 process creation: powershell.exe with encoded-command, download or execution-policy argument shapes, with the parent process and command line"
     required: true
-  - log_source_type: Microsoft Windows PowerShell
+  - telemetry_class: windows
     events:
-      - "4104 script block logs: the decoded content the host recorded, when script block logging is on"
+      - "4104 script block logs from the Microsoft-Windows-PowerShell/Operational channel (collected with the Windows logs): the decoded content the host recorded, when script block logging is on"
     required: false
-  - log_source_type: Fortinet FortiGate Security Gateway
+  - telemetry_class: firewall
     events:
       - "Traffic of the host after the execution, for downloaded code calling out"
     required: false

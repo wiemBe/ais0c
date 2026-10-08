@@ -14,11 +14,11 @@ triggers:
   log_source_types: []
   attack_techniques: [T1134, T1134.001]
 required_telemetry:
-  - log_source_type: Microsoft Windows Security Event Log
+  - telemetry_class: windows
     events:
       - "4624 logons with logon type 9 (new credentials) and the accounts and addresses involved, and 4673 and 4674 sensitive privilege use by accounts outside their normal roles"
     required: true
-  - log_source_type: Microsoft Windows Security Event Log
+  - telemetry_class: windows
     events:
       - "4688 process creation with runas and impersonation argument shapes, and 4624 logon type 3 from the same hosts"
     required: false

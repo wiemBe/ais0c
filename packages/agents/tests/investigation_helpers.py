@@ -113,7 +113,7 @@ def dcsync_skill(
             "instructions": "Find DCSync replication and its source account.",
             "required_telemetry": [
                 {
-                    "log_source_type": "Microsoft Windows Security Event Log",
+                    "telemetry_class": "windows",
                     "events": ["4662 on domain controllers"],
                     "required": True,
                 }

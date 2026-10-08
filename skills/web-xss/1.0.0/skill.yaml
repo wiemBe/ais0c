@@ -12,11 +12,11 @@ triggers:
   log_source_types: []
   attack_techniques: [T1189]
 required_telemetry:
-  - log_source_type: F5 Networks BIG-IP ASM
+  - telemetry_class: waf
     events:
       - "Request log with attack_type Cross Site Scripting (XSS): sig_names, request_status, response_code, ip_client, uri, query_string and user_agent"
     required: true
-  - log_source_type: Fortinet FortiGate Security Gateway
+  - telemetry_class: firewall
     events:
       - "Traffic from the web server to external addresses after the requests, for script content loaded from outside"
     required: false

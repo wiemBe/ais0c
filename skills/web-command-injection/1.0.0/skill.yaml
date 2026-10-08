@@ -14,15 +14,15 @@ triggers:
   # connects the one whose Purpose names this WAF attack type.
   attack_techniques: [T1190]
 required_telemetry:
-  - log_source_type: F5 Networks BIG-IP ASM
+  - telemetry_class: waf
     events:
       - "Request log with attack_type Command Execution: sig_names, request_status, response_code, ip_client, uri, query_string and user_agent"
     required: true
-  - log_source_type: Fortinet FortiGate Security Gateway
+  - telemetry_class: firewall
     events:
       - "Traffic from the web server: outbound connections to external addresses and their volume, the strongest sign that a command ran"
     required: false
-  - log_source_type: Microsoft Windows Security Event Log
+  - telemetry_class: windows
     events:
       - "Events of the web server host after the requests: new services (7045) and processes, when the host reports to QRadar"
     required: false

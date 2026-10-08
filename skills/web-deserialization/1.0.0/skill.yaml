@@ -14,11 +14,11 @@ triggers:
   log_source_types: []
   attack_techniques: [T1190]
 required_telemetry:
-  - log_source_type: F5 Networks BIG-IP ASM
+  - telemetry_class: waf
     events:
       - "Request log: serialized-object and gadget signature families in sig_names, with request_status, response_code, ip_client, uri and the parameter shapes in query_string"
     required: true
-  - log_source_type: Fortinet FortiGate Security Gateway
+  - telemetry_class: firewall
     events:
       - "Outbound traffic from the web server after answered requests, and any new processes or services on the host where its events reach QRadar"
     required: false

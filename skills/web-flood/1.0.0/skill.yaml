@@ -13,11 +13,11 @@ triggers:
   log_source_types: []
   attack_techniques: [T1498]
 required_telemetry:
-  - log_source_type: F5 Networks BIG-IP ASM
+  - telemetry_class: waf
     events:
       - "Request log: the volume of requests per ip_client in the window, with request_status, uri and response codes"
     required: true
-  - log_source_type: Fortinet FortiGate Security Gateway
+  - telemetry_class: firewall
     events:
       - "Traffic of the same sources at the firewall: connection counts and volume, to see whether the flood passed the WAF"
     required: false

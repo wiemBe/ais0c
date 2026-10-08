@@ -12,11 +12,11 @@ triggers:
   log_source_types: []
   attack_techniques: [T1543.003]
 required_telemetry:
-  - log_source_type: Microsoft Windows Security Event Log
+  - telemetry_class: windows
     events:
       - "7045 in the System log of the host: a service was installed, with the service name, the image path, the start type and the account it runs as"
     required: true
-  - log_source_type: Microsoft Windows Security Event Log
+  - telemetry_class: windows
     events:
       - "4688 process creation of the service binary and 4624 logons that preceded the install"
     required: false

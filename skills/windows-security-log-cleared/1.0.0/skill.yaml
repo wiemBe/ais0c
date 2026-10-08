@@ -12,11 +12,11 @@ triggers:
   log_source_types: []
   attack_techniques: [T1070.001]
 required_telemetry:
-  - log_source_type: Microsoft Windows Security Event Log
+  - telemetry_class: windows
     events:
       - "1102 on the host: the audit log was cleared, with the subject account"
     required: true
-  - log_source_type: Microsoft Windows Security Event Log
+  - telemetry_class: windows
     events:
       - "104 in the System log: the log file was cleared"
       - "4624, 4625, 7045 and 4720 events on the same host shortly before the clear"

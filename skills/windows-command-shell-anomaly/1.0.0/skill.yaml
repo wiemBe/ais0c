@@ -13,11 +13,11 @@ triggers:
   log_source_types: []
   attack_techniques: [T1059.003]
 required_telemetry:
-  - log_source_type: Microsoft Windows Security Event Log
+  - telemetry_class: windows
     events:
       - "4688 process creation: cmd.exe with chained, redirected or obfuscated argument shapes, and the parent process that started it"
     required: true
-  - log_source_type: Fortinet FortiGate Security Gateway
+  - telemetry_class: firewall
     events:
       - "Traffic of the host after the execution, for shells calling out to fetch more"
     required: false

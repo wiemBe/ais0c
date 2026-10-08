@@ -13,11 +13,11 @@ triggers:
   log_source_types: []
   attack_techniques: [T1562, T1562.001]
 required_telemetry:
-  - log_source_type: Microsoft Windows Security Event Log
+  - telemetry_class: windows
     events:
       - "7036 and 7040 in the System log: the defense services' state changes and start-type changes, and 4719 system audit policy changes in the Security log"
     required: true
-  - log_source_type: Microsoft Windows Security Event Log
+  - telemetry_class: windows
     events:
       - "4688 process creation with argument shapes that stop, exclude or uninstall defense tools, and 1102 security log clears in the same window"
     required: false

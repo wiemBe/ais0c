@@ -14,11 +14,11 @@ triggers:
   log_source_types: []
   attack_techniques: [T1566.002]
 required_telemetry:
-  - log_source_type: F5 Networks BIG-IP ASM
+  - telemetry_class: waf
     events:
       - "Request log: parameters carrying full external URLs on redirect-style endpoints, with the destinations, sources and response codes"
     required: true
-  - log_source_type: Fortinet FortiGate Security Gateway
+  - telemetry_class: firewall
     events:
       - "Internal hosts' later traffic to the redirect destinations, for the users who followed"
     required: false

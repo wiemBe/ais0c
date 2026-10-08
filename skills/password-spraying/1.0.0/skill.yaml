@@ -14,17 +14,17 @@ triggers:
   # Brute force (T1110) offenses are offered the skill too: its first step tells the two apart.
   attack_techniques: [T1110, T1110.003]
 required_telemetry:
-  - log_source_type: Microsoft Windows Security Event Log
+  - telemetry_class: windows
     events:
       - "4625 failed logons with the target account, the source address and the failure status"
       - "4624 successful logons from the same source addresses"
     required: true
-  - log_source_type: Microsoft Windows Security Event Log
+  - telemetry_class: windows
     events:
       - "4771 Kerberos pre-authentication failures and 4776 NTLM credential validation on domain controllers"
       - "4740 account lockouts on domain controllers"
     required: false
-  - log_source_type: Fortinet FortiGate Security Gateway
+  - telemetry_class: vpn
     events:
       - "SSL VPN login failures, when the attempts target the VPN portal"
     required: false

@@ -14,11 +14,11 @@ triggers:
   # both mappings offer the skill.
   attack_techniques: [T1041, T1048]
 required_telemetry:
-  - log_source_type: Fortinet FortiGate Security Gateway
+  - telemetry_class: firewall
     events:
       - "Traffic log: outbound byte volume per internal host and destination, compared with the host's baseline"
     required: true
-  - log_source_type: F5 Networks BIG-IP ASM
+  - telemetry_class: waf
     events:
       - "Request log: responses leaving the network that are far larger than the application serves that client, when the path is a web application"
     required: false

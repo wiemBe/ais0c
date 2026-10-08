@@ -14,11 +14,11 @@ triggers:
   log_source_types: []
   attack_techniques: [T1218]
 required_telemetry:
-  - log_source_type: Microsoft Windows Security Event Log
+  - telemetry_class: windows
     events:
       - "4688 process creation of the proxy binaries with off-purpose argument shapes: script interpreters of utility binaries pointed at remote content, dynamic-link libraries loaded by name, or utility formats invoked as programs"
     required: true
-  - log_source_type: Fortinet FortiGate Security Gateway
+  - telemetry_class: firewall
     events:
       - "Traffic of the host after the execution, for proxies that fetched remote content"
     required: false

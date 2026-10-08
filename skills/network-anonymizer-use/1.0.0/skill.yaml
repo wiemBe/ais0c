@@ -14,11 +14,11 @@ triggers:
   log_source_types: []
   attack_techniques: [T1090.003]
 required_telemetry:
-  - log_source_type: Fortinet FortiGate Security Gateway
+  - telemetry_class: firewall
     events:
       - "Traffic log: connections from internal hosts to anonymizer, commercial VPN and consumer proxy endpoint ranges, with byte volume, session shapes and times"
     required: true
-  - log_source_type: Microsoft Windows Security Event Log
+  - telemetry_class: windows
     events:
       - "The host's process events for the client programs behind the connections, where they reach QRadar"
     required: false

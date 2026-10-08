@@ -53,7 +53,7 @@ def manifest_data(**changes: object) -> dict[str, Any]:
         },
         "required_telemetry": [
             {
-                "log_source_type": WINDOWS_SECURITY,
+                "telemetry_class": "windows",
                 "events": ["4625 failed logons with the target account and the source address"],
                 "required": True,
             }

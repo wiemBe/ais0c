@@ -14,15 +14,15 @@ triggers:
   log_source_types: []
   attack_techniques: [T1566.002]
 required_telemetry:
-  - log_source_type: E-mail Security Appliance
+  - telemetry_class: email-security
     events:
       - "Gateway events: sender authentication verdicts (sender policy, signature, alignment), the claimed sender against the actual, display names and reply-to divergence, with recipients and delivery verdicts"
     required: true
-  - log_source_type: E-mail Security Appliance
+  - telemetry_class: email-security
     events:
       - "The campaign's subject and link shapes, where the gateway records them"
     required: false
-  - log_source_type: Fortinet FortiGate Security Gateway
+  - telemetry_class: firewall
     events:
       - "Internal traffic to the spoofed mail's link destinations"
     required: false

@@ -13,11 +13,11 @@ triggers:
   log_source_types: []
   attack_techniques: [T1571]
 required_telemetry:
-  - log_source_type: Fortinet FortiGate Security Gateway
+  - telemetry_class: firewall
     events:
       - "Traffic log: connections from internal hosts to external destinations on ports outside the sanctioned service set, with duration, volume and periodicity"
     required: true
-  - log_source_type: Microsoft Windows Security Event Log
+  - telemetry_class: windows
     events:
       - "The host's process events for the program owning the connections, where they reach QRadar"
     required: false

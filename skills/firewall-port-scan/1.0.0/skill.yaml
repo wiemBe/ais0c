@@ -14,11 +14,11 @@ triggers:
   # Scanning (T1595.001). Both mappings offer the skill.
   attack_techniques: [T1046, T1595.001]
 required_telemetry:
-  - log_source_type: Fortinet FortiGate Security Gateway
+  - telemetry_class: firewall
     events:
       - "Traffic log with action deny: one source probing many destination hosts and ports in a short window"
     required: true
-  - log_source_type: Microsoft Windows Security Event Log
+  - telemetry_class: windows
     events:
       - "When the source is internal: the scanning host's logons, services and process events in the same window"
     required: false

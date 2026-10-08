@@ -12,11 +12,11 @@ triggers:
   log_source_types: []
   attack_techniques: [T1003, T1003.001]
 required_telemetry:
-  - log_source_type: Microsoft Windows Security Event Log
+  - telemetry_class: windows
     events:
       - "4688 process creation with the command-line shapes credential-dumping tools leave, and 4656 and 4663 object access events on the LSASS process"
     required: true
-  - log_source_type: Microsoft Windows Security Event Log
+  - telemetry_class: windows
     events:
       - "4624 logons on the host before the dump, and 7045 service installs in the same window"
     required: false

@@ -14,17 +14,13 @@ triggers:
   log_source_types: []
   attack_techniques: [T1528]
 required_telemetry:
-  - log_source_type: Microsoft Entra ID Audit Log
+  - telemetry_class: identity-cloud
     events:
       - "Cloud audit log: consent grants to applications - the application, its publisher and verification state, the scopes requested, the granting user, and the time"
     required: true
-  - log_source_type: Microsoft Entra ID Sign-in Log
+  - telemetry_class: identity-cloud
     events:
       - "The application's subsequent sign-ins and token use"
-    required: false
-  - log_source_type: E-mail Security Appliance
-    events:
-      - "Mailbox access by the application, where the gateway or audit shows it"
     required: false
 required_evidence:
   - id: consent-events

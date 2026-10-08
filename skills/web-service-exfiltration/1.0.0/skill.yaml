@@ -14,15 +14,15 @@ triggers:
   log_source_types: []
   attack_techniques: [T1567, T1567.002]
 required_telemetry:
-  - log_source_type: Fortinet FortiGate Security Gateway
+  - telemetry_class: firewall
     events:
       - "Traffic log: uploads from internal hosts and server ranges to storage, sync, transfer and paste services' endpoint ranges, with byte volume, times and the destination services named"
     required: true
-  - log_source_type: F5 Networks BIG-IP ASM
+  - telemetry_class: waf
     events:
       - "Request log: the same services used through the web path, with upload request shapes and sizes"
     required: false
-  - log_source_type: Microsoft Windows Security Event Log
+  - telemetry_class: windows
     events:
       - "The pushing host's process events and staging shapes, where they reach QRadar"
     required: false

@@ -14,17 +14,13 @@ triggers:
   log_source_types: []
   attack_techniques: [T1078.004]
 required_telemetry:
-  - log_source_type: Microsoft Entra ID Sign-in Log
+  - telemetry_class: identity-cloud
     events:
       - "Cloud sign-in log: the account's authentications in the window - locations, addresses, client applications, token ages and outcomes"
     required: true
-  - log_source_type: Microsoft Entra ID Sign-in Log
+  - telemetry_class: identity-cloud
     events:
       - "The same account's non-interactive and token-replay sign-ins, to separate fresh logins from token reuse"
-    required: false
-  - log_source_type: E-mail Security Appliance
-    events:
-      - "Mailbox activity from the distant session, where the gateway sees it"
     required: false
 required_evidence:
   - id: travel-pair

@@ -13,11 +13,11 @@ triggers:
   log_source_types: []
   attack_techniques: [T1484.001]
 required_telemetry:
-  - log_source_type: Microsoft Windows Security Event Log
+  - telemetry_class: windows
     events:
       - "5136, 5137 and 5141 on domain controllers: group policy objects under the policies container modified, created or deleted, with the subject and the changed attribute"
     required: true
-  - log_source_type: Microsoft Windows Security Event Log
+  - telemetry_class: windows
     events:
       - "4698 scheduled task creations and 4688 script executions across the fleet after the policy change"
     required: false

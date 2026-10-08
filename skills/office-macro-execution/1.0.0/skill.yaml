@@ -14,11 +14,11 @@ triggers:
   log_source_types: []
   attack_techniques: [T1204.002]
 required_telemetry:
-  - log_source_type: Microsoft Windows Security Event Log
+  - telemetry_class: windows
     events:
       - "4688 process creation where an office application, pdf reader or archive tool is the parent of script interpreters, shells or download utilities, with the command line and the user"
     required: true
-  - log_source_type: Microsoft Windows Security Event Log
+  - telemetry_class: windows
     events:
       - "4688 the document process itself with the file name in the command line, and the host's later network in the firewall log"
     required: false

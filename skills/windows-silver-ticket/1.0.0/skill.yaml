@@ -14,11 +14,11 @@ triggers:
   log_source_types: []
   attack_techniques: [T1558.002]
 required_telemetry:
-  - log_source_type: Microsoft Windows Security Event Log
+  - telemetry_class: windows
     events:
       - "4769 on domain controllers for the target services, and 4624 type 3 logons onto the service hosts, to compare what was used with what was issued"
     required: true
-  - log_source_type: Microsoft Windows Security Event Log
+  - telemetry_class: windows
     events:
       - "4768 TGT requests of the using accounts, and the service accounts' other activity in the window"
     required: false

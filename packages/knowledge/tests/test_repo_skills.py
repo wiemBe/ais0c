@@ -7,6 +7,7 @@ import re
 import pytest
 
 from ais0c_knowledge.skills import Skill, candidate_skills, load_skills
+from ais0c_storage import TelemetryClass
 
 from .skill_helpers import F5_ASM, FORTIGATE, NOW, SKILLS_DIR, WINDOWS_SECURITY, enrichment, offense
 
@@ -80,14 +81,43 @@ def test_triggers_telemetry_and_evidence_match_the_catalog_row(
     manifest = skills[skill_id].manifest
     _group, _version, techniques, telemetry, _status = catalog_rows()[skill_id]
     assert set(techniques) <= set(manifest.triggers.attack_techniques)
-    required = [item for item in manifest.required_telemetry if item.required]
-    assert any(item.log_source_type in telemetry for item in required)
+    assert any(item.required for item in manifest.required_telemetry)
+    assert telemetry == list(
+        dict.fromkeys(item.telemetry_class.value for item in manifest.required_telemetry)
+    )
     assert len(manifest.required_evidence) >= 3
     assert manifest.allowed_agent_roles == {"investigation"}
     assert manifest.output_schema == "InvestigationResult"
     assert manifest.budgets.tokens >= 600000
     assert f"skill-{skill_id}" in manifest.eval_suites
     assert "prompt-injection" in manifest.eval_suites
+
+
+# Product names that a telemetry line must not carry: the class stands in for the product (T-95).
+PRODUCT_NAMES = re.compile(
+    r"FortiGate|Fortinet|F5|BIG-IP|ASM|Entra|Trellix|FireEye|Brightmail|OPSWAT"
+)
+
+
+def test_event_lines_name_no_product(skills: dict[str, Skill]) -> None:
+    for skill in skills.values():
+        for item in skill.manifest.required_telemetry:
+            for event in item.events:
+                assert not PRODUCT_NAMES.search(event), f"{skill.manifest.id}: {event}"
+
+
+def test_product_name_pattern_catches_products() -> None:
+    for text in ("FortiGate traffic log", "F5 ASM request log", "Entra sign-in", "OPSWAT scan"):
+        assert PRODUCT_NAMES.search(text)
+    assert not PRODUCT_NAMES.search("WAF request log: attack_type, request_status")
+
+
+def test_no_mailbox_line_in_email_security(skills: dict[str, Skill]) -> None:
+    for skill in skills.values():
+        for item in skill.manifest.required_telemetry:
+            if item.telemetry_class is TelemetryClass.EMAIL_SECURITY:
+                for event in item.events:
+                    assert not event.startswith("Mailbox"), f"{skill.manifest.id}: {event}"
 
 
 @pytest.mark.parametrize("skill_id", sorted(catalog_rows()))

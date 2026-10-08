@@ -12,17 +12,17 @@ triggers:
   log_source_types: []
   attack_techniques: [T1021.001, T1021.002, T1021.006]
 required_telemetry:
-  - log_source_type: Microsoft Windows Security Event Log
+  - telemetry_class: windows
     events:
       - "4624 logons with the logon type and the source address: type 3 SMB and WinRM, type 10 RDP"
       - "5140 and 5145 network share object accessed, for administrative share use"
     required: true
-  - log_source_type: Microsoft Windows Security Event Log
+  - telemetry_class: windows
     events:
       - "4648 logons with explicit credentials"
       - "7045 service installs and 4688 process creation on the hosts that were reached"
     required: false
-  - log_source_type: Fortinet FortiGate Security Gateway
+  - telemetry_class: firewall
     events:
       - "Traffic between server VLANs involving the source host, when the path crosses the firewall"
     required: false

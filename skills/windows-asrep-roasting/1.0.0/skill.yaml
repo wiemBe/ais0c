@@ -12,11 +12,11 @@ triggers:
   log_source_types: []
   attack_techniques: [T1558.004]
 required_telemetry:
-  - log_source_type: Microsoft Windows Security Event Log
+  - telemetry_class: windows
     events:
       - "4768 on domain controllers: TGT requests with Pre-Authentication Type 0 for accounts configured without pre-authentication"
     required: true
-  - log_source_type: Microsoft Windows Security Event Log
+  - telemetry_class: windows
     events:
       - "4624 logons of the roasted accounts from new sources, after the requests"
     required: false

@@ -14,11 +14,11 @@ triggers:
   # (T1505.003). The skill covers both halves.
   attack_techniques: [T1190, T1505.003]
 required_telemetry:
-  - log_source_type: F5 Networks BIG-IP ASM
+  - telemetry_class: waf
     events:
       - "Request log of upload endpoints: executable or script file name patterns in the requests, with sig_names, request_status and response_code"
     required: true
-  - log_source_type: Fortinet FortiGate Security Gateway
+  - telemetry_class: firewall
     events:
       - "Later requests from the same or another source to the uploaded file's path, and traffic from the web server afterwards"
     required: false

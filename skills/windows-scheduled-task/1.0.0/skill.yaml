@@ -12,11 +12,11 @@ triggers:
   log_source_types: []
   attack_techniques: [T1053, T1053.005]
 required_telemetry:
-  - log_source_type: Microsoft Windows Security Event Log
+  - telemetry_class: windows
     events:
       - "4698 on the host: a scheduled task was created, with the subject, the task name and the account it runs as"
     required: true
-  - log_source_type: Microsoft Windows Security Event Log
+  - telemetry_class: windows
     events:
       - "4699 task deleted, 4700 task enabled and 4702 task updated on the same host"
       - "4688 process creation when the task first ran"

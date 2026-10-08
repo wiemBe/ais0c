@@ -14,11 +14,11 @@ triggers:
   # same channel (T1041); both mappings offer the skill.
   attack_techniques: [T1041, T1071, T1071.001]
 required_telemetry:
-  - log_source_type: Fortinet FortiGate Security Gateway
+  - telemetry_class: firewall
     events:
       - "Traffic log: repeated connections from one internal host to the same external destination and port at regular intervals"
     required: true
-  - log_source_type: Microsoft Windows Security Event Log
+  - telemetry_class: windows
     events:
       - "The internal host's logons, service installs and process events in the same window, to find what beacons"
     required: false

@@ -14,11 +14,11 @@ triggers:
   log_source_types: []
   attack_techniques: [T1207]
 required_telemetry:
-  - log_source_type: Microsoft Windows Security Event Log
+  - telemetry_class: windows
     events:
       - "4932 and 4933 directory replication events on domain controllers with partner hosts that are not known domain controllers, and 5137 and 5136 creation and modification of server objects in the domain controllers' containers"
     required: true
-  - log_source_type: Microsoft Windows Security Event Log
+  - telemetry_class: windows
     events:
       - "4741 and 4742 computer account creations and changes for the rogue host, and 5136 attribute changes replicated only from it"
     required: false

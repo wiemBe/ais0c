@@ -14,11 +14,11 @@ triggers:
   log_source_types: []
   attack_techniques: [T1003.002, T1003.003, T1003.004]
 required_telemetry:
-  - log_source_type: Microsoft Windows Security Event Log
+  - telemetry_class: windows
     events:
       - "4688 process creation with dump argument shapes: registry save and export commands for the account and security hives, directory-database maintenance tools in dump modes, and snapshot or shadow-copy creation on domain controllers"
     required: true
-  - log_source_type: Microsoft Windows Security Event Log
+  - telemetry_class: windows
     events:
       - "4663 reads of the directory database files on domain controllers, and the host's later authentication anomalies elsewhere"
     required: false

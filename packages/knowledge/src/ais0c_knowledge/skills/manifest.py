@@ -26,6 +26,7 @@ from pydantic import (
 import ais0c_contracts
 from ais0c_contracts import AgentResult, AttackTechnique
 from ais0c_knowledge.skills.errors import SkillError, SkillPermissionError
+from ais0c_storage import TelemetryClass
 
 # Lowercase words joined by hyphens, e.g. windows-dcsync; skill, evidence and suite names.
 Slug = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9]*(-[a-z0-9]+)*$", max_length=63)]
@@ -108,9 +109,16 @@ class TelemetryRequirement(_ManifestModel):
     """Telemetry the method reads. Without a `required` source the agent reports a data gap
     instead of concluding; an optional one only adds detail."""
 
-    log_source_type: LogSourceType
+    telemetry_class: TelemetryClass
     events: Annotated[tuple[Description, ...], Field(min_length=1, max_length=10)]
     required: bool
+
+    @field_validator("telemetry_class")
+    @classmethod
+    def _not_internal(cls, value: TelemetryClass) -> TelemetryClass:
+        if value is TelemetryClass.SIEM_INTERNAL:
+            raise ValueError("a skill does not ask for siem-internal telemetry")
+        return value
 
 
 class EvidenceRequirement(_ManifestModel):

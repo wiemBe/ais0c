@@ -14,11 +14,11 @@ triggers:
 required_telemetry:
   # The lab's VPN gateway is a FortiGate. If the target's VPN gateway is another product, its log
   # source type replaces this one before approval.
-  - log_source_type: Fortinet FortiGate Security Gateway
+  - telemetry_class: vpn
     events:
       - "SSL VPN tunnel-up and tunnel-down events with the user, the remote IP, the tunnel address and the source country"
     required: true
-  - log_source_type: Microsoft Windows Security Event Log
+  - telemetry_class: windows
     events:
       - "4624 network logons on internal hosts from the VPN tunnel address after the login"
     required: false

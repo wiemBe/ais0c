@@ -13,6 +13,7 @@ from ais0c_knowledge.skills import (
     SkillPermissionError,
     parse_manifest,
 )
+from ais0c_storage import TelemetryClass
 
 from .skill_helpers import manifest_data
 
@@ -226,14 +227,46 @@ def test_one_trigger_of_any_kind_is_enough(triggers: dict[str, object]) -> None:
 
 
 def test_some_telemetry_must_be_required() -> None:
-    telemetry = [{"log_source_type": "Cisco ASA", "events": ["VPN logins"], "required": False}]
+    telemetry = [{"telemetry_class": "firewall", "events": ["VPN logins"], "required": False}]
     error = refused(manifest_data(required_telemetry=telemetry))
     assert "required: true" in str(error)
 
 
 def test_telemetry_needs_events() -> None:
-    telemetry = [{"log_source_type": "Cisco ASA", "events": [], "required": True}]
+    telemetry = [{"telemetry_class": "firewall", "events": [], "required": True}]
     refused(manifest_data(required_telemetry=telemetry))
+
+
+def test_telemetry_class_is_required() -> None:
+    telemetry = [{"telemetry_class": "waf", "events": ["WAF request log"], "required": True}]
+    manifest = parse_manifest(manifest_data(required_telemetry=telemetry))
+    assert manifest.required_telemetry[0].telemetry_class is TelemetryClass.WAF
+
+
+def test_old_log_source_type_field_is_rejected() -> None:
+    telemetry = [
+        {
+            "log_source_type": "Microsoft Windows Security Event Log",
+            "events": ["4625 failed logons"],
+            "required": True,
+        }
+    ]
+    error = refused(manifest_data(required_telemetry=telemetry))
+    assert "log_source_type" in str(error)
+
+
+def test_unknown_class_is_rejected() -> None:
+    telemetry = [{"telemetry_class": "windwos", "events": ["4625 failed logons"], "required": True}]
+    error = refused(manifest_data(required_telemetry=telemetry))
+    assert "windwos" in str(error)
+
+
+def test_siem_internal_is_rejected() -> None:
+    telemetry = [
+        {"telemetry_class": "siem-internal", "events": ["Rule engine events"], "required": True}
+    ]
+    error = refused(manifest_data(required_telemetry=telemetry))
+    assert "siem-internal" in str(error)
 
 
 def test_evidence_ids_are_unique() -> None:

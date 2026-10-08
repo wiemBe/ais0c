@@ -12,11 +12,11 @@ triggers:
   log_source_types: []
   attack_techniques: [T1003.006]
 required_telemetry:
-  - log_source_type: Microsoft Windows Security Event Log
+  - telemetry_class: windows
     events:
       - "4662 on domain controllers: an operation on the domain object with a DS-Replication control access right in Properties"
     required: true
-  - log_source_type: Microsoft Windows Security Event Log
+  - telemetry_class: windows
     events:
       - "4624 on domain controllers: network logons (type 3) of the replicating account, with the source address"
     required: false

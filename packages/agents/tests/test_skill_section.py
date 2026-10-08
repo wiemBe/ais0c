@@ -35,12 +35,12 @@ def skill_input(**overrides: object) -> SkillInput:
         "instructions": INSTRUCTIONS,
         "required_telemetry": [
             {
-                "log_source_type": "Microsoft Windows Security Event Log",
+                "telemetry_class": "windows",
                 "events": ["4662 on domain controllers: an operation with a DS-Replication right"],
                 "required": True,
             },
             {
-                "log_source_type": "Microsoft Windows Security Event Log",
+                "telemetry_class": "windows",
                 "events": ["4624 network logons of the account", "4672 special privileges"],
                 "required": False,
             },
@@ -65,9 +65,9 @@ def test_with_a_skill_the_section_is_its_instructions_telemetry_and_evidence() -
         "\n"
         "## Required telemetry\n"
         "\n"
-        "- Microsoft Windows Security Event Log (required):\n"
+        "- windows (required):\n"
         "  - 4662 on domain controllers: an operation with a DS-Replication right\n"
-        "- Microsoft Windows Security Event Log (optional):\n"
+        "- windows (optional):\n"
         "  - 4624 network logons of the account\n"
         "  - 4672 special privileges\n"
         "\n"

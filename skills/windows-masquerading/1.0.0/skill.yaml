@@ -14,11 +14,11 @@ triggers:
   log_source_types: []
   attack_techniques: [T1036, T1036.003, T1036.005]
 required_telemetry:
-  - log_source_type: Microsoft Windows Security Event Log
+  - telemetry_class: windows
     events:
       - "4688 process creation where name and path disagree: system-looking names in user-writable paths, program names with padded or homoglyph spellings, or right-to-left overrides in names"
     required: true
-  - log_source_type: Microsoft Windows Security Event Log
+  - telemetry_class: windows
     events:
       - "4663 executions and writes of the imitating binaries, and the host's later network in the firewall log"
     required: false

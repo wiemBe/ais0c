@@ -14,11 +14,11 @@ triggers:
   log_source_types: []
   attack_techniques: [T1649]
 required_telemetry:
-  - log_source_type: Microsoft Windows Security Event Log
+  - telemetry_class: windows
     events:
       - "4886 and 4887 on certificate authority hosts: certificate requested and issued, with the requester, the template and the subject, when certificate services auditing is on"
     required: true
-  - log_source_type: Microsoft Windows Security Event Log
+  - telemetry_class: windows
     events:
       - "4768 TGT requests with certificate-based pre-authentication afterwards, and 5136 certificate template object changes on domain controllers"
     required: false

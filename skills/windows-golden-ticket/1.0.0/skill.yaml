@@ -12,12 +12,12 @@ triggers:
   log_source_types: []
   attack_techniques: [T1558.001]
 required_telemetry:
-  - log_source_type: Microsoft Windows Security Event Log
+  - telemetry_class: windows
     events:
       - "4769 on domain controllers: service ticket requests whose Service Name is krbtgt, which no legitimate client requests"
       - "4768 on domain controllers: TGT requests, to compare against the sessions that used none"
     required: true
-  - log_source_type: Microsoft Windows Security Event Log
+  - telemetry_class: windows
     events:
       - "4624 logons of the accounts the forged tickets were used for"
     required: false

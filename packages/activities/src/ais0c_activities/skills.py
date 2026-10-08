@@ -88,7 +88,9 @@ def skill_input(skill: Skill) -> SkillInput:
         instructions=skill.instructions,
         required_telemetry=tuple(
             SkillTelemetry(
-                log_source_type=item.log_source_type, events=item.events, required=item.required
+                telemetry_class=item.telemetry_class.value,
+                events=item.events,
+                required=item.required,
             )
             for item in manifest.required_telemetry
         ),

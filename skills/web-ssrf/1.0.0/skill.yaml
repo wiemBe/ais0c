@@ -14,11 +14,11 @@ triggers:
   # connects the one whose Purpose names this attack shape.
   attack_techniques: [T1190]
 required_telemetry:
-  - log_source_type: F5 Networks BIG-IP ASM
+  - telemetry_class: waf
     events:
       - "Request log: parameter values naming internal addresses, host names or link-local metadata addresses, with sig_names, request_status and response_code"
     required: true
-  - log_source_type: Fortinet FortiGate Security Gateway
+  - telemetry_class: firewall
     events:
       - "Traffic from the web server to internal addresses and metadata endpoints that no user request should reach"
     required: false

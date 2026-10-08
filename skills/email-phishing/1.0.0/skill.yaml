@@ -14,15 +14,15 @@ triggers:
   log_source_types: []
   attack_techniques: [T1566, T1566.002]
 required_telemetry:
-  - log_source_type: E-mail Security Appliance
+  - telemetry_class: email-security
     events:
       - "Gateway events for the campaign's messages: sender, recipients, subject shapes, verdicts (delivered, quarantined, blocked), attachment and link shapes, with times"
     required: true
-  - log_source_type: Fortinet FortiGate Security Gateway
+  - telemetry_class: firewall
     events:
       - "Clicks and submissions from inside to the campaign's link destinations, in the proxy or firewall traffic"
     required: false
-  - log_source_type: Microsoft Windows Security Event Log
+  - telemetry_class: windows
     events:
       - "4688 executions of the campaigns attachment names on hosts where WinCollect reaches, for the delivered-and-opened tail"
     required: false

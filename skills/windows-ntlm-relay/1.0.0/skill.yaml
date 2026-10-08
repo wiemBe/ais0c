@@ -14,11 +14,11 @@ triggers:
   log_source_types: []
   attack_techniques: [T1557.001]
 required_telemetry:
-  - log_source_type: Microsoft Windows Security Event Log
+  - telemetry_class: windows
     events:
       - "4776 NTLM credential validation on domain controllers with the account and the workstation, and 4624 type 3 logons whose source host and account pairing is new or odd"
     required: true
-  - log_source_type: Microsoft Windows Security Event Log
+  - telemetry_class: windows
     events:
       - "5140 and 5145 share access that followed the relayed logons, and 4768 TGT requests of the same accounts elsewhere"
     required: false

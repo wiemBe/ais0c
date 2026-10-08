@@ -14,15 +14,15 @@ triggers:
   log_source_types: []
   attack_techniques: [T1547, T1547.001]
 required_telemetry:
-  - log_source_type: Microsoft Windows Security Event Log
+  - telemetry_class: windows
     events:
       - "4657 registry value modified or created under run-key paths (Run, RunOnce, and their variants), with the subject and the new value, when registry auditing is on"
     required: true
-  - log_source_type: Microsoft Windows Security Event Log
+  - telemetry_class: windows
     events:
       - "4688 process creation with registry tool argument shapes writing to run-key paths, and 4663 writes into startup folders"
     required: true
-  - log_source_type: Microsoft Windows Security Event Log
+  - telemetry_class: windows
     events:
       - "4624 the logons that would trigger the autostart entry, and 4688 the first run of the entered binary"
     required: false

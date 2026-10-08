@@ -13,11 +13,11 @@ triggers:
   log_source_types: []
   attack_techniques: [T1570]
 required_telemetry:
-  - log_source_type: Microsoft Windows Security Event Log
+  - telemetry_class: windows
     events:
       - "5145 network share file events: writes into administrative and administrative-style shares (the administrative share roots and the logical drive roots) of executable and script file types, with the writer account"
     required: true
-  - log_source_type: Microsoft Windows Security Event Log
+  - telemetry_class: windows
     events:
       - "4624 type 3 logons from the writing host onto the target hosts, and 4688 execution of the written files afterwards"
     required: false

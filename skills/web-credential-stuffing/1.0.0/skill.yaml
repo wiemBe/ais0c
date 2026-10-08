@@ -14,11 +14,11 @@ triggers:
   # spraying when the list is thin, so the parent technique offers it too.
   attack_techniques: [T1110, T1110.004]
 required_telemetry:
-  - log_source_type: F5 Networks BIG-IP ASM
+  - telemetry_class: waf
     events:
       - "Request log of login endpoints: attempts per ip_client across many usernames, with request_status, response codes and user_agent"
     required: true
-  - log_source_type: Fortinet FortiGate Security Gateway
+  - telemetry_class: firewall
     events:
       - "Traffic of the same sources at the firewall, and any VPN logins of the successfully stuffed accounts"
     required: false

@@ -12,11 +12,11 @@ triggers:
   log_source_types: []
   attack_techniques: [T1558.003]
 required_telemetry:
-  - log_source_type: Microsoft Windows Security Event Log
+  - telemetry_class: windows
     events:
       - "4769 on domain controllers: service ticket requests with Account Name, Service Name, Ticket Encryption Type and Client Address"
     required: true
-  - log_source_type: Microsoft Windows Security Event Log
+  - telemetry_class: windows
     events:
       - "4624 logons of the targeted service accounts from new sources, after the ticket burst"
     required: false
