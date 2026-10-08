@@ -105,6 +105,8 @@ Dikkat: test adlarına ve yorumlara model ya da sağlayıcı adı yazılmaz (T-0
 
 ## Ek (2026-10-08 gece, planner): pay yetmiyor, grup kırpılır
 
+> **Durum:** T-072 bu ek uygulanmadan bitti ve birleşti (T-102). Ek, sağlayıcı sabitlemesiyle birlikte T-073'e taşındı; o dosya geçerlidir.
+
 Ajanın süren ölçümünün ilk dört koşusu (`../ais0c-prs/T-072-reports/skill-dcsync-k5/runs/sk-dcs-01-detect/`) dördü de `tool_calls_limit` hatasıyla cevapsız bitti. Model artık tek cevapta **27, 34, 42 ve 57** araç çağrısı istiyor. Bütün incelemeyi tek seferde planlıyor: henüz oluşturmadığı aramaların sonuçlarını, hatta `final_result`'u bile aynı grupta istiyor. T-062 ve T-065'in koşularında en büyük grup 4'tü (aynı skill metni, aynı gün 19:14). Kod prompt'u değiştirmiyor; dev LiteLLM OpenRouter'da sağlayıcıyı sabitlemiyor. Neden büyük ihtimalle sağlayıcı ya da model davranışındaki bir değişiklik. Hangi boyutta olursa olsun, "pay bırakma" yaklaşımı böyle bir grubu karşılayamaz.
 
 **Karar (T-98, öneri): kalan bütçeyi aşan grup kırpılır.**
