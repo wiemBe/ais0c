@@ -95,8 +95,8 @@ Sıra (2026-10-07):
 
 1. Bitti, `main`'de: T-027–T-030, T-032 (kararlar T-65–T-73); T-052, T-053, T-054 (T-74–T-76; T-054'ün gate'i geçmedi); T-033, T-055, T-056, T-058, T-059 (T-79–T-83; Triage'ın güvenlik gate'i T-056'nın koşularında geçti, T-058'in lab kuralları planner tarafından kuruldu).
 2. Bitti, `main`'de (2026-10-07 gece): T-061, T-062 (T-86, T-87). T-063 de `main`'de (T-91; güvenlik gate'leri geçti). T-064'ün ilk partisi (60 taslak skill) 2026-10-08'de `main`'de (T-92).
-3. **Bitti, `main`'de (2026-10-08):** T-065, T-068 (T-96, T-97). **Sürüyor:** T-057.
-4. **Şimdi verilecek, paralel (görevlerin çoğunu Sonnet 5.5 orta effort yapıyor, planner.md §4):** T-069 (API), T-070 (skill manifest'inde `telemetry_class`) ve T-072 (paralel araç çağrısı payı; dcsync suite'i yeniden). **T-069 ve T-070'ten sonra:** T-071 (skill bölümünde çözüm; workflow değişikliği, birleşince açık CaseWorkflow'lar sonlandırılır).
+3. **Bitti, `main`'de (2026-10-08):** T-065, T-068 (T-96, T-97); T-057, T-069, T-070 (T-99–T-101). **Sürüyor:** T-072; ölçümün ilk koşuları dev modelin çok büyük paralel gruplarını gösterdi, göreve bir ek yazıldı (T-98: grup kırpılır).
+4. **Şimdi verilecek:** T-071 (skill bölümünde çözüm; workflow değişikliği, yüksek effort; birleşince açık CaseWorkflow'lar sonlandırılır). T-072 ile aynı anda yürüyebilir: T-072 `runner.py`'ye, T-071 `agents/skills.py`'ye dokunuyor.
 5. Planner: senaryo setinin lab e2e koşuları (`AIS0C_E2E_SCENARIO`) ve kayıtları; sonra T-060'ın dosyası. T-060'tan sonra T-066 (Investigation/Verification v3). T-057, T-065 ve T-070'ten sonra T-067 (aday özeti).
 6. Ardından T-031 (H-7, S-12 ve on-prem gate'inden sonra), T-035 (H-6).
 

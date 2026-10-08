@@ -102,3 +102,18 @@ Dikkat: test adlarına ve yorumlara model ya da sağlayıcı adı yazılmaz (T-0
 ## Bağımlılıklar
 
 - `main` (T-065 dahil). T-069 ve T-070 ile aynı anda yürüyebilir; dosyaları ayrı.
+
+## Ek (2026-10-08 gece, planner): pay yetmiyor, grup kırpılır
+
+Ajanın süren ölçümünün ilk dört koşusu (`../ais0c-prs/T-072-reports/skill-dcsync-k5/runs/sk-dcs-01-detect/`) dördü de `tool_calls_limit` hatasıyla cevapsız bitti. Model artık tek cevapta **27, 34, 42 ve 57** araç çağrısı istiyor. Bütün incelemeyi tek seferde planlıyor: henüz oluşturmadığı aramaların sonuçlarını, hatta `final_result`'u bile aynı grupta istiyor. T-062 ve T-065'in koşularında en büyük grup 4'tü (aynı skill metni, aynı gün 19:14). Kod prompt'u değiştirmiyor; dev LiteLLM OpenRouter'da sağlayıcıyı sabitlemiyor. Neden büyük ihtimalle sağlayıcı ya da model davranışındaki bir değişiklik. Hangi boyutta olursa olsun, "pay bırakma" yaklaşımı böyle bir grubu karşılayamaz.
+
+**Karar (T-98, öneri): kalan bütçeyi aşan grup kırpılır.**
+
+1. `FinalAnswer`'a `after_model_request` kancası eklenir (Pydantic AI 2.53, `AbstractCapability.after_model_request(ctx, *, request_context, response) -> ModelResponse`; cevap araçlar çalışmadan ve limit denetlenmeden önce değiştirilebilir). Cevaptaki `ToolCallPart` sayısı kalan araç bütçesini (`limits.tool_calls_limit - usage.tool_calls`) aşıyorsa yalnızca ilk N çağrı sırasıyla kalır, geri kalanı cevaptan çıkarılır. Diğer parçalar (metin, `final_result`) olduğu gibi kalır.
+2. Kırpma olduysa bir sonraki istekte araçlar geri çekilir (bugünkü `FINAL_ANSWER_PROMPT` yolu). Kırpılan çağrı sayısı koşunun izine yazılır: `RunDeps`'te ya da log satırında `tool_calls_dropped`.
+3. Kancanın girdisi yalnızca cevap ve sayaçlardır. Workflow kodunda çalışır ve deterministiktir; ağ, saat ya da rastgelelik kullanmaz.
+4. Kırpma kesin olduğu için adım 1'deki `MIN_TOOL_BATCH` payı kalkar. Araçlar yine `tool_calls >= limit` olunca geri çekilir; sırayla çağıran model bütçesinin tamamını kullanır. Adım 2'deki testler buna göre değişir:
+   - `test_a_parallel_batch_at_the_tool_limit_keeps_the_answer`: 23/24'te iki çağrılık grup → biri çalışır, koşu cevaplı biter;
+   - yeni `test_a_batch_larger_than_the_budget_is_cut`: ilk cevapta 34 çağrı, bütçe 24 → 24'ü çalışır, sonraki istek araçsızdır, koşu `completed` ve cevaplı biter;
+   - yeni `test_cut_keeps_the_final_result_part`: grupta `final_result` da varsa o kalır.
+5. Ölçüm (kriter 3) aynı komutla yeniden koşulur. PR'a şunlar girer: `pass^k`, cevapsız koşu sayısı, kırpılan çağrı sayısı, en büyük grup ve T-062/T-065 ile karşılaştırma tablosu (en büyük grup 4'e karşı şimdiki). Kırpma koşuları kurtarsa da model çok büyük gruplarla kötü inceleme yapıyorsa (henüz oluşmayan aramaların sonuçlarını isteyen çağrılar) `pass^k` düşebilir. O zaman dur ve raporu yaz. Dev'de sağlayıcıyı sabitlemek (OpenRouter `provider.order`) planner'ın kararıdır.
