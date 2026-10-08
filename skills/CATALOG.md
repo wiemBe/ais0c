@@ -92,10 +92,18 @@ complete their text is.
 | web-xss | 1.0.0 | T1189 | F5 Networks BIG-IP ASM | s7 | draft | skill-web-xss |
 
 Several skills share a technique (T1190 across the web family, T1110 across the
-login-abuse family): the router offers all of them, and the orchestrator connects
-the one whose Purpose names the attack shape of the offense. Skills whose method
+login-abuse family): the router offers all of them; today the
+orchestrator sees each candidate's ID, required evidence and budget, not its
+Purpose, so the choice between them rests on the ID until T-067 adds a
+one-sentence summary. Skills whose method
 crosses skill boundaries name each other (lateral movement names the service and
 share checks; credential dumping names pass-the-hash and golden ticket; phishing
 names the consent and stuffing skills). Lab scenario ids refer to
 `harness/scenarios/` (s1-s9); a dash means no scenario yet, and with it no
 approval.
+
+Entra skills: the bank runs on-prem Active Directory (2026-10-08); this telemetry
+does not exist today. The skills stay as drafts with the lowest priority.
+
+E-mail skills: the bank's mail products are Trellix EX, Brightmail and OPSWAT; how
+they enter QRadar is open question S-14.
