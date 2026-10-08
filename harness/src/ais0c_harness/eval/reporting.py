@@ -18,9 +18,16 @@ the fixed list, and the report carries the input's decision unchanged.
 
 import re
 from datetime import timedelta
-from typing import ClassVar, Final, Self
+from typing import Annotated, ClassVar, Final, Self
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, model_validator
+from pydantic import (
+    AwareDatetime,
+    BaseModel,
+    ConfigDict,
+    Field,
+    StringConstraints,
+    model_validator,
+)
 from pydantic_ai.models import Model
 
 from ais0c_activities.triage import evaluation_window
@@ -59,6 +66,7 @@ SUMMARY_MAX_LENGTH: Final = 400
 SUMMARY_WITHIN_LIMIT = "summary_within_limit"
 SUMMARY_NO_EVIDENCE_ALIAS = "summary_no_evidence_alias"
 SUMMARY_NO_DOMAIN = "summary_no_domain"
+SUMMARY_MENTIONS_GAP = "summary_mentions_gap"
 URGENT_EVENTS_FROM_CANDIDATES = "urgent_events_from_candidates"
 RANKS_CONSECUTIVE = "ranks_consecutive"
 ACTION_TYPES_VALID = "action_types_valid"
@@ -102,7 +110,13 @@ class ReportingInput(BaseModel):
 
 
 class ReportingExpectation(Expectation):
-    """What a Reporting scenario expects; the report's rules are fixed, so nothing extra."""
+    """What a Reporting scenario expects; the report's rules are fixed, so little extra."""
+
+    summary_mentions: list[list[Annotated[str, StringConstraints(min_length=1)]]] = Field(
+        default_factory=list
+    )
+    """Groups of alternatives (case-insensitive): the summary must contain at least one word of
+    every group. A scenario with a decisive data gap names the gap here (T-057)."""
 
 
 class ReportingScenario(ScenarioBase):
@@ -160,6 +174,19 @@ def summary_problems(summary: str) -> list[Check]:
 def reporting_checks(scenario: ReportingScenario, result: CaseReport) -> list[Check]:
     """The report's deterministic rules (decision T-50, T-54), re-checked on the result."""
     checks = [*summary_problems(result.summary_tr)]
+    groups = scenario.expect.summary_mentions
+    if groups:
+        text = result.summary_tr.casefold()
+        missing = [
+            " / ".join(group) for group in groups if not any(w.casefold() in text for w in group)
+        ]
+        checks.append(
+            Check(
+                name=SUMMARY_MENTIONS_GAP,
+                passed=not missing,
+                detail=f"does not mention: {'; '.join(missing)}" if missing else "names the gap",
+            )
+        )
     problems: list[str] = []
     chosen: set[int] = set()
     candidates = scenario.input.urgent_event_candidates

@@ -57,6 +57,8 @@ TRIAGE_PROMPT_V2 = "prompts/triage/v2.md"
 TRIAGE_PROMPT_V3 = "prompts/triage/v3.md"
 VERIFICATION_PROMPT_V1 = "prompts/verification/v1.md"
 INVESTIGATION_PROMPT_V1 = "prompts/investigation/v1.md"
+ORCHESTRATOR_PROMPT_V1 = "prompts/orchestrator/v1.md"
+REPORTING_PROMPT_V1 = "prompts/reporting/v1.md"
 # sha256 of prompts/_shared/rules.md, prompts/triage/v1.md and prompts/triage/v2.md before the
 # next version, and of the verification and investigation v1 (T-056). The rules moved to v1.md unchanged: the prompt hashes of earlier runs depend on
 # these bytes; v1 and v2 stay for the same reason (docs/impl/prompts.md).
@@ -67,6 +69,8 @@ OLD_FILES_SHA256 = {
     TRIAGE_PROMPT_V3: "1db8fedb895579537488e7143a134393cc3f4f75752688e42797406532751aad",
     VERIFICATION_PROMPT_V1: "5c4bd44b762dc34a00dfd8bfef64a0784fb3ddd8736c78833510812ac9ca27d5",
     INVESTIGATION_PROMPT_V1: "46bdd3f33502a3dca4ce309f890c1d17a03e2f83b0c8520ecf1b4bef8fae1fd1",
+    ORCHESTRATOR_PROMPT_V1: "08235c9ceb4e2992dcd5f596164530113b1f2278c3ac657703726bc9d24a7fd7",
+    REPORTING_PROMPT_V1: "fe5813bb3829acc0ab0d8f8f03b93e2297ac8a95b7840e13be02b5f796f59337",
 }
 
 

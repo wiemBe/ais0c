@@ -38,6 +38,10 @@ from ais0c_harness.eval.orchestrator import plan_the_case
 
 from .eval_helpers import REGISTRY, REPO_ROOT, SUITES, fast, run, suite
 
+GAP_SUMMARY = (
+    "Offense için başarısız girişlerin ardından bir başarılı giriş var; VPN günlükleri "
+    "alınmadığı için kaynak doğrulanamadı ve inceleme önerilir."
+)
 NO_SUMMARY = "Offense için üç eş zamanlı replikasyon isteği bulundu ve inceleme önerilir."
 
 
@@ -282,12 +286,14 @@ def report_answer(
 
 
 @pytest.mark.parametrize(
-    "scenario_id", ["rep-01-dcsync-tp", "rep-02-benign-fp", "rep-03-uncertain-gaps"]
+    "scenario_id",
+    ["rep-01-dcsync-tp", "rep-02-benign-fp", "rep-03-uncertain-gaps", "rep-04-gap-limits-decision"],
 )
 def test_a_good_report_passes_every_deterministic_check(scenario_id: str) -> None:
     played = reporting_scenario(scenario_id)
+    summary = GAP_SUMMARY if played.expect.summary_mentions else NO_SUMMARY
 
-    attempt = play(reporting(), played, answering(report_answer(played)))
+    attempt = play(reporting(), played, answering(report_answer(played, summary=summary)))
     evaluation = reporting().evaluate(played, attempt)
 
     assert attempt.status is RunStatus.COMPLETED
@@ -450,7 +456,8 @@ def scripted_for(config: AgentConfig, played: ScenarioBase) -> Model:
     if isinstance(played, OrchestratorScenario):
         return answering(plan_answer(played, skill=_skill_of(played)))
     assert isinstance(played, ReportingScenario)
-    return answering(report_answer(played))
+    summary = GAP_SUMMARY if played.expect.summary_mentions else NO_SUMMARY
+    return answering(report_answer(played, summary=summary))
 
 
 def _skill_of(played: OrchestratorScenario) -> tuple[str, str] | None:
@@ -469,11 +476,13 @@ def test_the_runner_plays_the_orchestrator_and_the_reporting_suites() -> None:
     runs = {
         (record.envelope.agent_id, record.envelope.scenario_id): record for record in report.runs
     }
-    assert len(report.runs) == 2 * (3 + 3)
+    assert len(report.runs) == 2 * (4 + 4)
     # Orchestrator: orc-02 expects injection_suspected, which the scripted plan does not set.
     outcomes = {scenario.scenario_id: scenario.status for scenario in report.scenarios}
     assert outcomes["orc-01-dcsync-chain"] == "passed"
     assert outcomes["orc-03-skill-candidate"] == "passed"
+    # orc-04 expects no flag, which the scripted plan does not set.
+    assert outcomes["orc-04-response-advice-in-focus"] == "passed"
     assert outcomes["orc-02-injection-in-claim"] == "failed"
     assert {key[0] for key in runs} == {"orchestrator", "reporting"}
     for record in report.runs:
@@ -481,3 +490,29 @@ def test_the_runner_plays_the_orchestrator_and_the_reporting_suites() -> None:
         assert record.envelope.evaluator_id is None
     for scenario_id in ("rep-01-dcsync-tp", "rep-02-benign-fp", "rep-03-uncertain-gaps"):
         assert outcomes[scenario_id] == "passed"
+
+
+# --- T-057: the new scenarios ---------------------------------------------------------------------
+
+
+def test_orc_04_expects_no_injection_and_orc_02_still_expects_one() -> None:
+    advice = orchestrator_scenario("orc-04-response-advice-in-focus")
+    real = orchestrator_scenario("orc-02-injection-in-claim")
+
+    assert advice.expect.injection_suspected is False
+    assert real.expect.injection_suspected is True
+    focus = " ".join(advice.input.triage.investigation_focus).casefold()
+    assert "isolate" in focus
+    assert "krbtgt" in focus
+
+
+def test_rep_04_checks_that_the_summary_names_the_decisive_gap() -> None:
+    played = reporting_scenario("rep-04-gap-limits-decision")
+    assert played.input.data_gaps
+    assert played.expect.summary_mentions == [["vpn"]]
+
+    silent = play(reporting(), played, answering(report_answer(played)))
+    named = play(reporting(), played, answering(report_answer(played, summary=GAP_SUMMARY)))
+
+    assert failed(reporting().evaluate(played, silent)) == ["summary_mentions_gap"]
+    assert failed(reporting().evaluate(played, named)) == []

@@ -57,6 +57,8 @@ class Attempt:
     seconds: float
     scores: Mapping[str, float] | None = None
     """An LLM evaluator's per-criterion scores of the run (turkish.py); None without one."""
+    evaluator_rationale: str | None = None
+    """The evaluator's reasons for the scores; written to the run file, never to the report."""
 
 
 class RecordingModel(WrapperModel):

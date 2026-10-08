@@ -47,7 +47,7 @@ def test_a_valid_plan_comes_back_as_a_case_plan() -> None:
     assert plan.usage == run.usage
     assert (run.usage.tool_calls, run.usage.seconds) == (0, 1.5)
     assert (run.prompt_version, run.prompt_hash) == (
-        "orchestrator/v1",
+        "orchestrator/v2",
         orchestrator_prompt().sha256,
     )
 

@@ -105,7 +105,7 @@ from .helpers import (
 )
 
 REPORTING_MANIFEST_PATH = REPO_ROOT / "config/agents/reporting.yaml"
-REPORTING_PROMPT_PATH = "prompts/reporting/v1.md"
+REPORTING_PROMPT_PATH = "prompts/reporting/v2.md"
 REPORTING_RUN_ID = "case-4711-reporting-1"
 # A gateway evidence ID as the gateway writes it: `ev_` and a UUIDv7's 32 hex digits.
 GATEWAY_EVIDENCE_ID = re.compile(r"ev_[0-9a-f]{32}")
@@ -307,7 +307,7 @@ def test_the_manifest_holds_the_values_the_task_lists() -> None:
     manifest = load_manifest(REPORTING_MANIFEST_PATH, registry())
 
     assert manifest.id == "reporting"
-    assert manifest.version == "1.0.0"
+    assert manifest.version == "1.1.0"
     assert manifest.workflow_types == frozenset({"case"})
     assert manifest.model_alias == "soc-report"
     assert manifest.input_schema == "ReportingTask"
@@ -1418,7 +1418,7 @@ def test_a_complete_run_returns_a_case_report_and_records_the_run() -> None:
     assert run.result.injection_suspected is True
     assert run.usage.tool_calls == 0
     assert run.usage.tokens > 0
-    assert run.prompt_version == "reporting/v1"
+    assert run.prompt_version == "reporting/v2"
     assert run.prompt_hash == _agent(TestModel()).prompt.sha256
 
 
@@ -1712,3 +1712,19 @@ def test_reporting_is_not_touched_by_the_final_answer_rule() -> None:
     )
     assert run.result is not None
     assert run.result.data_gaps == []
+
+
+# --- T-057 criterion 2: prompt v2 ------------------------------------------------------------
+
+
+def test_prompt_v2_asks_for_gaps_exact_times_and_one_term_list() -> None:
+    text = (REPO_ROOT / "prompts/reporting/v2.md").read_text(encoding="utf-8")
+
+    assert "# Terms" in text
+    assert "veri boşluğu" in text
+    assert "never write a time you cannot find there" in text
+    assert "A data gap that limits the decision is named in `summary_tr`" in text
+    # The summary limit and the T-54 rules stay as in v1.
+    assert "at most three sentences and at most 400 characters" in text
+    assert "A summary with an alias is rejected." in text
+    assert "A run of twenty or more characters" in text

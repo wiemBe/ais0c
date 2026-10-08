@@ -85,7 +85,6 @@ from ais0c_harness.eval.turkish import (
     TurkishQualityScenario,
     evaluator_identity,
     run_evaluator,
-    score_checks,
     turkish_checks,
 )
 from ais0c_harness.eval.verification import (
@@ -169,7 +168,6 @@ __all__ = [
     "run_eval",
     "run_evaluator",
     "run_jobs",
-    "score_checks",
     "scripted_model",
     "turkish_checks",
     "write_report",

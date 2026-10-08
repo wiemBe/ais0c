@@ -12,9 +12,12 @@ honest statement of uncertainty, and brevity. The evaluator is never a security 
 (agent-harness.md §7): its checks are quality checks. A broken evaluator output (schema-invalid
 after its correction) leaves the run without a result: `error`, fail-closed.
 
-The run passes when the audits hold, no criterion is below 2 and the five-criterion average is
-at least 4. The scores travel in the run's metrics, the report shows their per-scenario
-averages, and the evaluator's identity and prompt hash go into every run envelope (T-71).
+A run passes when the audits hold. The scores decide per scenario, not per run (T-71, T-057):
+the scenario passes when the average of its runs' scores is at least 4 and no criterion's
+average is below 2 (`report.scores_verdict`), so one run at 3.8 does not fail a scenario that
+averages 4. The scores travel in the run's metrics, the report shows their per-scenario
+averages, the evaluator's rationale goes into the run's file only, and the evaluator's
+identity and prompt hash go into every run envelope.
 
 A TurkishQualityScenario is a ReportingScenario in everything but its suite: its scenarios
 hold the same input, run the same agent and add the evaluator.
@@ -61,8 +64,6 @@ CRITERIA: Final[tuple[str, ...]] = (
     "uncertainty",
     "brevity",
 )
-MIN_CRITERION: Final = 2.0
-MIN_AVERAGE: Final = 4.0
 # The evaluator's output corrections before its run fails; it sees the schema's own error.
 EVALUATOR_RETRIES: Final[AgentRetries] = {"tools": 0, "output": 1}
 CLAIM_SOURCE: Final = "agent.claim"
@@ -70,7 +71,6 @@ GAP_SOURCE: Final = "agent.data_gap"
 
 SUMMARY_PRESENT = "summary_present"
 SUMMARY_IS_TURKISH = "summary_is_turkish"
-EVALUATOR_AVERAGE = "evaluator_average"
 
 # The prompt and rubric of the evaluator; a change is a new version (T-71). The summary is the
 # only text the evaluator scores; the decision, the claims and the data gaps are the data it
@@ -291,27 +291,6 @@ def turkish_checks(result: CaseReport) -> list[Check]:
     ]
 
 
-def score_checks(scores: Mapping[str, float]) -> list[Check]:
-    """The rubric's checks: no criterion below 2, the average at least 4 (T-71)."""
-    checks = [
-        Check(
-            name=f"evaluator_{criterion}",
-            passed=scores[criterion] >= MIN_CRITERION,
-            detail=f"{scores[criterion]:g}/5, at least {MIN_CRITERION:g}",
-        )
-        for criterion in CRITERIA
-    ]
-    average = sum(scores[criterion] for criterion in CRITERIA) / len(CRITERIA)
-    checks.append(
-        Check(
-            name=EVALUATOR_AVERAGE,
-            passed=average >= MIN_AVERAGE,
-            detail=f"average {average:.2f}, at least {MIN_AVERAGE:g}",
-        )
-    )
-    return checks
-
-
 class TurkishQualityScenario(ReportingScenario):
     """A Turkish Quality scenario: a Reporting scenario judged for its Turkish summary."""
 
@@ -391,7 +370,12 @@ class TurkishQualityAdapter(AgentAdapter):
                 tokens=first.tokens,
                 seconds=first.seconds,
             )
-        return replace(first, scores=scores.as_dict, tokens=first.tokens + evaluator_tokens)
+        return replace(
+            first,
+            scores=scores.as_dict,
+            evaluator_rationale=scores.rationale,
+            tokens=first.tokens + evaluator_tokens,
+        )
 
     def evaluate(self, scenario: ScenarioBase, attempt: Attempt) -> Evaluation:
         played = _turkish(scenario)
@@ -413,11 +397,9 @@ class TurkishQualityAdapter(AgentAdapter):
         )
         if result is None:
             return common
-        checks = turkish_checks(result)
-        if attempt.scores is not None:
-            checks += score_checks(attempt.scores)
+        # The scores are not checks: they decide per scenario (report.scores_verdict).
         return Evaluation(
-            checks=[*checks, *common.checks],
+            checks=[*turkish_checks(result), *common.checks],
             metrics=common.metrics.model_copy(
                 update={"scores": dict(attempt.scores) if attempt.scores else {}}
             ),

@@ -1,7 +1,7 @@
 # Orchestrator agent manifest (docs/architecture.md §8.1, §7). Checked against the model
 # registry (config/models/, §8.4) before the agent starts: packages/agents/src/ais0c_agents/manifest.py.
 id: orchestrator
-version: 1.0.0
+version: 1.1.0
 role: "Vaka planı: Triage sonucundan ve aday skill'lerden CasePlan üretir"
 workflow_types: [case]
 model_alias: soc-reasoning
@@ -22,7 +22,7 @@ budgets:
 autonomy: L0
 # The workflow validates the plan and runs its steps (decision T-41); the agent starts nothing.
 can_delegate: false
-prompt: prompts/orchestrator/v1.md
+prompt: prompts/orchestrator/v2.md
 # Shared rules version the prompt is assembled with (docs/impl/prompts.md, T-015).
 shared_rules: prompts/_shared/rules/v2.md
 eval_suites: [orchestrator-gold, skill-selection, prompt-injection, failure-recovery, trust-layers]

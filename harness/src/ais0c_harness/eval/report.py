@@ -16,7 +16,7 @@ environment value goes into any of them: the settings hold only what the command
 
 import statistics
 from collections import Counter
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from datetime import datetime
 from pathlib import Path
 from typing import Final, Literal
@@ -154,6 +154,8 @@ class ScenarioReport(_Model):
     scores: dict[str, float]
     """An LLM evaluator's average per criterion over the runs that were scored (T-053); empty
     without one."""
+    score_failures: list[str] = []
+    """Why the averaged scores do not pass (`scores_verdict`); empty when they pass."""
     replay_unsupported: int = 0
     """Ariel queries of the k runs the replay engine did not run (decision T-70)."""
     unknown_tool_name: int = 0
@@ -167,6 +169,11 @@ class QualityRate(_Model):
     runs: int
     rate: float
 
+
+MIN_CRITERION: Final = 2.0
+MIN_AVERAGE: Final = 4.0
+"""A scored scenario passes when the average of its criterion averages is at least MIN_AVERAGE
+and no criterion's average is below MIN_CRITERION (T-71, T-057)."""
 
 QUALITY_METRICS: Final = {
     "decision_accuracy": "verdict_in",
@@ -258,6 +265,8 @@ class AttemptFile(_Model):
     messages: list[JsonValue]
     """Pydantic AI's messages, as its message adapter dumps them."""
     exchanges: list[GatewayExchange]
+    evaluator_rationale: str | None = None
+    """The LLM evaluator's reasons for its scores (T-057); only in the run file, not the report."""
 
 
 class RunFile(_Model):
@@ -279,7 +288,23 @@ def attempt_file(attempt: Attempt) -> AttemptFile:
         infra_error=attempt.infra_error,
         messages=messages,
         exchanges=attempt.exchanges,
+        evaluator_rationale=attempt.evaluator_rationale,
     )
+
+
+def scores_verdict(scores: Mapping[str, float]) -> list[str]:
+    """What keeps a scenario's averaged evaluator scores from passing (T-71, T-057): the
+    average of the criteria is below `MIN_AVERAGE`, or a criterion's average is below
+    `MIN_CRITERION`. Empty when they pass. A single run's score never decides."""
+    problems = [
+        f"{name} {value:.2f} < {MIN_CRITERION:g}"
+        for name, value in sorted(scores.items())
+        if value < MIN_CRITERION
+    ]
+    average = statistics.mean(scores.values())
+    if average < MIN_AVERAGE:
+        problems.append(f"average {average:.2f} < {MIN_AVERAGE:g}")
+    return problems
 
 
 def scenario_report(
@@ -295,13 +320,17 @@ def scenario_report(
 ) -> ScenarioReport:
     """A scenario's k runs summed up; `descriptions` are the adapter's values of each result."""
     outcomes = Counter(run.outcome for run in runs)
+    scores = _average_scores(runs)
+    score_failures = scores_verdict(scores) if scores else []
     ran = [run for run in runs if run.outcome != "not_run"]
     distributions: dict[str, Counter[str]] = {}
     for description in descriptions:
         for name, value in description.items():
             distributions.setdefault(name, Counter())[value] += 1
     passes = outcomes["pass"]
-    pass_k = len(runs) == k and passes == k
+    # A scored scenario (Turkish Quality) is a quality scenario: its runs must clear the
+    # audits and the averages of its scores must pass; one run's score does not decide.
+    pass_k = len(runs) == k and passes == k and not score_failures
     status: ScenarioStatus = (
         "incomplete" if outcomes["not_run"] else "passed" if pass_k else "failed"
     )
@@ -341,7 +370,8 @@ def scenario_report(
                 ).items()
             )
         ),
-        scores=_average_scores(runs),
+        scores=scores,
+        score_failures=score_failures,
     )
 
 
@@ -541,7 +571,10 @@ def render_markdown(report: Report) -> str:
             f"{name}: " + ", ".join(f"{value} {count}" for value, count in counts.items())
             for name, counts in scenario.distributions.items()
         )
-        failed = ", ".join(f"{name} {count}" for name, count in scenario.failed_checks.items())
+        failed = ", ".join(
+            [f"{name} {count}" for name, count in scenario.failed_checks.items()]
+            + scenario.score_failures
+        )
         scores = ", ".join(f"{name} {value:.1f}" for name, value in scenario.scores.items())
         lines.append(
             f"| {scenario.scenario_id} | {scenario.status} | {scenario.pass_rate:.0%} "

@@ -57,7 +57,7 @@ from .helpers import (
 )
 
 ORCHESTRATOR_MANIFEST = REPO_ROOT / "config/agents/orchestrator.yaml"
-ORCHESTRATOR_PROMPT = "prompts/orchestrator/v1.md"
+ORCHESTRATOR_PROMPT = "prompts/orchestrator/v2.md"
 ORCHESTRATOR_RUN_ID = "case-4711-orchestrator-1"
 
 RATIONALE_MARKER = "RATIONALE-7Q2X"

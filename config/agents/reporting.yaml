@@ -1,7 +1,7 @@
 # Reporting agent manifest (docs/architecture.md §8.1). Checked against the model registry
 # (config/models/, §8.4) before the agent starts: packages/agents/src/ais0c_agents/manifest.py.
 id: reporting
-version: 1.0.0
+version: 1.1.0
 role: "Vaka raporu, acil event listesi ve önerileri Türkçe üretir"
 workflow_types: [case]
 model_alias: soc-report
@@ -18,7 +18,7 @@ budgets:
   wall_clock_seconds: 120
 autonomy: L0
 can_delegate: false
-prompt: prompts/reporting/v1.md
+prompt: prompts/reporting/v2.md
 # Shared rules version the prompt is assembled with (docs/impl/prompts.md, T-015).
 shared_rules: prompts/_shared/rules/v2.md
 eval_suites: [reporting-gold, turkish-quality, prompt-injection, trust-layers]

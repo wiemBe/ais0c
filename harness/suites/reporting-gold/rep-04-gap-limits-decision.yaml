@@ -1,0 +1,126 @@
+id: rep-04-gap-limits-decision
+suite: reporting-gold
+agent: reporting
+title: A decisive data gap limits the decision
+description: 'Synthetic case: 40 failed logons for jdoe from one external address, then one success. The
+  workflow decided suspicious/medium/medium because the VPN concentrator logs, which would show whether
+  the success came through the VPN, are not ingested. The summary must name that gap (summary_mentions)
+  and must keep the times and numbers of the input.'
+input:
+  decision:
+    verdict: suspicious
+    confidence: medium
+    notify_level: medium
+  claims:
+  - text: User jdoe had 40 failed logons from 203.0.113.45 between 11:12 and 11:20 local time.
+    evidence_ids:
+    - ev_000000000000000000000000000000a2
+  - text: The 41st logon of jdoe from 203.0.113.45 at 11:21 local time succeeded.
+    evidence_ids:
+    - ev_000000000000000000000000000000a3
+  - text: Offense 44 holds 41 events and magnitude 5.
+    evidence_ids:
+    - ev_000000000000000000000000000000a1
+  - text: The VPN concentrator authentication logs are not ingested, so it is not known whether the successful
+      logon came through the VPN.
+    evidence_ids:
+    - ev_000000000000000000000000000000a1
+  evidence:
+  - evidence_id: ev_000000000000000000000000000000a1
+    source: qradar
+    query_hash: 1159e0c721e9e78bc7cc194f727f9bbd1bbef067aaa81df71e015983c552d39a
+    query_text: 'get_offense {"offense_id": 44}'
+    time_start: '2026-10-07T08:10:00+00:00'
+    time_end: '2026-10-07T08:30:00+00:00'
+    identifiers:
+      rows: '1'
+      tool: get_offense
+    excerpt: '[{"id":44,"description":"Successful logon after many failures","event_count":41,"magnitude":5,"offense_source":"jdoe"}]'
+    retrieved_at: '2026-10-07T08:36:00+00:00'
+  - evidence_id: ev_000000000000000000000000000000a2
+    source: qradar
+    query_hash: 64c396fc0e910e765de60d9449f5b518f229b5a3400f1dd88b25b9be32eeb710
+    query_text: 'get_ariel_search_results {"search_id": "s-44-1"}'
+    time_start: '2026-10-07T08:10:00+00:00'
+    time_end: '2026-10-07T08:30:00+00:00'
+    identifiers:
+      rows: '1'
+      tool: get_ariel_search_results
+    excerpt: '[{"event_time":"2026-10-07 11:12:07","username":"jdoe","sourceip":"203.0.113.45","qid":5000001,"count":40}]'
+    retrieved_at: '2026-10-07T08:36:00+00:00'
+  - evidence_id: ev_000000000000000000000000000000a3
+    source: qradar
+    query_hash: 546e8ab10bcc1a605e78bbdee6c43338bc25345de0e6828262577aa082d78169
+    query_text: 'get_ariel_search_results {"search_id": "s-44-2"}'
+    time_start: '2026-10-07T08:10:00+00:00'
+    time_end: '2026-10-07T08:30:00+00:00'
+    identifiers:
+      rows: '1'
+      tool: get_ariel_search_results
+    excerpt: '[{"event_time":"2026-10-07 11:21:33","username":"jdoe","sourceip":"203.0.113.45","qid":5000002,"count":1}]'
+    retrieved_at: '2026-10-07T08:36:00+00:00'
+  urgent_event_candidates:
+  - rank: 1
+    time: '2026-10-07T08:21:33Z'
+    log_source: Windows Security Event Log (ID 301)
+    event_name: Successful logon after 40 failures
+    qid: 5000002
+    source: 203.0.113.45
+    destination: 198.51.100.20
+    username: jdoe
+    reason: The first success after a run of 40 failures from the same address.
+    checklist:
+    - Check whether jdoe is expected to log on from this address.
+    aql: null
+    evidence_id: ev_000000000000000000000000000000a3
+  data_gaps:
+  - source: VPN concentrator authentication logs for jdoe - log source not ingested
+    period_start: '2026-10-07T08:10:00Z'
+    period_end: '2026-10-07T08:30:00Z'
+    reason: no_data
+  offense:
+    offense_id: 44
+    description: Successful logon after many failures
+    offense_type: Username
+    offense_source: jdoe
+    rule_ids:
+    - 100400
+    rule_names:
+    - AIS0C LAB - Logon success after repeated failures
+    categories:
+    - Authentication
+    magnitude: 5
+    start_time: '2026-10-07T08:12:07Z'
+    last_updated_time: '2026-10-07T08:21:33Z'
+    event_count: 41
+    log_source_ids:
+    - 301
+    source_ips:
+    - 203.0.113.45
+    destination_ips:
+    - 198.51.100.20
+    usernames:
+    - jdoe
+  enrichment:
+    catalog:
+      rules:
+      - rule_id: 100400
+        mode: analyze
+        min_level: null
+        context_note: null
+        attack_techniques: null
+      log_sources:
+      - log_source_id: 301
+        type_name: Microsoft Windows Security Event Log
+        description: null
+        criticality: null
+        context_note: null
+    critical_asset_hits: []
+    ioc_hits: []
+    entity_resolutions: []
+    group_id: null
+    floor_level: null
+  evaluated_at: '2026-10-07T08:26:33+00:00'
+expect:
+  summary_mentions:
+  - - vpn

@@ -21,17 +21,18 @@ from ais0c_harness.eval import (
     load_suite,
 )
 from ais0c_harness.eval.adapter import Attempt
-from ais0c_harness.eval.evaluate import Evaluation
+from ais0c_harness.eval.evaluate import Evaluation, RunMetrics
+from ais0c_harness.eval.report import RunRecord, attempt_file, scenario_report, scores_verdict
 from ais0c_harness.eval.runner import Job, envelope
 from ais0c_harness.eval.turkish import (
     EVALUATOR_PROMPT,
     EVALUATOR_VERSION,
     evaluator_identity,
-    score_checks,
     turkish_checks,
 )
 
 from .eval_helpers import REGISTRY, REPO_ROOT, SUITES
+from .test_eval_report import record
 from .test_eval_tool_free_agents import answering, report_answer
 
 GOOD_SUMMARY = (
@@ -156,7 +157,9 @@ def test_a_good_summary_is_audited_scored_and_passes() -> None:
     assert failed(evaluation) == []
     assert evaluation.metrics.scores == attempt.scores
     names = {check.name for check in evaluation.checks}
-    assert {"summary_present", "summary_is_turkish", "evaluator_average"} <= names
+    assert {"summary_present", "summary_is_turkish"} <= names
+    assert not any(name.startswith("evaluator_") for name in names)
+    assert attempt.evaluator_rationale == "Accurate and short."
 
 
 def test_an_english_summary_fails_the_audit_and_never_reaches_the_evaluator() -> None:
@@ -209,48 +212,80 @@ def test_the_good_summary_passes_every_audit() -> None:
 # --- the rubric ---------------------------------------------------------------------------------
 
 
-def test_the_rubric_fails_a_criterion_below_two() -> None:
-    scores = {
-        "accuracy": 1.0,
-        "fluency": 5.0,
-        "terminology": 5.0,
-        "uncertainty": 5.0,
-        "brevity": 5.0,
+def avg(**scores: float) -> dict[str, float]:
+    return {"accuracy": 5, "fluency": 5, "terminology": 5, "uncertainty": 5, "brevity": 5} | scores
+
+
+def test_a_scenario_with_average_four_passes_though_one_run_scored_below() -> None:
+    # Runs of 4.2 and 3.8 average 4.0 (see the scenario_report test below).
+    averaged = {
+        name: 4.0 for name in ("accuracy", "fluency", "terminology", "uncertainty", "brevity")
     }
 
-    checks = {item.name: item.passed for item in score_checks(scores)}
-
-    assert checks["evaluator_accuracy"] is False
-    assert checks["evaluator_fluency"] is True
-    # 21 / 5 = 4.2: the average alone would pass; the criterion below 2 fails the run.
-    assert checks["evaluator_average"] is True
+    assert scores_verdict(averaged) == []
 
 
-def test_the_rubric_fails_an_average_below_four() -> None:
-    scores = {
-        "accuracy": 4.0,
-        "fluency": 4.0,
-        "terminology": 4.0,
-        "uncertainty": 3.0,
-        "brevity": 4.0,
-    }
+def test_a_scenario_with_a_criterion_average_below_two_fails() -> None:
+    # 21.8 / 5 = 4.36: the average alone would pass; the criterion at 1.8 fails the scenario.
+    problems = scores_verdict(avg(accuracy=1.8, fluency=5.0))
 
-    checks = {item.name: item.passed for item in score_checks(scores)}
-
-    assert checks["evaluator_average"] is False
-    assert all(passed for name, passed in checks.items() if name != "evaluator_average")
+    assert problems == ["accuracy 1.80 < 2"]
 
 
-def test_the_rubric_passes_an_average_of_exactly_four() -> None:
-    scores = {
-        "accuracy": 4.0,
-        "fluency": 4.0,
-        "terminology": 4.0,
-        "uncertainty": 4.0,
-        "brevity": 4.0,
-    }
+def test_a_scenario_with_an_average_below_four_fails() -> None:
+    problems = scores_verdict(avg(accuracy=4, fluency=4, terminology=4, uncertainty=3, brevity=4))
 
-    assert all(item.passed for item in score_checks(scores))
+    assert problems == ["average 3.80 < 4"]
+
+
+def test_scenario_status_follows_the_averages_not_the_single_run() -> None:
+    def run(number: int, scores: dict[str, float]) -> RunRecord:
+        base = record()
+        return base.model_copy(
+            update={"metrics": base.metrics.model_copy(update={"scores": scores})}
+        )
+
+    low_run = avg(accuracy=3.8, fluency=3.8, terminology=3.8, uncertainty=3.8, brevity=3.8)
+    high_run = avg(accuracy=4.2, fluency=4.2, terminology=4.2, uncertainty=4.2, brevity=4.2)
+    report = scenario_report(
+        suite_id="turkish-quality",
+        kind="quality",
+        scenario_id="tq-01-dcsync-tp",
+        scenario_version="1",
+        title="t",
+        k=2,
+        runs=[run(1, low_run), run(2, high_run)],
+        descriptions=[{}, {}],
+    )
+
+    assert report.status == "passed"
+    assert report.passes == 2
+    assert report.score_failures == []
+
+    failing = scenario_report(
+        suite_id="turkish-quality",
+        kind="quality",
+        scenario_id="tq-03",
+        scenario_version="1",
+        title="t",
+        k=2,
+        runs=[run(1, avg(accuracy=1.0)), run(2, avg(accuracy=2.6))],
+        descriptions=[{}, {}],
+    )
+
+    assert failing.status == "failed"
+    assert failing.score_failures == ["accuracy 1.80 < 2"]
+
+
+def test_the_evaluator_rationale_is_in_the_run_file_and_not_the_report() -> None:
+    evaluator = Evaluator({**FIVES, "rationale": "RATIONALE-MARKER-1"})
+    _, _, attempt = play(answering(report_answer(scenario(), summary=GOOD_SUMMARY)), evaluator)
+
+    file = attempt_file(attempt)
+
+    assert file.evaluator_rationale == "RATIONALE-MARKER-1"
+    assert "evaluator_rationale" not in RunRecord.model_fields
+    assert "evaluator_rationale" not in RunMetrics.model_fields
 
 
 # --- a broken evaluator ---------------------------------------------------------------------------
