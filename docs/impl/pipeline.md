@@ -95,8 +95,8 @@ Sıra (2026-10-07):
 
 1. Bitti, `main`'de: T-027–T-030, T-032 (kararlar T-65–T-73); T-052, T-053, T-054 (T-74–T-76; T-054'ün gate'i geçmedi); T-033, T-055, T-056, T-058, T-059 (T-79–T-83; Triage'ın güvenlik gate'i T-056'nın koşularında geçti, T-058'in lab kuralları planner tarafından kuruldu).
 2. Bitti, `main`'de (2026-10-07 gece): T-061, T-062 (T-86, T-87). T-063 de `main`'de (T-91; güvenlik gate'leri geçti). T-064'ün ilk partisi (60 taslak skill) 2026-10-08'de `main`'de (T-92).
-3. **Şimdi verilecek (2026-10-08; görevlerin çoğunu Sonnet 5.5 orta effort yapıyor, planner.md §4):** T-057 (kullanıcıda), T-065 (skill içeriği; skill'leri yazandan farklı bir aile) ve T-068 (telemetri sınıfları 1/4: katalog ve senkron, migration `0012`). T-065 ile T-068'in dosyaları ayrı.
-4. **T-068 birleşince, paralel:** T-069 (API) ve T-070 (skill manifest'inde `telemetry_class`). **İkisinden sonra:** T-071 (skill bölümünde çözüm; workflow değişikliği, birleşince açık CaseWorkflow'lar sonlandırılır).
+3. **Bitti, `main`'de (2026-10-08):** T-065, T-068 (T-96, T-97). **Sürüyor:** T-057.
+4. **Şimdi verilecek, paralel (görevlerin çoğunu Sonnet 5.5 orta effort yapıyor, planner.md §4):** T-069 (API), T-070 (skill manifest'inde `telemetry_class`) ve T-072 (paralel araç çağrısı payı; dcsync suite'i yeniden). **T-069 ve T-070'ten sonra:** T-071 (skill bölümünde çözüm; workflow değişikliği, birleşince açık CaseWorkflow'lar sonlandırılır).
 5. Planner: senaryo setinin lab e2e koşuları (`AIS0C_E2E_SCENARIO`) ve kayıtları; sonra T-060'ın dosyası. T-060'tan sonra T-066 (Investigation/Verification v3). T-057, T-065 ve T-070'ten sonra T-067 (aday özeti).
 6. Ardından T-031 (H-7, S-12 ve on-prem gate'inden sonra), T-035 (H-6).
 
@@ -124,6 +124,7 @@ Sıra (2026-10-07):
 | T-069 | Telemetri sınıfları 2/4: `/catalog/log-sources`'ta sınıf alanları ve filtreleri, `PUT` ile atama (çift kontrol; alan yoksa değişmez), OpenAPI ve `schema.d.ts`. Dosya: [T-069](tasks/T-069-telemetri-siniflari-api.md) | T-068 |
 | T-070 | Telemetri sınıfları 3/4: skill manifest'inde `telemetry_class` (`siem-internal` yasak), 60 `skill.yaml`'ın çevrilmesi, Entra'daki posta kutusu maddeleri, katalogdaki telemetri sütunu. Dosya: [T-070](tasks/T-070-skill-telemetri-sinifi.md) | T-068 |
 | T-071 | Telemetri sınıfları 4/4: `skill_telemetry` activity'si, `InvestigationInput.telemetry`, skill bölümünde kurulumun tipleri ve log source kimlikleri ya da "no enabled log source" satırı. Dosya: [T-071](tasks/T-071-skill-telemetrisinin-cozulmesi.md) | T-068, T-070 |
+| T-072 | Son cevap kuralında paralel araç çağrısı payı (araçlar en az 2 çağrı sığarken geri çekilir; T-065'in dcsync koşusunda 2 koşu 23/24'te iki çağrıyla cevapsız düştü), harness hatasının traceback'i, dcsync suite'i k = 5. Dosya: [T-072](tasks/T-072-paralel-arac-cagrisi-payi.md) | T-065 |
 | T-056 | Son cevabın düzeltme payı: araçlar geri çekilirken bir çıktı düzeltme isteğine de yer kalır (offense 36: Verification'ın `reason`'ı 300 karakteri aştı, düzeltme isteği 120.000'i aştı); Verification ve Investigation prompt v2'de alan sınırları; lab ölçümü. Dosya: [T-056](tasks/T-056-cevap-duzeltme-payi.md) | T-051 |
 | T-031 | Prod shadow dağıtımı: prod compose, LiteLLM prod konfigürasyonu, shadow modu, case, batch ve executor worker'larının compose servisleri (T-33, T-037, T-045), dağıtım notları. Shadow başlamadan model geçiş gate'i on-prem prod modelleriyle koşar ve geçer: dev raporu baseline, on-prem raporu candidate (T-030'un `gate` komutu, T-64) | T-018, T-026, T-030, T-037, T-045, H-7 |
 
