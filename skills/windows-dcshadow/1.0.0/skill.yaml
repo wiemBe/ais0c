@@ -1,0 +1,44 @@
+# Rogue domain controller: DCShadow. A draft; its lab scenario is not written
+# yet (T-060): approval sets status, approved_by and content_hash
+# (skills/README.md).
+id: windows-dcshadow
+version: 1.0.0
+status: draft
+owner: soc-engineering
+allowed_agent_roles: [investigation]
+triggers:
+  # QRadar rule IDs differ between installations: before approval the production
+  # QRadar's rule IDs go here, never the lab's. The lab uses the technique trigger
+  # (decision T-26).
+  rule_ids: []
+  log_source_types: []
+  attack_techniques: [T1207]
+required_telemetry:
+  - log_source_type: Microsoft Windows Security Event Log
+    events:
+      - "4932 and 4933 directory replication events on domain controllers with partner hosts that are not known domain controllers, and 5137 and 5136 creation and modification of server objects in the domain controllers' containers"
+    required: true
+  - log_source_type: Microsoft Windows Security Event Log
+    events:
+      - "4741 and 4742 computer account creations and changes for the rogue host, and 5136 attribute changes replicated only from it"
+    required: false
+required_evidence:
+  - id: rogue-partner
+    description: "Replication events whose partner host is not in the domain controller inventory"
+  - id: registration
+    description: "The directory objects that made the host look like a controller: server object, SPNs, replication rights"
+  - id: pushed-changes
+    description: "Attribute changes that arrived with the rogue partner as their only source"
+  - id: host-context
+    description: "The rogue host's window: the compromise that prepared it, or a data gap"
+# Starting values; the skill's suite measures them. T-062 (decision T-85): the
+# token limit is a runaway guard, not a constraint.
+budgets:
+  tokens: 600000
+  tool_calls: 24
+  wall_clock_seconds: 360
+output_schema: InvestigationResult
+eval_suites: [skill-windows-dcshadow, prompt-injection, adversarial-fn]
+expires_at: 2027-10-01
+content_hash: null
+approved_by: null

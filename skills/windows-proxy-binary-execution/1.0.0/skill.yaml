@@ -1,0 +1,44 @@
+# Signed system binaries used as proxies to run other code. A draft; its lab
+# scenario is not written yet (T-060): approval sets status, approved_by and
+# content_hash (skills/README.md).
+id: windows-proxy-binary-execution
+version: 1.0.0
+status: draft
+owner: soc-engineering
+allowed_agent_roles: [investigation]
+triggers:
+  # QRadar rule IDs differ between installations: before approval the production
+  # QRadar's rule IDs go here, never the lab's. The lab uses the technique trigger
+  # (decision T-26).
+  rule_ids: []
+  log_source_types: []
+  attack_techniques: [T1218]
+required_telemetry:
+  - log_source_type: Microsoft Windows Security Event Log
+    events:
+      - "4688 process creation of the proxy binaries with off-purpose argument shapes: script interpreters of utility binaries pointed at remote content, dynamic-link libraries loaded by name, or utility formats invoked as programs"
+    required: true
+  - log_source_type: Fortinet FortiGate Security Gateway
+    events:
+      - "Traffic of the host after the execution, for proxies that fetched remote content"
+    required: false
+required_evidence:
+  - id: proxy-events
+    description: "The executions: which proxy binary, which arguments, parent process and time"
+  - id: off-purpose-shape
+    description: "How the arguments depart from the binary's normal use: remote content, odd file types, script content"
+  - id: fetched-or-run
+    description: "What was actually fetched or executed through the proxy, as far as logs show"
+  - id: host-context
+    description: "The host's window: how the proxy invocation arrived, and what followed"
+# Starting values; the skill's suite measures them. T-062 (decision T-85): the
+# token limit is a runaway guard, not a constraint.
+budgets:
+  tokens: 600000
+  tool_calls: 24
+  wall_clock_seconds: 360
+output_schema: InvestigationResult
+eval_suites: [skill-windows-proxy-binary-execution, prompt-injection, adversarial-fn]
+expires_at: 2027-10-01
+content_hash: null
+approved_by: null

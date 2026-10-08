@@ -1,0 +1,44 @@
+# Kerberos tickets reused from host to host. A draft; its lab scenario is not
+# written yet (T-060): approval sets status, approved_by and content_hash
+# (skills/README.md).
+id: windows-pass-the-ticket
+version: 1.0.0
+status: draft
+owner: soc-engineering
+allowed_agent_roles: [investigation]
+triggers:
+  # QRadar rule IDs differ between installations: before approval the production
+  # QRadar's rule IDs go here, never the lab's. The lab uses the technique trigger
+  # (decision T-26).
+  rule_ids: []
+  log_source_types: []
+  attack_techniques: [T1550.003]
+required_telemetry:
+  - log_source_type: Microsoft Windows Security Event Log
+    events:
+      - "4769 on domain controllers: service ticket requests grouped by account and client address, and 4624 type 3 logons of the account from the same addresses"
+    required: true
+  - log_source_type: Microsoft Windows Security Event Log
+    events:
+      - "4768 TGT requests of the same account, to show the sessions that did and did not begin with a real logon"
+    required: false
+required_evidence:
+  - id: address-spread
+    description: "The account's client addresses in the window: how many, how far apart, how simultaneous"
+  - id: impossibility
+    description: "Pairs of uses that cannot both be the account's owner: two countries in minutes, a workstation and a server at once"
+  - id: target-services
+    description: "Which services the tickets reached: file, remote management, database"
+  - id: theft-origin
+    description: "Where the ticket was likely stolen: the account's earlier hosts and their compromise indicators, or a data gap"
+# Starting values; the skill's suite measures them. T-062 (decision T-85): the
+# token limit is a runaway guard, not a constraint.
+budgets:
+  tokens: 600000
+  tool_calls: 24
+  wall_clock_seconds: 360
+output_schema: InvestigationResult
+eval_suites: [skill-windows-pass-the-ticket, prompt-injection, adversarial-fn]
+expires_at: 2027-10-01
+content_hash: null
+approved_by: null

@@ -1,0 +1,42 @@
+# New service installed as persistence or execution. A draft; its lab scenario is not
+# written yet (T-060): approval sets status, approved_by and content_hash (skills/README.md).
+id: windows-service-install
+version: 1.0.0
+status: draft
+owner: soc-engineering
+allowed_agent_roles: [investigation]
+triggers:
+  # QRadar rule IDs differ between installations: before approval the production QRadar's
+  # rule IDs go here, never the lab's. The lab uses the technique trigger (decision T-26).
+  rule_ids: []
+  log_source_types: []
+  attack_techniques: [T1543.003]
+required_telemetry:
+  - log_source_type: Microsoft Windows Security Event Log
+    events:
+      - "7045 in the System log of the host: a service was installed, with the service name, the image path, the start type and the account it runs as"
+    required: true
+  - log_source_type: Microsoft Windows Security Event Log
+    events:
+      - "4688 process creation of the service binary and 4624 logons that preceded the install"
+    required: false
+required_evidence:
+  - id: service-install
+    description: "The 7045 event: host, service name, image path, start type, run-as account and time"
+  - id: path-assessment
+    description: "Where the service binary lives: a system path, a program directory, or a user-writable path"
+  - id: install-context
+    description: "How the install happened: the logons and remote sessions that preceded it, and the tool involved, as far as the logs show"
+  - id: service-use
+    description: "The service's first run and what its process did, or a data gap"
+# Starting values; the skill's suite measures them. One Ariel search takes at least four
+# tool calls. T-062 (decision T-85): the token limit is a runaway guard, not a constraint.
+budgets:
+  tokens: 600000
+  tool_calls: 24
+  wall_clock_seconds: 360
+output_schema: InvestigationResult
+eval_suites: [skill-windows-service-install, prompt-injection, adversarial-fn]
+expires_at: 2027-10-01
+content_hash: null
+approved_by: null

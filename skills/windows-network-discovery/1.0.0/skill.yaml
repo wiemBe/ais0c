@@ -1,0 +1,43 @@
+# Internal network discovery. A draft; its lab scenario is not written yet
+# (T-060): approval sets status, approved_by and content_hash (skills/README.md).
+id: windows-network-discovery
+version: 1.0.0
+status: draft
+owner: soc-engineering
+allowed_agent_roles: [investigation]
+triggers:
+  # QRadar rule IDs differ between installations: before approval the production
+  # QRadar's rule IDs go here, never the lab's. The lab uses the technique trigger
+  # (decision T-26).
+  rule_ids: []
+  log_source_types: []
+  attack_techniques: [T1016, T1018]
+required_telemetry:
+  - log_source_type: Microsoft Windows Security Event Log
+    events:
+      - "4688 process creation with discovery argument shapes: network listing and name-resolution commands, share and session listings, address-sweep script shapes, with the subject and host"
+    required: true
+  - log_source_type: Fortinet FortiGate Security Gateway
+    events:
+      - "The same host's internal scanning at the firewall, for sweeps the process events do not show (the firewall-port-scan skill's method)"
+    required: false
+required_evidence:
+  - id: discovery-events
+    description: "The discovery commands: tool, arguments, subject, host and time"
+  - id: scope
+    description: "How far the questions reached: the local subnet, the server ranges, the whole estate"
+  - id: subject-role
+    description: "Who asked: an inventory agent, an administrator, or an account with no reason"
+  - id: map-use
+    description: "What was reached next: connections and logons to the hosts the map named"
+# Starting values; the skill's suite measures them. T-062 (decision T-85): the
+# token limit is a runaway guard, not a constraint.
+budgets:
+  tokens: 600000
+  tool_calls: 24
+  wall_clock_seconds: 360
+output_schema: InvestigationResult
+eval_suites: [skill-windows-network-discovery, prompt-injection, adversarial-fn]
+expires_at: 2027-10-01
+content_hash: null
+approved_by: null

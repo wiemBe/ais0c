@@ -133,11 +133,9 @@ def from_skill(skill: Skill) -> SkillInput:
 def test_every_repository_skill_becomes_a_skill_input() -> None:
     skills = list(load_skills(REPO_ROOT / "skills", mode="dev"))
 
-    assert {skill.manifest.id for skill in skills} == {
-        "password-spraying",
-        "vpn-new-country",
-        "windows-dcsync",
-    }
+    on_disk = {path.name for path in (REPO_ROOT / "skills").iterdir() if path.is_dir()}
+    assert {skill.manifest.id for skill in skills} == on_disk
+    assert "windows-dcsync" in on_disk
     for skill in skills:
         section = render_skill(from_skill(skill))
         assert section.startswith(skill.instructions.rstrip("\n") + "\n\n## Required telemetry\n")

@@ -1,0 +1,43 @@
+# Scheduled task created as persistence. A draft; its lab scenario is not written yet
+# (T-060): approval sets status, approved_by and content_hash (skills/README.md).
+id: windows-scheduled-task
+version: 1.0.0
+status: draft
+owner: soc-engineering
+allowed_agent_roles: [investigation]
+triggers:
+  # QRadar rule IDs differ between installations: before approval the production QRadar's
+  # rule IDs go here, never the lab's. The lab uses the technique trigger (decision T-26).
+  rule_ids: []
+  log_source_types: []
+  attack_techniques: [T1053, T1053.005]
+required_telemetry:
+  - log_source_type: Microsoft Windows Security Event Log
+    events:
+      - "4698 on the host: a scheduled task was created, with the subject, the task name and the account it runs as"
+    required: true
+  - log_source_type: Microsoft Windows Security Event Log
+    events:
+      - "4699 task deleted, 4700 task enabled and 4702 task updated on the same host"
+      - "4688 process creation when the task first ran"
+    required: false
+required_evidence:
+  - id: task-creation
+    description: "The 4698 event: host, subject, task name, the account the task runs as and the time"
+  - id: task-content
+    description: "What the event shows about the task's action and schedule, read as a log field pattern"
+  - id: subject-assessment
+    description: "Who created the task: the subject's role and host in the organization context"
+  - id: task-use
+    description: "The task's first run and the processes it started, or a data gap"
+# Starting values; the skill's suite measures them. One Ariel search takes at least four
+# tool calls. T-062 (decision T-85): the token limit is a runaway guard, not a constraint.
+budgets:
+  tokens: 600000
+  tool_calls: 24
+  wall_clock_seconds: 360
+output_schema: InvestigationResult
+eval_suites: [skill-windows-scheduled-task, prompt-injection, adversarial-fn]
+expires_at: 2027-10-01
+content_hash: null
+approved_by: null

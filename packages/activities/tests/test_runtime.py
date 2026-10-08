@@ -206,11 +206,11 @@ async def test_in_dev_the_draft_skills_are_loaded(environ: dict[str, str]) -> No
     runtime = await load_case_runtime(environ)
     try:
         assert runtime.chain.skills_mode == "dev"
-        assert {skill.manifest.id for skill in runtime.chain.skills} == {
-            "password-spraying",
-            "vpn-new-country",
-            "windows-dcsync",
-        }
+        ids = {skill.manifest.id for skill in runtime.chain.skills}
+        # The repository's drafts load whole (T-064 grew the catalog); the first three
+        # stand in for the rest.
+        assert {"password-spraying", "vpn-new-country", "windows-dcsync"} <= ids
+        assert len(ids) > 3
     finally:
         await runtime.close()
 

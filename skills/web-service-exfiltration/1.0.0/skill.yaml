@@ -1,0 +1,48 @@
+# Data carried out to web and cloud services. A draft; its lab scenario is not
+# written yet (T-060): approval sets status, approved_by and content_hash
+# (skills/README.md).
+id: web-service-exfiltration
+version: 1.0.0
+status: draft
+owner: soc-engineering
+allowed_agent_roles: [investigation]
+triggers:
+  # QRadar rule IDs differ between installations: before approval the production
+  # QRadar's rule IDs go here, never the lab's. The lab uses the technique trigger
+  # (decision T-26).
+  rule_ids: []
+  log_source_types: []
+  attack_techniques: [T1567, T1567.002]
+required_telemetry:
+  - log_source_type: Fortinet FortiGate Security Gateway
+    events:
+      - "Traffic log: uploads from internal hosts and server ranges to storage, sync, transfer and paste services' endpoint ranges, with byte volume, times and the destination services named"
+    required: true
+  - log_source_type: F5 Networks BIG-IP ASM
+    events:
+      - "Request log: the same services used through the web path, with upload request shapes and sizes"
+    required: false
+  - log_source_type: Microsoft Windows Security Event Log
+    events:
+      - "The pushing host's process events and staging shapes, where they reach QRadar"
+    required: false
+required_evidence:
+  - id: upload-map
+    description: "Per host: the destination services, byte volumes, session counts and times"
+  - id: direction-share
+    description: "The outbound share of each conversation: uploads dwarfing downloads is the exfiltration shape"
+  - id: fit-with-role
+    description: "Whether the host's job includes moving data to that service, per the organization context"
+  - id: staging
+    description: "Archive, export or dump shapes on the host before the uploads, or a data gap"
+# Starting values; the skill's suite measures them. T-062 (decision T-85): the
+# token limit is a runaway guard, not a constraint.
+budgets:
+  tokens: 600000
+  tool_calls: 24
+  wall_clock_seconds: 360
+output_schema: InvestigationResult
+eval_suites: [skill-web-service-exfiltration, prompt-injection, adversarial-fn]
+expires_at: 2027-10-01
+content_hash: null
+approved_by: null

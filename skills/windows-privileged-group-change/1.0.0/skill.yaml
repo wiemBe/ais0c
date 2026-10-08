@@ -1,0 +1,42 @@
+# Addition of an account to a privileged group. A draft; its lab scenario is not written yet
+# (T-060): approval sets status, approved_by and content_hash (skills/README.md).
+id: windows-privileged-group-change
+version: 1.0.0
+status: draft
+owner: soc-engineering
+allowed_agent_roles: [investigation]
+triggers:
+  # QRadar rule IDs differ between installations: before approval the production QRadar's
+  # rule IDs go here, never the lab's. The lab uses the technique trigger (decision T-26).
+  rule_ids: []
+  log_source_types: []
+  attack_techniques: [T1098]
+required_telemetry:
+  - log_source_type: Microsoft Windows Security Event Log
+    events:
+      - "4728, 4732 and 4756 on domain controllers and members: a member was added to a security group, with the subject, the member and the group name"
+    required: true
+  - log_source_type: Microsoft Windows Security Event Log
+    events:
+      - "4624 logons and 4768 ticket requests of the added member after the change"
+    required: false
+required_evidence:
+  - id: group-change
+    description: "The change event: subject account, added member, group name, host and time"
+  - id: group-assessment
+    description: "Whether the group grants administrative rights, and on which systems"
+  - id: subject-role
+    description: "Who made the change: the account, its host, and whether the subject and the member are the same account"
+  - id: member-use
+    description: "The added member's logons and privileged activity after the change, or a data gap"
+# Starting values; the skill's suite measures them. One Ariel search takes at least four
+# tool calls. T-062 (decision T-85): the token limit is a runaway guard, not a constraint.
+budgets:
+  tokens: 600000
+  tool_calls: 24
+  wall_clock_seconds: 360
+output_schema: InvestigationResult
+eval_suites: [skill-windows-privileged-group-change, prompt-injection, adversarial-fn]
+expires_at: 2027-10-01
+content_hash: null
+approved_by: null

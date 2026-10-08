@@ -1,0 +1,46 @@
+# SQL injection against a web application behind the WAF. A draft built on the lab's
+# s6-waf-sqli-gecti scenario (T-058): approval sets status, approved_by and content_hash.
+id: web-sql-injection
+version: 1.0.0
+status: draft
+owner: soc-engineering
+allowed_agent_roles: [investigation]
+triggers:
+  # QRadar rule IDs differ between installations: before approval the production QRadar's
+  # rule IDs go here, never the lab's. The lab uses the technique trigger (decision T-26).
+  rule_ids: []
+  log_source_types: []
+  # T1190 is shared by several web skills: the router offers them all, the orchestrator
+  # connects the one whose Purpose names this WAF attack type.
+  attack_techniques: [T1190]
+required_telemetry:
+  - log_source_type: F5 Networks BIG-IP ASM
+    events:
+      - "Request log with attack_type SQL-Injection: sig_names, request_status, response_code, ip_client, uri, query_string and user_agent"
+    required: true
+  - log_source_type: Fortinet FortiGate Security Gateway
+    events:
+      - "Traffic from the web server to external addresses after the requests, for data leaving the network"
+    required: false
+required_evidence:
+  - id: request-summary
+    description: "Per source address: request count, signature families, request_status values and response codes"
+  - id: reached-application
+    description: "Whether any request was passed on (alerted) and answered by the application"
+  - id: signature-families
+    description: "What the signatures say was tried: extraction, tautology, time-based or out-of-band probing"
+  - id: source-scope
+    description: "Other requests, URIs and attack families from the same source, and other sources doing the same"
+  - id: aftermath
+    description: "What followed in the window: bulk data retrieval, error responses or new sessions from the source"
+# Starting values; the skill's suite measures them. One Ariel search takes at least four
+# tool calls. T-062 (decision T-85): the token limit is a runaway guard, not a constraint.
+budgets:
+  tokens: 600000
+  tool_calls: 24
+  wall_clock_seconds: 360
+output_schema: InvestigationResult
+eval_suites: [skill-web-sql-injection, prompt-injection, adversarial-fn]
+expires_at: 2027-10-01
+content_hash: null
+approved_by: null

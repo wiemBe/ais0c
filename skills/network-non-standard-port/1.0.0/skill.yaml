@@ -1,0 +1,43 @@
+# Command channels on non-standard ports. A draft; its lab scenario is not written
+# yet (T-060): approval sets status, approved_by and content_hash (skills/README.md).
+id: network-non-standard-port
+version: 1.0.0
+status: draft
+owner: soc-engineering
+allowed_agent_roles: [investigation]
+triggers:
+  # QRadar rule IDs differ between installations: before approval the production
+  # QRadar's rule IDs go here, never the lab's. The lab uses the technique trigger
+  # (decision T-26).
+  rule_ids: []
+  log_source_types: []
+  attack_techniques: [T1571]
+required_telemetry:
+  - log_source_type: Fortinet FortiGate Security Gateway
+    events:
+      - "Traffic log: connections from internal hosts to external destinations on ports outside the sanctioned service set, with duration, volume and periodicity"
+    required: true
+  - log_source_type: Microsoft Windows Security Event Log
+    events:
+      - "The host's process events for the program owning the connections, where they reach QRadar"
+    required: false
+required_evidence:
+  - id: channel-map
+    description: "Per host: the destination, port, session count, duration and volume"
+  - id: periodicity
+    description: "Whether the connections repeat at regular intervals (the beaconing skill's method)"
+  - id: owner
+    description: "The program or user on the host behind the connections, or a data gap"
+  - id: sanction-fit
+    description: "Whether the port and destination fit any service the organization context names"
+# Starting values; the skill's suite measures them. T-062 (decision T-85): the
+# token limit is a runaway guard, not a constraint.
+budgets:
+  tokens: 600000
+  tool_calls: 24
+  wall_clock_seconds: 360
+output_schema: InvestigationResult
+eval_suites: [skill-network-non-standard-port, prompt-injection, adversarial-fn]
+expires_at: 2027-10-01
+content_hash: null
+approved_by: null

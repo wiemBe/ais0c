@@ -1,0 +1,44 @@
+# Kerberoasting investigation. A draft built on the lab's s4-kerberoasting scenario
+# (T-058): approval sets status, approved_by and content_hash (skills/README.md).
+id: windows-kerberoasting
+version: 1.0.0
+status: draft
+owner: soc-engineering
+allowed_agent_roles: [investigation]
+triggers:
+  # QRadar rule IDs differ between installations: before approval the production QRadar's
+  # rule IDs go here, never the lab's. The lab uses the technique trigger (decision T-26).
+  rule_ids: []
+  log_source_types: []
+  attack_techniques: [T1558.003]
+required_telemetry:
+  - log_source_type: Microsoft Windows Security Event Log
+    events:
+      - "4769 on domain controllers: service ticket requests with Account Name, Service Name, Ticket Encryption Type and Client Address"
+    required: true
+  - log_source_type: Microsoft Windows Security Event Log
+    events:
+      - "4624 logons of the targeted service accounts from new sources, after the ticket burst"
+    required: false
+required_evidence:
+  - id: ticket-burst
+    description: "Per requesting account: the distinct Service Names requested, the count of 4769 events and the time span"
+  - id: encryption-types
+    description: "The Ticket Encryption Type per service: 0x17 RC4 (crackable offline) or 0x12 AES256"
+  - id: requester-baseline
+    description: "The requesting account's earlier service ticket requests, or a data gap if there is no baseline"
+  - id: request-source
+    description: "The Client Address the requests came from, and whether it is the account's usual host"
+  - id: service-account-use
+    description: "Any later logon of a targeted service account from a new source, or a data gap"
+# Starting values; the skill's suite measures them. One Ariel search takes at least four
+# tool calls. T-062 (decision T-85): the token limit is a runaway guard, not a constraint.
+budgets:
+  tokens: 600000
+  tool_calls: 24
+  wall_clock_seconds: 360
+output_schema: InvestigationResult
+eval_suites: [skill-windows-kerberoasting, prompt-injection, adversarial-fn]
+expires_at: 2027-10-01
+content_hash: null
+approved_by: null

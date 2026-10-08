@@ -1,0 +1,44 @@
+# Malicious file execution by the user: Office documents running code. A draft;
+# its lab scenario is not written yet (T-060): approval sets status, approved_by
+# and content_hash (skills/README.md).
+id: office-macro-execution
+version: 1.0.0
+status: draft
+owner: soc-engineering
+allowed_agent_roles: [investigation]
+triggers:
+  # QRadar rule IDs differ between installations: before approval the production
+  # QRadar's rule IDs go here, never the lab's. The lab uses the technique trigger
+  # (decision T-26).
+  rule_ids: []
+  log_source_types: []
+  attack_techniques: [T1204.002]
+required_telemetry:
+  - log_source_type: Microsoft Windows Security Event Log
+    events:
+      - "4688 process creation where an office application, pdf reader or archive tool is the parent of script interpreters, shells or download utilities, with the command line and the user"
+    required: true
+  - log_source_type: Microsoft Windows Security Event Log
+    events:
+      - "4688 the document process itself with the file name in the command line, and the host's later network in the firewall log"
+    required: false
+required_evidence:
+  - id: child-processes
+    description: "What the document started: interpreter, shell or downloader, with command lines"
+  - id: document-identity
+    description: "Which document, from the office process's own command line or file events, or a data gap"
+  - id: arrival
+    description: "How the file arrived: mail gateway delivery, download, or a data gap"
+  - id: aftermath
+    description: "What ran next: downloads, persistence (the registry and task skills), network out"
+# Starting values; the skill's suite measures them. T-062 (decision T-85): the
+# token limit is a runaway guard, not a constraint.
+budgets:
+  tokens: 600000
+  tool_calls: 24
+  wall_clock_seconds: 360
+output_schema: InvestigationResult
+eval_suites: [skill-office-macro-execution, prompt-injection, adversarial-fn]
+expires_at: 2027-10-01
+content_hash: null
+approved_by: null

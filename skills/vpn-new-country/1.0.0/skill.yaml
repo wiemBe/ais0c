@@ -31,12 +31,12 @@ required_evidence:
     description: "The user's other VPN sessions around the login and their countries"
   - id: post-login-activity
     description: "What the user reached from the tunnel address after the login"
-# Starting values; the skill's suite (T-030) measures them. One Ariel search takes at least four
-# tool calls (create, status, results, delete); the 14-day baseline needs two searches.
+# Starting values; the skill's suite (T-030) measures them. T-062 (decision T-85): the
+# token limit is a runaway guard, not a constraint. The 14-day baseline needs two searches.
 budgets:
-  tokens: 250000
-  tool_calls: 28
-  wall_clock_seconds: 300
+  tokens: 600000
+  tool_calls: 24
+  wall_clock_seconds: 360
 output_schema: InvestigationResult
 eval_suites: [skill-vpn-new-country, prompt-injection, adversarial-fn]
 expires_at: 2027-10-01

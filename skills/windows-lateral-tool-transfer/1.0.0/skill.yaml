@@ -1,0 +1,43 @@
+# Tools copied host to host over shares. A draft; its lab scenario is not written
+# yet (T-060): approval sets status, approved_by and content_hash (skills/README.md).
+id: windows-lateral-tool-transfer
+version: 1.0.0
+status: draft
+owner: soc-engineering
+allowed_agent_roles: [investigation]
+triggers:
+  # QRadar rule IDs differ between installations: before approval the production
+  # QRadar's rule IDs go here, never the lab's. The lab uses the technique trigger
+  # (decision T-26).
+  rule_ids: []
+  log_source_types: []
+  attack_techniques: [T1570]
+required_telemetry:
+  - log_source_type: Microsoft Windows Security Event Log
+    events:
+      - "5145 network share file events: writes into administrative and administrative-style shares (the administrative share roots and the logical drive roots) of executable and script file types, with the writer account"
+    required: true
+  - log_source_type: Microsoft Windows Security Event Log
+    events:
+      - "4624 type 3 logons from the writing host onto the target hosts, and 4688 execution of the written files afterwards"
+    required: false
+required_evidence:
+  - id: write-events
+    description: "The share writes: source host, target host, share, file names, account and time"
+  - id: content-type
+    description: "What was written: executable, script, archive or library file name patterns"
+  - id: execution
+    description: "The written files running on the target hosts, or a data gap"
+  - id: movement-context
+    description: "The logons around the writes: the account's spread (the lateral-movement skill's method)"
+# Starting values; the skill's suite measures them. T-062 (decision T-85): the
+# token limit is a runaway guard, not a constraint.
+budgets:
+  tokens: 600000
+  tool_calls: 24
+  wall_clock_seconds: 360
+output_schema: InvestigationResult
+eval_suites: [skill-windows-lateral-tool-transfer, prompt-injection, adversarial-fn]
+expires_at: 2027-10-01
+content_hash: null
+approved_by: null

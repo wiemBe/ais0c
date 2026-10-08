@@ -1,0 +1,43 @@
+# Security software impaired. A draft; its lab scenario is not written yet (T-060):
+# approval sets status, approved_by and content_hash (skills/README.md).
+id: windows-security-tool-disabled
+version: 1.0.0
+status: draft
+owner: soc-engineering
+allowed_agent_roles: [investigation]
+triggers:
+  # QRadar rule IDs differ between installations: before approval the production
+  # QRadar's rule IDs go here, never the lab's. The lab uses the technique trigger
+  # (decision T-26).
+  rule_ids: []
+  log_source_types: []
+  attack_techniques: [T1562, T1562.001]
+required_telemetry:
+  - log_source_type: Microsoft Windows Security Event Log
+    events:
+      - "7036 and 7040 in the System log: the defense services' state changes and start-type changes, and 4719 system audit policy changes in the Security log"
+    required: true
+  - log_source_type: Microsoft Windows Security Event Log
+    events:
+      - "4688 process creation with argument shapes that stop, exclude or uninstall defense tools, and 1102 security log clears in the same window"
+    required: false
+required_evidence:
+  - id: impairment-events
+    description: "The state changes: which defense, which host, which account or process, and the exact time"
+  - id: downtime
+    description: "How long the defense stayed down, and whether it recovered by itself or was restarted by whom"
+  - id: who-did-it
+    description: "The account and process behind the change: an agent updater, an administrator, or an unexplained session"
+  - id: blind-window-activity
+    description: "What the host did while the defense was down: executions, logons, network, or a data gap"
+# Starting values; the skill's suite measures them. T-062 (decision T-85): the
+# token limit is a runaway guard, not a constraint.
+budgets:
+  tokens: 600000
+  tool_calls: 24
+  wall_clock_seconds: 360
+output_schema: InvestigationResult
+eval_suites: [skill-windows-security-tool-disabled, prompt-injection, adversarial-fn]
+expires_at: 2027-10-01
+content_hash: null
+approved_by: null

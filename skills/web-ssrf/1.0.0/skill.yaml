@@ -1,0 +1,44 @@
+# Server-side request forgery against a web application. A draft; its lab scenario is not
+# written yet (T-060): approval sets status, approved_by and content_hash (skills/README.md).
+id: web-ssrf
+version: 1.0.0
+status: draft
+owner: soc-engineering
+allowed_agent_roles: [investigation]
+triggers:
+  # QRadar rule IDs differ between installations: before approval the production QRadar's
+  # rule IDs go here, never the lab's. The lab uses the technique trigger (decision T-26).
+  rule_ids: []
+  log_source_types: []
+  # T1190 is shared by several web skills: the router offers them all, the orchestrator
+  # connects the one whose Purpose names this attack shape.
+  attack_techniques: [T1190]
+required_telemetry:
+  - log_source_type: F5 Networks BIG-IP ASM
+    events:
+      - "Request log: parameter values naming internal addresses, host names or link-local metadata addresses, with sig_names, request_status and response_code"
+    required: true
+  - log_source_type: Fortinet FortiGate Security Gateway
+    events:
+      - "Traffic from the web server to internal addresses and metadata endpoints that no user request should reach"
+    required: false
+required_evidence:
+  - id: request-pattern
+    description: "The requests whose parameters carry internal addresses or metadata host names: source, endpoint, parameter and outcome"
+  - id: outbound-probe
+    description: "Connections from the web server to internal or metadata addresses in the same minutes, from the firewall log"
+  - id: reached-application
+    description: "Whether any request was passed on (alerted) and answered by the application"
+  - id: target-assessment
+    description: "What the named targets are: internal services, cloud metadata endpoints or administrative interfaces"
+# Starting values; the skill's suite measures them. One Ariel search takes at least four
+# tool calls. T-062 (decision T-85): the token limit is a runaway guard, not a constraint.
+budgets:
+  tokens: 600000
+  tool_calls: 24
+  wall_clock_seconds: 360
+output_schema: InvestigationResult
+eval_suites: [skill-web-ssrf, prompt-injection, adversarial-fn]
+expires_at: 2027-10-01
+content_hash: null
+approved_by: null

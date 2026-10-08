@@ -1,0 +1,48 @@
+# Phishing delivered to the bank's mailboxes. A draft; its lab scenario is not
+# written yet (T-060): approval sets status, approved_by and content_hash
+# (skills/README.md).
+id: email-phishing
+version: 1.0.0
+status: draft
+owner: soc-engineering
+allowed_agent_roles: [investigation]
+triggers:
+  # QRadar rule IDs differ between installations: before approval the production
+  # QRadar's rule IDs go here, never the lab's. The lab uses the technique trigger
+  # (decision T-26).
+  rule_ids: []
+  log_source_types: []
+  attack_techniques: [T1566, T1566.002]
+required_telemetry:
+  - log_source_type: E-mail Security Appliance
+    events:
+      - "Gateway events for the campaign's messages: sender, recipients, subject shapes, verdicts (delivered, quarantined, blocked), attachment and link shapes, with times"
+    required: true
+  - log_source_type: Fortinet FortiGate Security Gateway
+    events:
+      - "Clicks and submissions from inside to the campaign's link destinations, in the proxy or firewall traffic"
+    required: false
+  - log_source_type: Microsoft Windows Security Event Log
+    events:
+      - "4688 executions of the campaigns attachment names on hosts where WinCollect reaches, for the delivered-and-opened tail"
+    required: false
+required_evidence:
+  - id: campaign-shape
+    description: "The messages: sender addresses and domains, subjects, recipient list, times, and the verdicts the gateway gave"
+  - id: lookalike-domains
+    description: "The senders' domains against the bank's own and its known partners: homoglyphs and near-misses named"
+  - id: delivered-share
+    description: "Which mailboxes received the message, and which quarantines were released"
+  - id: clicks-and-execution
+    description: "Internal traffic to the links' destinations, and attachment executions, or a data gap where telemetry lacks them"
+# Starting values; the skill's suite measures them. T-062 (decision T-85): the
+# token limit is a runaway guard, not a constraint.
+budgets:
+  tokens: 600000
+  tool_calls: 24
+  wall_clock_seconds: 360
+output_schema: InvestigationResult
+eval_suites: [skill-email-phishing, prompt-injection, adversarial-fn]
+expires_at: 2027-10-01
+content_hash: null
+approved_by: null

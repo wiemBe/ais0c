@@ -1,0 +1,48 @@
+# Autostart persistence through registry run keys and startup folders. A draft; its
+# lab scenario is not written yet (T-060): approval sets status, approved_by and
+# content_hash (skills/README.md).
+id: windows-registry-run-key
+version: 1.0.0
+status: draft
+owner: soc-engineering
+allowed_agent_roles: [investigation]
+triggers:
+  # QRadar rule IDs differ between installations: before approval the production
+  # QRadar's rule IDs go here, never the lab's. The lab uses the technique trigger
+  # (decision T-26).
+  rule_ids: []
+  log_source_types: []
+  attack_techniques: [T1547, T1547.001]
+required_telemetry:
+  - log_source_type: Microsoft Windows Security Event Log
+    events:
+      - "4657 registry value modified or created under run-key paths (Run, RunOnce, and their variants), with the subject and the new value, when registry auditing is on"
+    required: true
+  - log_source_type: Microsoft Windows Security Event Log
+    events:
+      - "4688 process creation with registry tool argument shapes writing to run-key paths, and 4663 writes into startup folders"
+    required: true
+  - log_source_type: Microsoft Windows Security Event Log
+    events:
+      - "4624 the logons that would trigger the autostart entry, and 4688 the first run of the entered binary"
+    required: false
+required_evidence:
+  - id: registry-change
+    description: "The value event: key path, value name, the data it now runs, subject and time"
+  - id: binary-path
+    description: "Where the entered binary lives: a system path, a program directory or a user-writable path"
+  - id: subject-role
+    description: "Who made the change: the account's role and host, and whether it is the value's owner"
+  - id: first-run
+    description: "The entered binary's first execution, or a data gap if it has not run yet"
+# Starting values; the skill's suite measures them. T-062 (decision T-85): the
+# token limit is a runaway guard, not a constraint.
+budgets:
+  tokens: 600000
+  tool_calls: 24
+  wall_clock_seconds: 360
+output_schema: InvestigationResult
+eval_suites: [skill-windows-registry-run-key, prompt-injection, adversarial-fn]
+expires_at: 2027-10-01
+content_hash: null
+approved_by: null

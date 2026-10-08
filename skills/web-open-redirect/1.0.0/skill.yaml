@@ -1,0 +1,44 @@
+# Open redirect abused for phishing paths. A draft; its lab scenario is not
+# written yet (T-060): approval sets status, approved_by and content_hash
+# (skills/README.md).
+id: web-open-redirect
+version: 1.0.0
+status: draft
+owner: soc-engineering
+allowed_agent_roles: [investigation]
+triggers:
+  # QRadar rule IDs differ between installations: before approval the production
+  # QRadar's rule IDs go here, never the lab's. The lab uses the technique trigger
+  # (decision T-26).
+  rule_ids: []
+  log_source_types: []
+  attack_techniques: [T1566.002]
+required_telemetry:
+  - log_source_type: F5 Networks BIG-IP ASM
+    events:
+      - "Request log: parameters carrying full external URLs on redirect-style endpoints, with the destinations, sources and response codes"
+    required: true
+  - log_source_type: Fortinet FortiGate Security Gateway
+    events:
+      - "Internal hosts' later traffic to the redirect destinations, for the users who followed"
+    required: false
+required_evidence:
+  - id: redirect-requests
+    description: "The requests: endpoint, parameter, the external destination, source, response"
+  - id: destination-assessment
+    description: "Where the forwards point: phishing-like hosts, lookalike domains, or benign partners"
+  - id: followers
+    description: "Internal traffic to the destinations afterwards - the users who followed, or a data gap"
+  - id: endpoint-fit
+    description: "Whether the endpoint's redirect behavior is documented and constrained, per the organization context"
+# Starting values; the skill's suite measures them. T-062 (decision T-85): the
+# token limit is a runaway guard, not a constraint.
+budgets:
+  tokens: 600000
+  tool_calls: 24
+  wall_clock_seconds: 360
+output_schema: InvestigationResult
+eval_suites: [skill-web-open-redirect, prompt-injection, adversarial-fn]
+expires_at: 2027-10-01
+content_hash: null
+approved_by: null

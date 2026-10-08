@@ -1,0 +1,48 @@
+# Tools and files brought into the network. A draft; its lab scenario is not
+# written yet (T-060): approval sets status, approved_by and content_hash
+# (skills/README.md).
+id: windows-tool-download
+version: 1.0.0
+status: draft
+owner: soc-engineering
+allowed_agent_roles: [investigation]
+triggers:
+  # QRadar rule IDs differ between installations: before approval the production
+  # QRadar's rule IDs go here, never the lab's. The lab uses the technique trigger
+  # (decision T-26).
+  rule_ids: []
+  log_source_types: []
+  attack_techniques: [T1105]
+required_telemetry:
+  - log_source_type: Microsoft Windows Security Event Log
+    events:
+      - "4688 process creation with download argument shapes: certificate, transfer, background-transfer and archive utilities given remote sources and local destinations, and browsers writing into non-profile paths"
+    required: true
+  - log_source_type: Fortinet FortiGate Security Gateway
+    events:
+      - "Traffic of the host to the fetch's destinations: addresses, ports and byte volume"
+    required: false
+  - log_source_type: Microsoft Windows Security Event Log
+    events:
+      - "4688 execution of the fetched file afterwards, and archive extraction events"
+    required: false
+required_evidence:
+  - id: download-events
+    description: "The fetches: tool, remote source, local destination, subject and time"
+  - id: destination-assessment
+    description: "Where the fetch went: user-writable paths against program and operations directories"
+  - id: execution
+    description: "Whether the fetched file executed or was unpacked, and when"
+  - id: source-assessment
+    description: "The remote sources: reputation and hosting where the tooling offers it, and whether other hosts fetch from them"
+# Starting values; the skill's suite measures them. T-062 (decision T-85): the
+# token limit is a runaway guard, not a constraint.
+budgets:
+  tokens: 600000
+  tool_calls: 24
+  wall_clock_seconds: 360
+output_schema: InvestigationResult
+eval_suites: [skill-windows-tool-download, prompt-injection, adversarial-fn]
+expires_at: 2027-10-01
+content_hash: null
+approved_by: null

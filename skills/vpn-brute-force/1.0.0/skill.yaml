@@ -1,0 +1,45 @@
+# Brute force against the VPN portal. A draft; its lab scenario is not written yet (T-060):
+# approval sets status, approved_by and content_hash (skills/README.md).
+id: vpn-brute-force
+version: 1.0.0
+status: draft
+owner: soc-engineering
+allowed_agent_roles: [investigation]
+triggers:
+  # QRadar rule IDs differ between installations: before approval the production QRadar's
+  # rule IDs go here, never the lab's. The lab uses the technique trigger (decision T-26).
+  rule_ids: []
+  log_source_types: []
+  # Generic brute force (T1110) offenses over the VPN are offered this skill: the first
+  # step tells guessing and spraying apart.
+  attack_techniques: [T1110]
+required_telemetry:
+  - log_source_type: Fortinet FortiGate Security Gateway
+    events:
+      - "SSL VPN authentication failures with the user, the remote IP and the reason"
+      - "SSL VPN tunnel-up events with the user, the remote IP, the tunnel address and the source country"
+    required: true
+  - log_source_type: Microsoft Windows Security Event Log
+    events:
+      - "4624 network logons on internal hosts from the VPN tunnel address after a successful login"
+    required: false
+required_evidence:
+  - id: failure-pattern
+    description: "The failures per user and remote IP: count, time span and failure reasons"
+  - id: successful-login
+    description: "A tunnel-up of the same user from a remote IP that also failed, during or after the failures"
+  - id: source-assessment
+    description: "The remote IP: its country, whether other users failed or logged in from it, and its history"
+  - id: post-login-activity
+    description: "What the user reached from the tunnel address after a successful login, if the window allows"
+# Starting values; the skill's suite measures them. One Ariel search takes at least four
+# tool calls. T-062 (decision T-85): the token limit is a runaway guard, not a constraint.
+budgets:
+  tokens: 600000
+  tool_calls: 24
+  wall_clock_seconds: 360
+output_schema: InvestigationResult
+eval_suites: [skill-vpn-brute-force, prompt-injection, adversarial-fn]
+expires_at: 2027-10-01
+content_hash: null
+approved_by: null

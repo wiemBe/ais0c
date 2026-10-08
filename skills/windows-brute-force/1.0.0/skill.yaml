@@ -1,0 +1,46 @@
+# Brute force against one Windows account. A draft; its lab scenario is not written yet
+# (T-060): approval sets status, approved_by and content_hash (skills/README.md).
+id: windows-brute-force
+version: 1.0.0
+status: draft
+owner: soc-engineering
+allowed_agent_roles: [investigation]
+triggers:
+  # QRadar rule IDs differ between installations: before approval the production QRadar's
+  # rule IDs go here, never the lab's. The lab uses the technique trigger (decision T-26).
+  rule_ids: []
+  log_source_types: []
+  # Brute force (T1110) offenses are offered this skill and the spraying skill: the first
+  # step of each tells the two apart.
+  attack_techniques: [T1110, T1110.001]
+required_telemetry:
+  - log_source_type: Microsoft Windows Security Event Log
+    events:
+      - "4625 failed logons with the target account, the source address and the failure status"
+      - "4624 successful logons of the same account from the same sources"
+    required: true
+  - log_source_type: Microsoft Windows Security Event Log
+    events:
+      - "4771 Kerberos pre-authentication failures and 4776 NTLM credential validation on domain controllers"
+      - "4740 account lockouts on domain controllers"
+    required: false
+required_evidence:
+  - id: failure-pattern
+    description: "The failures per account and source: count, time span and cadence (machine-like or human-like)"
+  - id: failure-reasons
+    description: "The failure statuses: wrong password, unknown account, locked or disabled account"
+  - id: successful-logon
+    description: "A successful logon of the account from a source that also failed, during or after the failures"
+  - id: source-classification
+    description: "What the source is: an internal host, a VPN tunnel address or an external address"
+# Starting values; the skill's suite measures them. One Ariel search takes at least four
+# tool calls. T-062 (decision T-85): the token limit is a runaway guard, not a constraint.
+budgets:
+  tokens: 600000
+  tool_calls: 24
+  wall_clock_seconds: 360
+output_schema: InvestigationResult
+eval_suites: [skill-windows-brute-force, prompt-injection, adversarial-fn]
+expires_at: 2027-10-01
+content_hash: null
+approved_by: null

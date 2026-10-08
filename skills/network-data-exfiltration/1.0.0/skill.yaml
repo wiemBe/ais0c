@@ -1,0 +1,44 @@
+# Data leaving the network through outbound transfers. A draft; its lab scenario is not
+# written yet (T-060): approval sets status, approved_by and content_hash (skills/README.md).
+id: network-data-exfiltration
+version: 1.0.0
+status: draft
+owner: soc-engineering
+allowed_agent_roles: [investigation]
+triggers:
+  # QRadar rule IDs differ between installations: before approval the production QRadar's
+  # rule IDs go here, never the lab's. The lab uses the technique trigger (decision T-26).
+  rule_ids: []
+  log_source_types: []
+  # Exfiltration over an alternative protocol (T1048) and over a service channel (T1041);
+  # both mappings offer the skill.
+  attack_techniques: [T1041, T1048]
+required_telemetry:
+  - log_source_type: Fortinet FortiGate Security Gateway
+    events:
+      - "Traffic log: outbound byte volume per internal host and destination, compared with the host's baseline"
+    required: true
+  - log_source_type: F5 Networks BIG-IP ASM
+    events:
+      - "Request log: responses leaving the network that are far larger than the application serves that client, when the path is a web application"
+    required: false
+required_evidence:
+  - id: volume-anomaly
+    description: "The transfer: internal host, destination, byte volume, time span, and the ratio to the host's baseline"
+  - id: destination-assessment
+    description: "The destination: internal or external, first contact, what else the host sent there, and whether it is known to the organization"
+  - id: host-context
+    description: "The internal host's window: compromise indicators, beaconing, and what process could have sent the data"
+  - id: content-shape
+    description: "What the logs show about the content: session counts, archives, unusual ports or protocols, or a data gap"
+# Starting values; the skill's suite measures them. One Ariel search takes at least four
+# tool calls. T-062 (decision T-85): the token limit is a runaway guard, not a constraint.
+budgets:
+  tokens: 600000
+  tool_calls: 24
+  wall_clock_seconds: 360
+output_schema: InvestigationResult
+eval_suites: [skill-network-data-exfiltration, prompt-injection, adversarial-fn]
+expires_at: 2027-10-01
+content_hash: null
+approved_by: null

@@ -1,0 +1,44 @@
+# Command-and-control beaconing from an internal host. A draft; its lab scenario is not
+# written yet (T-060): approval sets status, approved_by and content_hash (skills/README.md).
+id: network-c2-beaconing
+version: 1.0.0
+status: draft
+owner: soc-engineering
+allowed_agent_roles: [investigation]
+triggers:
+  # QRadar rule IDs differ between installations: before approval the production QRadar's
+  # rule IDs go here, never the lab's. The lab uses the technique trigger (decision T-26).
+  rule_ids: []
+  log_source_types: []
+  # Beaconing is application-layer C2 (T1071.001) and often carries exfiltration over the
+  # same channel (T1041); both mappings offer the skill.
+  attack_techniques: [T1041, T1071, T1071.001]
+required_telemetry:
+  - log_source_type: Fortinet FortiGate Security Gateway
+    events:
+      - "Traffic log: repeated connections from one internal host to the same external destination and port at regular intervals"
+    required: true
+  - log_source_type: Microsoft Windows Security Event Log
+    events:
+      - "The internal host's logons, service installs and process events in the same window, to find what beacons"
+    required: false
+required_evidence:
+  - id: beacon-pattern
+    description: "The periodicity: connection count, interval regularity, duration and the external destination and port"
+  - id: baseline-fit
+    description: "Whether the internal host ever talked to that destination before, and how the interval began"
+  - id: host-process
+    description: "Which process or service on the host the connections belong to, or a data gap"
+  - id: channel-volume
+    description: "The byte volume of the channel: small and steady, or with upload spikes that suggest exfiltration"
+# Starting values; the skill's suite measures them. One Ariel search takes at least four
+# tool calls. T-062 (decision T-85): the token limit is a runaway guard, not a constraint.
+budgets:
+  tokens: 600000
+  tool_calls: 24
+  wall_clock_seconds: 360
+output_schema: InvestigationResult
+eval_suites: [skill-network-c2-beaconing, prompt-injection, adversarial-fn]
+expires_at: 2027-10-01
+content_hash: null
+approved_by: null

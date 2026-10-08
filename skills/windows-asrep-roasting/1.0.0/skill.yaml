@@ -1,0 +1,42 @@
+# AS-REP roasting against accounts without pre-authentication. A draft; its lab scenario
+# is not written yet (T-060): approval sets status, approved_by and content_hash.
+id: windows-asrep-roasting
+version: 1.0.0
+status: draft
+owner: soc-engineering
+allowed_agent_roles: [investigation]
+triggers:
+  # QRadar rule IDs differ between installations: before approval the production QRadar's
+  # rule IDs go here, never the lab's. The lab uses the technique trigger (decision T-26).
+  rule_ids: []
+  log_source_types: []
+  attack_techniques: [T1558.004]
+required_telemetry:
+  - log_source_type: Microsoft Windows Security Event Log
+    events:
+      - "4768 on domain controllers: TGT requests with Pre-Authentication Type 0 for accounts configured without pre-authentication"
+    required: true
+  - log_source_type: Microsoft Windows Security Event Log
+    events:
+      - "4624 logons of the roasted accounts from new sources, after the requests"
+    required: false
+required_evidence:
+  - id: no-preauth-requests
+    description: "The 4768 events without pre-authentication: account, count, client address and time span"
+  - id: request-baseline
+    description: "Whether that account normally requests tickets from that client, or a data gap"
+  - id: encryption-types
+    description: "The Ticket Encryption Type of the issued tickets: RC4 (0x17) is crackable offline"
+  - id: account-use
+    description: "Any later logon of a roasted account from a new source, or a data gap"
+# Starting values; the skill's suite measures them. One Ariel search takes at least four
+# tool calls. T-062 (decision T-85): the token limit is a runaway guard, not a constraint.
+budgets:
+  tokens: 600000
+  tool_calls: 24
+  wall_clock_seconds: 360
+output_schema: InvestigationResult
+eval_suites: [skill-windows-asrep-roasting, prompt-injection, adversarial-fn]
+expires_at: 2027-10-01
+content_hash: null
+approved_by: null

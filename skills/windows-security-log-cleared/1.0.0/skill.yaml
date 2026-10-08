@@ -1,0 +1,43 @@
+# Windows security log cleared. A draft; its lab scenario is not written yet (T-060):
+# approval sets status, approved_by and content_hash (skills/README.md).
+id: windows-security-log-cleared
+version: 1.0.0
+status: draft
+owner: soc-engineering
+allowed_agent_roles: [investigation]
+triggers:
+  # QRadar rule IDs differ between installations: before approval the production QRadar's
+  # rule IDs go here, never the lab's. The lab uses the technique trigger (decision T-26).
+  rule_ids: []
+  log_source_types: []
+  attack_techniques: [T1070.001]
+required_telemetry:
+  - log_source_type: Microsoft Windows Security Event Log
+    events:
+      - "1102 on the host: the audit log was cleared, with the subject account"
+    required: true
+  - log_source_type: Microsoft Windows Security Event Log
+    events:
+      - "104 in the System log: the log file was cleared"
+      - "4624, 4625, 7045 and 4720 events on the same host shortly before the clear"
+    required: false
+required_evidence:
+  - id: clear-event
+    description: "The clear event: host, log, subject account and time"
+  - id: preceding-activity
+    description: "The host's events in the window before the clear: logons, service installs, account and group changes"
+  - id: subject-assessment
+    description: "Who cleared the log: the account's role and host, and whether it is an administrator in the organization context"
+  - id: delivery-after
+    description: "Whether events from the host kept reaching QRadar after the clear, or a data gap"
+# Starting values; the skill's suite measures them. One Ariel search takes at least four
+# tool calls. T-062 (decision T-85): the token limit is a runaway guard, not a constraint.
+budgets:
+  tokens: 600000
+  tool_calls: 24
+  wall_clock_seconds: 360
+output_schema: InvestigationResult
+eval_suites: [skill-windows-security-log-cleared, prompt-injection, adversarial-fn]
+expires_at: 2027-10-01
+content_hash: null
+approved_by: null

@@ -1,0 +1,47 @@
+# Suspicious PowerShell execution. A draft; its lab scenario is not written yet
+# (T-060): approval sets status, approved_by and content_hash (skills/README.md).
+id: windows-powershell-anomaly
+version: 1.0.0
+status: draft
+owner: soc-engineering
+allowed_agent_roles: [investigation]
+triggers:
+  # QRadar rule IDs differ between installations: before approval the production
+  # QRadar's rule IDs go here, never the lab's. The lab uses the technique trigger
+  # (decision T-26).
+  rule_ids: []
+  log_source_types: []
+  attack_techniques: [T1059, T1059.001]
+required_telemetry:
+  - log_source_type: Microsoft Windows Security Event Log
+    events:
+      - "4688 process creation: powershell.exe with encoded-command, download or execution-policy argument shapes, with the parent process and command line"
+    required: true
+  - log_source_type: Microsoft Windows PowerShell
+    events:
+      - "4104 script block logs: the decoded content the host recorded, when script block logging is on"
+    required: false
+  - log_source_type: Fortinet FortiGate Security Gateway
+    events:
+      - "Traffic of the host after the execution, for downloaded code calling out"
+    required: false
+required_evidence:
+  - id: command-shape
+    description: "The command line's shape: encoded blocks, download cradles, bypass flags, invocation from a file or a URL"
+  - id: parent-process
+    description: "Which process started PowerShell: an administrator console, a service, or an office application"
+  - id: host-context
+    description: "The host's window before the execution: logons, services, tasks that explain the arrival"
+  - id: network-after
+    description: "What the host talked to after the execution, or a data gap"
+# Starting values; the skill's suite measures them. T-062 (decision T-85): the
+# token limit is a runaway guard, not a constraint.
+budgets:
+  tokens: 600000
+  tool_calls: 24
+  wall_clock_seconds: 360
+output_schema: InvestigationResult
+eval_suites: [skill-windows-powershell-anomaly, prompt-injection, adversarial-fn]
+expires_at: 2027-10-01
+content_hash: null
+approved_by: null

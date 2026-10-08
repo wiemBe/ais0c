@@ -23,6 +23,7 @@ SKILLS_DIR: Final = REPO_ROOT / "skills"
 
 WINDOWS_SECURITY: Final = "Microsoft Windows Security Event Log"
 FORTIGATE: Final = "Fortinet FortiGate Security Gateway"
+F5_ASM: Final = "F5 Networks BIG-IP ASM"
 # Before every test skill's expiry (2027-10-01).
 NOW: Final = datetime(2026, 10, 4, 12, 0, tzinfo=UTC)
 

@@ -37,12 +37,12 @@ required_evidence:
     description: "Successful logons from the same sources, or of the targeted accounts from new sources, during and after the failures"
   - id: source-classification
     description: "What the source is: an internal host, a VPN tunnel address or an external address"
-# Starting values; the skill's suite (T-030) measures them. One Ariel search takes at least four
-# tool calls (create, status, results, delete); critical and high offenses have a 10 minute SLA.
+# Starting values; the skill's suite (T-030) measures them. T-062 (decision T-85): the
+# token limit is a runaway guard, not a constraint.
 budgets:
-  tokens: 250000
+  tokens: 600000
   tool_calls: 24
-  wall_clock_seconds: 300
+  wall_clock_seconds: 360
 output_schema: InvestigationResult
 eval_suites: [skill-password-spraying, prompt-injection, adversarial-fn]
 expires_at: 2027-10-01

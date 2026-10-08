@@ -1,0 +1,43 @@
+# Request flood against the web surface. A draft; the lab's volume rules (100358 and
+# 100359, T-058) are its future scenario: approval sets status, approved_by and
+# content_hash (skills/README.md).
+id: web-flood
+version: 1.0.0
+status: draft
+owner: soc-engineering
+allowed_agent_roles: [investigation]
+triggers:
+  # QRadar rule IDs differ between installations: before approval the production QRadar's
+  # rule IDs go here, never the lab's. The lab uses the technique trigger (decision T-26).
+  rule_ids: []
+  log_source_types: []
+  attack_techniques: [T1498]
+required_telemetry:
+  - log_source_type: F5 Networks BIG-IP ASM
+    events:
+      - "Request log: the volume of requests per ip_client in the window, with request_status, uri and response codes"
+    required: true
+  - log_source_type: Fortinet FortiGate Security Gateway
+    events:
+      - "Traffic of the same sources at the firewall: connection counts and volume, to see whether the flood passed the WAF"
+    required: false
+required_evidence:
+  - id: volume-summary
+    description: "Per source address: request count, time span, requests per second, distinct URIs and response codes"
+  - id: target-pattern
+    description: "What was hit: one endpoint or many, expensive operations or plain pages, authenticated or open"
+  - id: effect
+    description: "The effect on the service: response codes and latency as far as the logs show them, and other sources' failures in the same window"
+  - id: source-assessment
+    description: "The source: internal or external, one address or a range, and whether the organization context explains it"
+# Starting values; the skill's suite measures them. One Ariel search takes at least four
+# tool calls. T-062 (decision T-85): the token limit is a runaway guard, not a constraint.
+budgets:
+  tokens: 600000
+  tool_calls: 24
+  wall_clock_seconds: 360
+output_schema: InvestigationResult
+eval_suites: [skill-web-flood, prompt-injection, adversarial-fn]
+expires_at: 2027-10-01
+content_hash: null
+approved_by: null

@@ -1,0 +1,44 @@
+# Authentication certificates stolen or misused. A draft; its lab scenario is not
+# written yet (T-060): approval sets status, approved_by and content_hash
+# (skills/README.md).
+id: windows-certificate-abuse
+version: 1.0.0
+status: draft
+owner: soc-engineering
+allowed_agent_roles: [investigation]
+triggers:
+  # QRadar rule IDs differ between installations: before approval the production
+  # QRadar's rule IDs go here, never the lab's. The lab uses the technique trigger
+  # (decision T-26).
+  rule_ids: []
+  log_source_types: []
+  attack_techniques: [T1649]
+required_telemetry:
+  - log_source_type: Microsoft Windows Security Event Log
+    events:
+      - "4886 and 4887 on certificate authority hosts: certificate requested and issued, with the requester, the template and the subject, when certificate services auditing is on"
+    required: true
+  - log_source_type: Microsoft Windows Security Event Log
+    events:
+      - "4768 TGT requests with certificate-based pre-authentication afterwards, and 5136 certificate template object changes on domain controllers"
+    required: false
+required_evidence:
+  - id: issuance-events
+    description: "The requests and issues: requester, template, subject, and the authority that signed"
+  - id: template-assessment
+    description: "What the template permits: client authentication, requester-supplied subject, privileged enrollment groups"
+  - id: use-afterwards
+    description: "Authentications the certificate enabled: certificate pre-auth TGTs, logons of the named subject"
+  - id: subject-fit
+    description: "Whether the requested subject fits the requester: same account, or a more powerful one"
+# Starting values; the skill's suite measures them. T-062 (decision T-85): the
+# token limit is a runaway guard, not a constraint.
+budgets:
+  tokens: 600000
+  tool_calls: 24
+  wall_clock_seconds: 360
+output_schema: InvestigationResult
+eval_suites: [skill-windows-certificate-abuse, prompt-injection, adversarial-fn]
+expires_at: 2027-10-01
+content_hash: null
+approved_by: null

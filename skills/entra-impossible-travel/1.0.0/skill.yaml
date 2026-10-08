@@ -1,0 +1,48 @@
+# Impossible travel in cloud sign-ins. A draft; its lab scenario is not written
+# yet (T-060): approval sets status, approved_by and content_hash
+# (skills/README.md).
+id: entra-impossible-travel
+version: 1.0.0
+status: draft
+owner: soc-engineering
+allowed_agent_roles: [investigation]
+triggers:
+  # QRadar rule IDs differ between installations: before approval the production
+  # QRadar's rule IDs go here, never the lab's. The lab uses the technique trigger
+  # (decision T-26).
+  rule_ids: []
+  log_source_types: []
+  attack_techniques: [T1078.004]
+required_telemetry:
+  - log_source_type: Microsoft Entra ID Sign-in Log
+    events:
+      - "Cloud sign-in log: the account's authentications in the window - locations, addresses, client applications, token ages and outcomes"
+    required: true
+  - log_source_type: Microsoft Entra ID Sign-in Log
+    events:
+      - "The same account's non-interactive and token-replay sign-ins, to separate fresh logins from token reuse"
+    required: false
+  - log_source_type: E-mail Security Appliance
+    events:
+      - "Mailbox activity from the distant session, where the gateway sees it"
+    required: false
+required_evidence:
+  - id: travel-pair
+    description: "The two sign-ins: times, locations, addresses, and the distance time cannot cover"
+  - id: property-fit
+    description: "The properties: client application, device, network - whether the distant sign-in looks like the account's hardware at all"
+  - id: interactive-vs-tokens
+    description: "Whether the distant authentication was a fresh interactive sign-in or a replayed token - replay changes the story's meaning"
+  - id: session-use
+    description: "What the distant session did: mail rules, consent grants, data access, or a data gap"
+# Starting values; the skill's suite measures them. T-062 (decision T-85): the
+# token limit is a runaway guard, not a constraint.
+budgets:
+  tokens: 600000
+  tool_calls: 24
+  wall_clock_seconds: 360
+output_schema: InvestigationResult
+eval_suites: [skill-entra-impossible-travel, prompt-injection, adversarial-fn]
+expires_at: 2027-10-01
+content_hash: null
+approved_by: null

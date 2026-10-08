@@ -1,0 +1,48 @@
+# Illicit OAuth consent: applications granted access to mail and files. A
+# draft; its lab scenario is not written yet (T-060): approval sets status,
+# approved_by and content_hash (skills/README.md).
+id: entra-illicit-consent
+version: 1.0.0
+status: draft
+owner: soc-engineering
+allowed_agent_roles: [investigation]
+triggers:
+  # QRadar rule IDs differ between installations: before approval the production
+  # QRadar's rule IDs go here, never the lab's. The lab uses the technique trigger
+  # (decision T-26).
+  rule_ids: []
+  log_source_types: []
+  attack_techniques: [T1528]
+required_telemetry:
+  - log_source_type: Microsoft Entra ID Audit Log
+    events:
+      - "Cloud audit log: consent grants to applications - the application, its publisher and verification state, the scopes requested, the granting user, and the time"
+    required: true
+  - log_source_type: Microsoft Entra ID Sign-in Log
+    events:
+      - "The application's subsequent sign-ins and token use"
+    required: false
+  - log_source_type: E-mail Security Appliance
+    events:
+      - "Mailbox access by the application, where the gateway or audit shows it"
+    required: false
+required_evidence:
+  - id: consent-events
+    description: "The grants: application identity, publisher and verification, scopes, granting user, time"
+  - id: scope-assessment
+    description: "What the scopes allow: mail read, files read, profile, or the directory-reading high tiers"
+  - id: grant-fit
+    description: "Whether the application is in the sanctioned inventory and the granting user's role fits self-service"
+  - id: app-activity
+    description: "The application's sign-ins and data access since the grant, or a data gap"
+# Starting values; the skill's suite measures them. T-062 (decision T-85): the
+# token limit is a runaway guard, not a constraint.
+budgets:
+  tokens: 600000
+  tool_calls: 24
+  wall_clock_seconds: 360
+output_schema: InvestigationResult
+eval_suites: [skill-entra-illicit-consent, prompt-injection, adversarial-fn]
+expires_at: 2027-10-01
+content_hash: null
+approved_by: null

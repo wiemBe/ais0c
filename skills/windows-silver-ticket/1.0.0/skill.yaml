@@ -1,0 +1,44 @@
+# Forged service tickets (silver ticket). A draft; its lab scenario is not
+# written yet (T-060): approval sets status, approved_by and content_hash
+# (skills/README.md).
+id: windows-silver-ticket
+version: 1.0.0
+status: draft
+owner: soc-engineering
+allowed_agent_roles: [investigation]
+triggers:
+  # QRadar rule IDs differ between installations: before approval the production
+  # QRadar's rule IDs go here, never the lab's. The lab uses the technique trigger
+  # (decision T-26).
+  rule_ids: []
+  log_source_types: []
+  attack_techniques: [T1558.002]
+required_telemetry:
+  - log_source_type: Microsoft Windows Security Event Log
+    events:
+      - "4769 on domain controllers for the target services, and 4624 type 3 logons onto the service hosts, to compare what was used with what was issued"
+    required: true
+  - log_source_type: Microsoft Windows Security Event Log
+    events:
+      - "4768 TGT requests of the using accounts, and the service accounts' other activity in the window"
+    required: false
+required_evidence:
+  - id: issue-gap
+    description: "Service authentications on the target host whose tickets the domain controllers never issued (no matching 4769)"
+  - id: encryption-fit
+    description: "Tickets used with encryption that does not fit the service account's history"
+  - id: target-services
+    description: "Which services were reached: file, database, web, remote management"
+  - id: key-origin
+    description: "Where the service account's key could have been taken: kerberoasting history, dumps (the other skills), or a data gap"
+# Starting values; the skill's suite measures them. T-062 (decision T-85): the
+# token limit is a runaway guard, not a constraint.
+budgets:
+  tokens: 600000
+  tool_calls: 24
+  wall_clock_seconds: 360
+output_schema: InvestigationResult
+eval_suites: [skill-windows-silver-ticket, prompt-injection, adversarial-fn]
+expires_at: 2027-10-01
+content_hash: null
+approved_by: null

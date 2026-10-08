@@ -91,9 +91,10 @@ def test_input_is_local_bounded_and_has_no_triage_rationale() -> None:
     [
         # T-062: the measured skill (its suite sk-dcs-01-03) follows the investigation's guard.
         ("windows-dcsync", 600000),
-        # The unmeasured drafts keep their starting values until their suites measure them.
-        ("password-spraying", 250000),
-        ("vpn-new-country", 250000),
+        # T-062 (decision T-85): the unmeasured drafts carry the guide's starting values
+        # (docs/impl/skill-authoring.md, section 3) until their suites measure them.
+        ("password-spraying", 600000),
+        ("vpn-new-country", 600000),
     ],
 )
 def test_the_draft_skills_token_budget_fits_one_investigation(skill_id: str, tokens: int) -> None:
