@@ -1,5 +1,7 @@
 # T-064: Skill kataloğu, ilk parti: internal ve external inceleme skill'leri
 
+> **Durum (2026-10-08):** Bitti, `main`'de (T-92). 60 taslak skill; açık kalan kriterler (3, 4, 5) T-065'te.
+
 ## Amaç
 
 Bugün üç taslak skill var: `windows-dcsync`, `password-spraying` ve `vpn-new-country`. Bu görev kataloğu internal ve external olarak düzenler ve on bir yeni taslak skill yazar (T-90). Skill'ler savunma tarafının inceleme yöntemleridir: saldırının loglarda nasıl göründüğünü, girişimle başarının nasıl ayrıldığını, zararsız benzerleri, karar ve seviyeyi anlatırlar. Onay bu görevin işi değildir; her skill taslak olarak girer.

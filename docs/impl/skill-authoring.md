@@ -1,6 +1,6 @@
 # Skill yazım rehberi
 
-Bu rehber, `skills/` altındaki inceleme skill'lerini yazacak kodlama ajanı (örnek: GLM 5.3) ve onları inceleyen kişi içindir. Biçimin kuralları `skills/README.md`'dedir ve yükleyici (`ais0c_knowledge.skills`) onları zorlar. Bu rehber **içeriğin** nasıl yazılacağını anlatır. Kararlar: T-21, T-26, T-84, T-85, T-88, T-90.
+Bu rehber, `skills/` altındaki inceleme skill'lerini yazacak kodlama ajanı (örnek: GLM 5.3) ve onları inceleyen kişi içindir. Biçimin kuralları `skills/README.md`'dedir ve yükleyici (`ais0c_knowledge.skills`) onları zorlar. Bu rehber **içeriğin** nasıl yazılacağını anlatır. Kararlar: T-21, T-26, T-84, T-85, T-88, T-90, T-92, T-93, T-94.
 
 ## 1. Skill nedir, ne değildir
 
@@ -27,8 +27,8 @@ Skill yeni bir araç ya da yetki eklemez. Ajan yalnızca okur; hiçbir şeyi de�
 
 Skill'ler iki gruptur (T-90). Grup kimlikte değil, `skills/CATALOG.md`'deki tablodadır.
 
-- **internal:** saldırı iç ağda ya da kimlik sisteminde görünür. Kapsamı AD ve Windows kimlik doğrulama, yanal hareket, ayrıcalık değişikliği, kalıcılık, log silme; ileride endpoint (Falcon, Faz 2).
-- **external:** internete açık yüzeye gelen saldırılardır: web uygulamaları (WAF logu, OWASP sınıfları), internetten tarama, VPN ve uzaktan erişim.
+- **internal:** saldırı iç ağda ya da kimlik sisteminde görünür. Kapsamı AD ve Windows kimlik doğrulama, yanal hareket, ayrıcalık değişikliği, kalıcılık, log silme, C2 ve dışarı veri kanalları, bulut kimliği; ileride endpoint (Falcon, Faz 2).
+- **external:** internete açık yüzeye gelen saldırılardır: web uygulamaları (WAF logu, OWASP sınıfları), internetten tarama, login istismarı, e-postayla gelen saldırılar, VPN ve uzaktan erişim.
 
 Kimlik (`id`) `<kaynak>-<olay>` biçimindedir (`windows-kerberoasting`, `web-sql-injection`, `vpn-brute-force`). Mevcut üç taslak (`windows-dcsync`, `password-spraying`, `vpn-new-country`) adlarını korur.
 
@@ -53,6 +53,22 @@ Kimlik (`id`) `<kaynak>-<olay>` biçimindedir (`windows-kerberoasting`, `web-sql
 | external | `vpn-new-country` (var) | T1133 | Fortinet FortiGate Security Gateway | s3 | 1 |
 | external | `vpn-brute-force` | T1110 | Fortinet FortiGate Security Gateway | — | 2 |
 
+İlk parti (T-064) bu listeden geniş: 60 taslak, tam liste `skills/CATALOG.md`'de (T-92). Hiçbir skill silinmez; telemetrisi bugün olmayan skill'ler taslak kalır.
+
+### Telemetri adları (T-93)
+
+`required_telemetry`'deki `log_source_type`, QRadar'ın log source type adıdır (katalogdaki `type_name`). Bugün geçerli adlar şunlardır:
+
+| Ad | Ürün | Not |
+|---|---|---|
+| `Microsoft Windows Security Event Log` | WinCollect ile Windows logları | PowerShell Operational (4103, 4104) de bu tiple gelir; ayrı bir PowerShell tipi yoktur |
+| `Fortinet FortiGate Security Gateway` | FortiGate firewall ve VPN | |
+| `F5 Networks BIG-IP ASM` | WAF | Bankanın WAF markası belirtilmedi (T-78) |
+| `FireEye` | Trellix EX (e-posta) | QRadar'ın stok DSM adı FireEye'dır |
+| `Microsoft Entra ID` | Entra sign-in ve audit logları | Banka on-prem AD kullanıyor (2026-10-08); Entra skill'leri taslak kalır, öncelikleri en sondadır |
+
+Bankanın diğer iki e-posta ürününün, Brightmail'in (Symantec Messaging Gateway) ve OPSWAT'ın, QRadar'da stok DSM'i yoktur. Tip adları prod kataloğundan okunur (S-14). O zamana kadar talimat bu ürünleri adlandırabilir, ama manifest'e onlar için satır girmez. Listeye yeni ad, `packages/knowledge/tests`'teki listeyle birlikte eklenir.
+
 Bankanın WAF'ı F5 değilse yalnızca telemetri satırları ve alan adları değişir (T-78). OWASP Top 10'un WAF'ta görünmeyen sınıfları (IDOR, iş mantığı, yetkilendirme hataları) logda imza bırakmaz ve skill'e uygun değildir.
 
 ## 3. `skill.yaml`
@@ -69,6 +85,7 @@ Alanların anlamı `skills/README.md`'dedir. İçerik kuralları:
 - `required_evidence`: ajanın sonuçlanmadan önce toplayacağı ya da data gap olarak yazacağı kanıtlar. Kimlikler kısa ve tirelidir (`request-source`). Üç ile beş madde yeterlidir.
 - `budgets` (T-85): `tokens: 600000`, `tool_calls: 24`, `wall_clock_seconds: 360`. Token kaçak korumasıdır; yöntem altıdan fazla Ariel araması istiyorsa (her arama en az dört araç çağrısıdır) PR'da yazılır.
 - `output_schema: InvestigationResult`.
+- `summary` (T-067'den sonra): tek cümle, en çok 200 karakter. Skill'in hangi saldırı biçimini incelediğini, aynı tekniği paylaşan skill'lerden ayıracak kadar somut söyler. Örnek: WAF `attack_type`'ı ya da kaynak ürün ve desen (T-94).
 - `eval_suites: [skill-<id>, prompt-injection, adversarial-fn]`. Suite yoksa skill taslak kalır.
 - `expires_at`: bir yıl sonrası.
 
@@ -124,7 +141,7 @@ success, spread).
 Which events the operator should see first, in order.
 ```
 
-**Sorgu kuralları** (prompt'larda da var, skill tekrarlar):
+**Sorgu kuralları** Investigation prompt'unda durur, skill'de tekrarlanmaz (T-93). Skill, "How it looks in the logs" bölümünde daraltılacak alanları adlandırır: event kimliği, QID, `attack_type`, `logsourceid`. Prompt'taki kurallar şunlardır:
 
 - AQL'de `LIMIT` zaman ifadesinden önce gelir.
 - Zaman penceresi epoch milisaniyedir (`START`/`STOP`).
@@ -134,7 +151,7 @@ Which events the operator should see first, in order.
 
 ## 5. Kontrol listesi (PR'dan önce)
 
-1. `uv run python -m ais0c_knowledge.skills check --mode dev` bütün skill'leri yükler.
+1. `uv run python -m ais0c_knowledge.skills check --mode dev` bütün skill'leri yükler; telemetri adları §2'deki listededir.
 2. Talimatta sömürü adımı, payload, atlatma tekniği, araç komutu yoktur. İmzalar yalnızca log alanı kalıbıdır.
 3. Örneklerin hepsi sentetiktir (RFC 5737, `example.com`, lab adları).
 4. Her `required_evidence` maddesi bir adımda toplanır ya da data gap'e döner.

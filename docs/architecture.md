@@ -196,7 +196,7 @@ Bir skill yeni araç veya yetki kazandıramaz; yalnızca mevcut yetkilerle araş
 
 **Yer ve biçim:** `skills/<id>/<sürüm>/skill.yaml` (manifest) ve `instructions.md` (İngilizce talimat). Ayrı bir registry servisi yoktur; registry, repodaki `approved` durumundaki dosyalardır.
 
-**Manifest alanları:** `id`, `version`, `status` (`draft`/`approved`), `owner`, `allowed_agent_roles`, `triggers` (kural ID'leri, log source tipleri, ATT&CK teknikleri), `required_telemetry`, `required_evidence`, `budgets`, `output_schema`, `eval_suites`, `expires_at`, `content_hash`, `approved_by`.
+**Manifest alanları:** `id`, `version`, `status` (`draft`/`approved`), `owner`, `summary` (skill'in incelediği saldırı biçimini anlatan tek cümle, en çok 200 karakter; T-94), `allowed_agent_roles`, `triggers` (kural ID'leri, log source tipleri, ATT&CK teknikleri), `required_telemetry`, `required_evidence`, `budgets`, `output_schema`, `eval_suites`, `expires_at`, `content_hash`, `approved_by`.
 
 **Seçim:**
 
@@ -205,7 +205,7 @@ Bir skill yeni araç veya yetki kazandıramaz; yalnızca mevcut yetkilerle araş
    - Log source tipleri Analiz Kataloğu'ndaki `type_name` alanından gelir. ATT&CK etiketleri, offense'in kurallarına katalogda bağlanan `attack_techniques` alanından gelir.
    - Teknikler tam eşleşir: `T1110` tetikleyicisi `T1110.003` etiketiyle eşleşmez.
    - Her skill'in yalnızca en son onaylı sürümü aday olur. Bu sürüm kullanılamıyorsa (süresi dolmuşsa ya da ajan rolüne izin vermiyorsa) eski sürüme dönülmez.
-2. Orchestrator yalnızca bu listeden seçer; liste boşsa skill'siz genel araştırma yapılır.
+2. Orchestrator yalnızca bu listeden seçer; liste boşsa skill'siz genel araştırma yapılır. Orchestrator her adayın kimliğini, `summary`'sini, gereken kanıtlarını ve bütçesini görür. Aynı tekniği paylaşan skill'ler (örneğin T1190'daki web skill'leri) arasındaki seçimi özet ile Triage'ın odağı belirler (T-94).
 3. Workflow; ajan rolünü, skill'in durumunu, sürümünü ve bütçesini doğrular.
 4. Ajan yalnızca doğrulanmış skill içeriğini yükler. Skill içeriği prompt'a dış bilgi gibi `untrusted_*` ile değil, prompt'un parçası olarak girer; bu yüzden onaydan ve red-team suite'inden geçmeden kullanılamaz.
 5. Kullanılan skill'in kimliği, sürümü ve hash'i ajan çalışmasına yazılır.
