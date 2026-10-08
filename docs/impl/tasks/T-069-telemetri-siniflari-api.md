@@ -19,7 +19,7 @@ Yalnızca bunlar:
   - `services/api/src/ais0c_api/routers/catalog.py:84-98` (`log_source(row)`), `:211-280` (GET liste, GET tek, PUT);
   - `services/api/src/ais0c_api/models.py:408-433` (`CatalogLogSource`, `CatalogLogSourceUpdate`).
 - **Çift kontrol:** `services/api/src/ais0c_api/changes.py:108-120` (`log_source_values`, `log_source_version`) ve `:333-360` (`_apply_log_source`)
-- **Storage:** `packages/storage/src/ais0c_storage/repositories/catalog.py:415` (`update_catalog_log_source`), T-068'in `effective_telemetry_classes` ve `list_catalog_log_sources` filtreleri, `TelemetryClass`
+- **Storage:** `packages/storage/src/ais0c_storage/repositories/catalog.py:462` (`update_catalog_log_source`), `:308` (`effective_telemetry_classes`), `:319` (`list_catalog_log_sources` ve T-068'in filtreleri); `TelemetryClass` `ais0c_storage`'dan
 - Testler: `services/api/tests/test_catalog.py`, `test_changes.py`, `api_support.py`
 
 ## Branch ve worktree
