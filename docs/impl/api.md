@@ -49,7 +49,7 @@ Rol sütunu, o işlemi yapabilen en düşük rolü gösterir. `hunter`, `operato
 | GET | `/catalog/rules/{rule_id}` | operator | Tek kural (T-028) |
 | PUT | `/catalog/rules/{rule_id}` | admin | Gövde: `{ mode, min_level?, has_automated_action, context_note?, attack_techniques? }`. Çift kontrol: 202 `{ change_id }`, ikinci admin onaylayınca yazılır (T-77). |
 | POST | `/catalog/rules/{rule_id}/accept-draft` | admin | AI'ın önerdiği açıklamayı onaylar. Çift kontrol: 202 `{ change_id }` (T-77). |
-| GET | `/catalog/log-sources` | operator | Filtre: `defined`, `in_scope`, `missing`, `q`, `qradar_enabled`, `telemetry_class`, `unclassified` (T-95). Cevapta `telemetry_classes` (atanan) ve `effective_telemetry_classes` (atanan ya da tipin varsayılanı). |
+| GET | `/catalog/log-sources` | operator | Filtre: `defined`, `in_scope`, `missing`, `q`, `qradar_enabled`, `telemetry_class`, `unclassified` (T-95). Cevapta `qradar_enabled`, `default_telemetry_classes` (tipin varsayılanı, senkron), `telemetry_classes` (admin'in ataması) ve `effective_telemetry_classes` (atanan ya da varsayılan; devre dışı ya da kalkmış log source'ta boş). |
 | GET | `/catalog/log-sources/{log_source_id}` | operator | Tek log source (T-028) |
 | PUT | `/catalog/log-sources/{log_source_id}` | admin | Gövde: `{ description?, owner?, criticality?, in_scope, context_note?, telemetry_classes? }`. `telemetry_classes` sabit sınıf listesinden (T-95); `null` tipin varsayılanına döner. Çift kontrol: 202 `{ change_id }` (T-77). |
 | POST | `/catalog/sync` | admin | QRadar'dan senkronu hemen başlatır (`KnowledgeSync`) |

@@ -59,9 +59,11 @@ Her madde en az bir testle gösterilir.
 
 ## Bağımlılıklar
 
-- T-057 (Orchestrator prompt v2), T-065 ve T-068 (aynı `skill.yaml` dosyaları ve manifest şeması) birleşmiş olmalı.
+- T-057 (Orchestrator prompt v2), T-065 ve T-070 (aynı `skill.yaml` dosyaları ve manifest şeması) birleşmiş olmalı.
+- Verilmeden önce planner bu dosyayı planner.md §4'ün kurallarına göre detaylandırır: adımlar, imzalar, 60 özetin örnekleri ve test adları.
 
 ## Notlar
 
+- Web skill'lerinin `skill.yaml` yorumundaki "the orchestrator connects the one whose Purpose names this WAF attack type" cümlesi (örnek: `web-sql-injection`, `web-ssrf`, `web-path-traversal`, `web-command-injection`) "the orchestrator chooses by the summary" olarak düzeltilir.
 - Özet, skill'in Purpose bölümünün ilk cümlesinin kısaltılmış hali olabilir. Talimattan otomatik türetilmez, manifest'te yazılı durur.
 - Prod'da onayda kural kimlikleri (`rule_ids`) girer, ama teknik tetikleyicisi kaldığı için adayların sayısı azalmaz. Seçimi özet taşır.

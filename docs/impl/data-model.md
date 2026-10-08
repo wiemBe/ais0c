@@ -219,7 +219,8 @@ Benzersiz: (`offense_id`, `run_marker`).
 | `log_source_id` | bigint PK | |
 | `name`, `type_name` | text | QRadar'dan senkron |
 | `qradar_enabled` | bool | QRadar'daki `enabled`, senkron; varsayılan `true` (T-95, migration `0012`) |
-| `telemetry_classes` | text[]? | Admin'in atadığı telemetri sınıfları; boşsa tipin varsayılanı (`config/telemetry/log-source-classes.yaml`) geçerlidir (T-95) |
+| `default_telemetry_classes` | text[] | Tipin varsayılan sınıfları; KnowledgeSync `config/telemetry/log-source-classes.yaml`'dan yazar, varsayılan `{}` (T-95) |
+| `telemetry_classes` | text[]? | Admin'in atadığı telemetri sınıfları; `NULL` ise `default_telemetry_classes` geçerlidir (T-95) |
 | `defined` | bool | |
 | `description` | text? | |
 | `owner` | text? | |
