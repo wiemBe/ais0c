@@ -182,6 +182,7 @@ async def define_everything(sessions: Sessions) -> None:
             criticality=Level.CRITICAL,
             in_scope=True,
             context_note="Primary DC of the head office.",
+            telemetry_classes=None,
             updated_by="admin-1",
             updated_at=T0 + timedelta(hours=3),
         )
@@ -193,6 +194,7 @@ async def define_everything(sessions: Sessions) -> None:
             criticality=Level.MEDIUM,
             in_scope=False,
             context_note=None,
+            telemetry_classes=None,
             updated_by="admin-2",
             updated_at=T0 + timedelta(hours=4),
         )

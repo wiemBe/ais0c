@@ -110,6 +110,97 @@ async def test_a_log_source_edit_waits(api: Harness) -> None:
     assert source == {"defined": False, "in_scope": True}
 
 
+async def source_classes(api: Harness) -> dict[str, Any]:
+    row = await api.one("SELECT telemetry_classes FROM catalog_log_sources")
+    assert row is not None
+    return row
+
+
+async def test_assigning_classes_waits_for_a_second_admin(api: Harness) -> None:
+    await add_catalog(api.sessions)
+
+    response = await api.put(
+        "/catalog/log-sources/2001",
+        {"in_scope": True, "telemetry_classes": ["email-security"]},
+        as_role="admin",
+    )
+
+    assert response.status_code == 202
+    assert (await source_classes(api))["telemetry_classes"] is None
+    assert (await api.approve(response)).status_code == 200
+    assert (await source_classes(api))["telemetry_classes"] == ["email-security"]
+    row = (await api.get("/catalog/log-sources/2001")).json()
+    assert row["effective_telemetry_classes"] == ["email-security"]
+    audit_row = await api.one(
+        "SELECT details FROM audit_log WHERE action = 'catalog.log_source.update'"
+    )
+    assert audit_row is not None
+    assert audit_row["details"]["telemetry_classes"] == ["email-security"]
+
+
+async def test_put_without_the_field_keeps_the_classes(api: Harness) -> None:
+    await add_catalog(api.sessions)
+    await api.seed("UPDATE catalog_log_sources SET telemetry_classes = ARRAY['windows', 'vpn']")
+
+    response = await api.put(
+        "/catalog/log-sources/2001",
+        {"description": "Alan denetleyicisi.", "in_scope": True},
+        as_role="admin",
+    )
+
+    assert response.status_code == 202
+    request = await change(api, response.json()["change_id"])
+    assert request["change"]["after"]["telemetry_classes"] == ["vpn", "windows"]
+    assert (await api.approve(response)).status_code == 200
+    assert (await source_classes(api))["telemetry_classes"] == ["vpn", "windows"]
+    assert (await api.get("/catalog/log-sources/2001")).json()["description"] == (
+        "Alan denetleyicisi."
+    )
+
+
+async def test_null_returns_to_the_default(api: Harness) -> None:
+    await add_catalog(api.sessions)
+    await api.seed(
+        "UPDATE catalog_log_sources SET telemetry_classes = ARRAY['vpn'], "
+        "default_telemetry_classes = ARRAY['windows']"
+    )
+
+    response = await api.put(
+        "/catalog/log-sources/2001",
+        {"in_scope": True, "telemetry_classes": None},
+        as_role="admin",
+    )
+
+    assert (await api.approve(response)).status_code == 200
+    assert (await source_classes(api))["telemetry_classes"] is None
+    row = (await api.get("/catalog/log-sources/2001")).json()
+    assert row["effective_telemetry_classes"] == ["windows"]
+
+
+async def test_an_empty_list_is_an_assignment_of_no_class(api: Harness) -> None:
+    await add_catalog(api.sessions)
+    await api.seed("UPDATE catalog_log_sources SET default_telemetry_classes = ARRAY['windows']")
+
+    response = await api.put(
+        "/catalog/log-sources/2001",
+        {"in_scope": True, "telemetry_classes": []},
+        as_role="admin",
+    )
+
+    assert (await api.approve(response)).status_code == 200
+    assert (await source_classes(api))["telemetry_classes"] == []
+    row = (await api.get("/catalog/log-sources/2001")).json()
+    assert (row["telemetry_classes"], row["effective_telemetry_classes"]) == ([], [])
+
+
+async def test_a_class_assigned_since_the_request_makes_it_stale(api: Harness) -> None:
+    await add_catalog(api.sessions)
+    asked = await api.put("/catalog/log-sources/2001", {"in_scope": True}, as_role="admin")
+    await api.seed("UPDATE catalog_log_sources SET telemetry_classes = ARRAY['dns']")
+
+    assert (await api.approve(asked)).status_code == 409
+
+
 async def test_adding_an_asset_waits_and_the_stored_form_is_asked_for(api: Harness) -> None:
     response = await api.post(
         "/critical-assets",

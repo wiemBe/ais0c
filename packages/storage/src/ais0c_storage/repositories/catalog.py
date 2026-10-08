@@ -11,7 +11,7 @@ classes of a log source's type, and `missing_since` on entries QRadar no longer 
 is never deleted (T-37). A log source's own `telemetry_classes` are an admin's (T-95).
 """
 
-from collections.abc import Collection, Iterable
+from collections.abc import Collection, Iterable, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from itertools import batched
@@ -468,11 +468,13 @@ async def update_catalog_log_source(
     criticality: Level | None,
     in_scope: bool,
     context_note: Summary | None,
+    telemetry_classes: Sequence[TelemetryClass] | None,
     updated_by: str,
     updated_at: datetime,
 ) -> CatalogLogSourceRow:
     """An admin's edit of a log source (`PUT /catalog/log-sources/{log_source_id}`); the log
-    source becomes defined."""
+    source becomes defined. `telemetry_classes` is written as given: `None` returns the log
+    source to its type's defaults, a list is stored sorted and without repeats (T-95)."""
     # Raises ValidationError if a field that reaches prompts breaks the contract.
     CatalogLogSource(
         log_source_id=log_source_id,
@@ -490,6 +492,11 @@ async def update_catalog_log_source(
             criticality=criticality,
             in_scope=in_scope,
             context_note=context_note,
+            telemetry_classes=(
+                None
+                if telemetry_classes is None
+                else sorted({telemetry.value for telemetry in telemetry_classes})
+            ),
             updated_by=updated_by,
             updated_at=updated_at,
         )

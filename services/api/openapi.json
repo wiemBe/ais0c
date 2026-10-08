@@ -534,6 +534,13 @@
               }
             ]
           },
+          "default_telemetry_classes": {
+            "items": {
+              "$ref": "#/components/schemas/TelemetryClass"
+            },
+            "title": "Default Telemetry Classes",
+            "type": "array"
+          },
           "defined": {
             "title": "Defined",
             "type": "boolean"
@@ -548,6 +555,13 @@
               }
             ],
             "title": "Description"
+          },
+          "effective_telemetry_classes": {
+            "items": {
+              "$ref": "#/components/schemas/TelemetryClass"
+            },
+            "title": "Effective Telemetry Classes",
+            "type": "array"
           },
           "in_scope": {
             "title": "In Scope",
@@ -584,6 +598,24 @@
             ],
             "title": "Owner"
           },
+          "qradar_enabled": {
+            "title": "Qradar Enabled",
+            "type": "boolean"
+          },
+          "telemetry_classes": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/TelemetryClass"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Telemetry Classes"
+          },
           "type_name": {
             "title": "Type Name",
             "type": "string"
@@ -608,6 +640,10 @@
           "criticality",
           "in_scope",
           "context_note",
+          "qradar_enabled",
+          "default_telemetry_classes",
+          "telemetry_classes",
+          "effective_telemetry_classes",
           "updated_by",
           "updated_at"
         ],
@@ -667,6 +703,21 @@
               }
             ],
             "title": "Owner"
+          },
+          "telemetry_classes": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/TelemetryClass"
+                },
+                "maxItems": 5,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Telemetry Classes"
           }
         },
         "required": [
@@ -2715,6 +2766,28 @@
         "title": "SyncAccepted",
         "type": "object"
       },
+      "TelemetryClass": {
+        "description": "`catalog_log_sources.telemetry_classes` and `default_telemetry_classes` (T-95).",
+        "enum": [
+          "windows",
+          "linux",
+          "firewall",
+          "ids",
+          "vpn",
+          "waf",
+          "email-security",
+          "proxy",
+          "dns",
+          "edr",
+          "identity-cloud",
+          "database",
+          "network-device",
+          "siem-internal",
+          "other"
+        ],
+        "title": "TelemetryClass",
+        "type": "string"
+      },
       "ToolCallItem": {
         "additionalProperties": false,
         "description": "One gateway call of an agent run: the policy decision and how long it took.",
@@ -3477,7 +3550,7 @@
     },
     "/api/v1/catalog/log-sources": {
       "get": {
-        "description": "The log sources by ID. `q` matches part of the name or the type name.",
+        "description": "The log sources by ID. `q` matches part of the name or the type name. `telemetry_class`\nkeeps the log sources with that effective class and `unclassified=true` those QRadar counts\nthat have none (T-95).",
         "operationId": "get_log_sources_api_v1_catalog_log_sources_get",
         "parameters": [
           {
@@ -3526,6 +3599,54 @@
                 }
               ],
               "title": "Missing"
+            }
+          },
+          {
+            "in": "query",
+            "name": "qradar_enabled",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Qradar Enabled"
+            }
+          },
+          {
+            "in": "query",
+            "name": "telemetry_class",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/TelemetryClass"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Telemetry Class"
+            }
+          },
+          {
+            "in": "query",
+            "name": "unclassified",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Unclassified"
             }
           },
           {

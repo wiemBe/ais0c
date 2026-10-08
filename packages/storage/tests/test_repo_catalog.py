@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from storage_payloads import T0, T1
 
 from ais0c_contracts import CatalogLogSource, CatalogMode, CatalogRule, Level
+from ais0c_storage.enums import TelemetryClass
 from ais0c_storage.errors import NotFoundError
 from ais0c_storage.models import CatalogRuleRow
 from ais0c_storage.repositories import (
@@ -276,6 +277,7 @@ async def test_log_source_sync_edit_and_listing(session: AsyncSession) -> None:
         criticality=Level.CRITICAL,
         in_scope=False,
         context_note="Replication traffic from DC-02 is expected.",
+        telemetry_classes=None,
         updated_by="admin01",
         updated_at=T1,
     )
@@ -323,6 +325,7 @@ async def test_log_source_sync_edit_and_listing(session: AsyncSession) -> None:
             criticality=None,
             in_scope=True,
             context_note=None,
+            telemetry_classes=None,
             updated_by="admin01",
             updated_at=T1,
         )
@@ -335,9 +338,41 @@ async def test_log_source_sync_edit_and_listing(session: AsyncSession) -> None:
             criticality=None,
             in_scope=True,
             context_note=None,
+            telemetry_classes=None,
             updated_by="admin01",
             updated_at=T1,
         )
+
+
+async def test_an_edit_writes_the_telemetry_classes_as_given(session: AsyncSession) -> None:
+    await sync_catalog_log_sources(
+        session,
+        [SyncedLogSource(112, "MAIL-01", "Brightmail")],
+        synced_by=SYNC,
+        synced_at=T0,
+    )
+
+    async def edit(classes: list[TelemetryClass] | None) -> list[str] | None:
+        row = await update_catalog_log_source(
+            session,
+            112,
+            description=None,
+            owner=None,
+            criticality=None,
+            in_scope=True,
+            context_note=None,
+            telemetry_classes=classes,
+            updated_by="admin01",
+            updated_at=T1,
+        )
+        return row.telemetry_classes
+
+    assert await edit([TelemetryClass.VPN, TelemetryClass.EMAIL_SECURITY, TelemetryClass.VPN]) == [
+        "email-security",
+        "vpn",
+    ]
+    assert await edit([]) == []
+    assert await edit(None) is None
 
 
 async def test_sync_stores_and_follows_qradar_enabled_state(session: AsyncSession) -> None:

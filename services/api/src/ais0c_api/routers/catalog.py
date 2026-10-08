@@ -10,6 +10,7 @@ valid is refused here, so only a change that could be applied waits.
 talks to QRadar; the batch worker does that (architecture §25, api.md).
 """
 
+from collections.abc import Iterable
 from typing import Annotated
 
 from fastapi import APIRouter, Query
@@ -47,9 +48,10 @@ from ais0c_api.temporal import KNOWLEDGE_SYNC_SCHEDULE_ID, ScheduleNotFound, Tem
 from ais0c_contracts import CatalogLogSource as CatalogLogSourceContract
 from ais0c_contracts import CatalogMode
 from ais0c_contracts import CatalogRule as CatalogRuleContract
-from ais0c_storage.enums import ChangeObjectType
+from ais0c_storage.enums import ChangeObjectType, TelemetryClass
 from ais0c_storage.models import CatalogLogSourceRow, CatalogRuleRow
 from ais0c_storage.repositories import (
+    effective_telemetry_classes,
     get_catalog_log_source,
     get_catalog_rule,
     list_catalog_log_sources,
@@ -61,6 +63,7 @@ router = APIRouter(prefix="/catalog", tags=["catalog"])
 BoolParam = Annotated[bool | None, Query()]
 ModeParam = Annotated[CatalogMode | None, Query()]
 TextParam = Annotated[str | None, Query(max_length=200)]
+TelemetryClassParam = Annotated[TelemetryClass | None, Query()]
 
 
 def rule(row: CatalogRuleRow) -> CatalogRule:
@@ -92,10 +95,20 @@ def log_source(row: CatalogLogSourceRow) -> CatalogLogSource:
         criticality=row.criticality,
         in_scope=row.in_scope,
         context_note=row.context_note,
+        qradar_enabled=row.qradar_enabled,
         missing_since=row.missing_since,
+        default_telemetry_classes=sorted_classes(row.default_telemetry_classes),
+        telemetry_classes=(
+            None if row.telemetry_classes is None else sorted_classes(row.telemetry_classes)
+        ),
+        effective_telemetry_classes=sorted_classes(effective_telemetry_classes(row)),
         updated_by=row.updated_by,
         updated_at=row.updated_at,
     )
+
+
+def sorted_classes(values: Iterable[str]) -> list[TelemetryClass]:
+    return sorted((TelemetryClass(value) for value in values), key=lambda item: item.value)
 
 
 def id_cursor(cursor: str | None) -> int | None:
@@ -215,16 +228,24 @@ async def get_log_sources(
     defined: BoolParam = None,
     in_scope: BoolParam = None,
     missing: BoolParam = None,
+    qradar_enabled: BoolParam = None,
+    telemetry_class: TelemetryClassParam = None,
+    unclassified: BoolParam = None,
     q: TextParam = None,
     cursor: CursorParam = None,
     limit: LimitParam = DEFAULT_LIMIT,
 ) -> Page[CatalogLogSource]:
-    """The log sources by ID. `q` matches part of the name or the type name."""
+    """The log sources by ID. `q` matches part of the name or the type name. `telemetry_class`
+    keeps the log sources with that effective class and `unclassified=true` those QRadar counts
+    that have none (T-95)."""
     rows = await list_catalog_log_sources(
         session,
         defined=defined,
         in_scope=in_scope,
         missing=missing,
+        qradar_enabled=qradar_enabled,
+        telemetry_class=telemetry_class,
+        unclassified=unclassified,
         search=q,
         after_log_source_id=id_cursor(cursor),
         limit=limit + 1,
@@ -266,6 +287,18 @@ async def put_log_source(
             "catalog.log_source_invalid",
             detail="the log source does not match the catalog contract",
         ) from error
+    after = body.model_dump(mode="json")
+    if "telemetry_classes" not in body.model_fields_set:
+        # An edit that leaves the field out keeps the assigned classes.
+        after["telemetry_classes"] = log_source_values(row)["telemetry_classes"]
+    elif body.telemetry_classes is not None:
+        if len(set(body.telemetry_classes)) != len(body.telemetry_classes):
+            raise Problem(
+                422,
+                "catalog.log_source_invalid",
+                detail="a telemetry class is given more than once",
+            )
+        after["telemetry_classes"] = sorted(item.value for item in body.telemetry_classes)
     return await queue_change(
         session,
         user,
@@ -274,7 +307,7 @@ async def put_log_source(
         object_version=log_source_version(row),
         action=ACTION_UPDATE,
         before=log_source_values(row),
-        after=body.model_dump(mode="json"),
+        after=after,
     )
 
 

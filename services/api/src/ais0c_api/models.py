@@ -57,6 +57,7 @@ from ais0c_storage.enums import (
     PlatformFlag,
     PolicyDecision,
     QAStatus,
+    TelemetryClass,
 )
 
 
@@ -417,7 +418,13 @@ class CatalogLogSource(ApiModel):
     criticality: Level | None
     in_scope: bool
     context_note: str | None
+    qradar_enabled: bool
     missing_since: datetime | None = None
+    # Sorted by value. `telemetry_classes` is the admin's assignment (None: the type's defaults);
+    # the effective classes are empty for a log source QRadar disabled or no longer lists (T-95).
+    default_telemetry_classes: list[TelemetryClass]
+    telemetry_classes: list[TelemetryClass] | None
+    effective_telemetry_classes: list[TelemetryClass]
     updated_by: str
     updated_at: datetime
 
@@ -430,6 +437,9 @@ class CatalogLogSourceUpdate(ApiModel):
     criticality: Level | None = None
     in_scope: bool
     context_note: Annotated[str, StringConstraints(max_length=600)] | None = None
+    # Left out: the assigned classes stay. `null`: back to the type's defaults. A list, empty
+    # included, is the assignment; a class given twice is a 422 (T-95).
+    telemetry_classes: Annotated[list[TelemetryClass], Field(max_length=5)] | None = None
 
 
 class SyncAccepted(ApiModel):

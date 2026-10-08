@@ -310,6 +310,83 @@ async def test_the_log_sources_are_listed_and_filtered(api: Harness) -> None:
     assert source_ids(await api.get("/catalog/log-sources", defined=False)) == [2001, 2002, 2003]
 
 
+async def classified_sources(api: Harness) -> None:
+    """2001 windows (the type's default), 2002 windows but disabled in QRadar, 2003 no class."""
+    await add_catalog(
+        api.sessions,
+        rules=[],
+        log_sources=[(2001, "DC-01"), (2002, "DC-02"), (2003, "BRIGHTMAIL-01")],
+    )
+    await api.seed(
+        "UPDATE catalog_log_sources SET default_telemetry_classes = ARRAY['windows'] "
+        "WHERE log_source_id IN (2001, 2002)",
+        "UPDATE catalog_log_sources SET qradar_enabled = false WHERE log_source_id = 2002",
+    )
+
+
+async def test_log_source_shows_its_classes(api: Harness) -> None:
+    await classified_sources(api)
+
+    row = (await api.get("/catalog/log-sources/2001")).json()
+    assert row["qradar_enabled"] is True
+    assert row["default_telemetry_classes"] == ["windows"]
+    assert row["telemetry_classes"] is None
+    assert row["effective_telemetry_classes"] == ["windows"]
+    disabled = (await api.get("/catalog/log-sources/2002")).json()
+    assert disabled["qradar_enabled"] is False
+    assert disabled["default_telemetry_classes"] == ["windows"]
+    assert disabled["effective_telemetry_classes"] == []
+    assert (await api.get("/catalog/log-sources/2003")).json()["effective_telemetry_classes"] == []
+
+
+async def test_log_sources_filter_by_class(api: Harness) -> None:
+    await classified_sources(api)
+
+    assert source_ids(await api.get("/catalog/log-sources", telemetry_class="windows")) == [2001]
+    assert source_ids(await api.get("/catalog/log-sources", telemetry_class="linux")) == []
+    assert source_ids(await api.get("/catalog/log-sources", unclassified=True)) == [2003]
+    assert source_ids(await api.get("/catalog/log-sources", unclassified=False)) == [2001, 2002]
+    assert source_ids(await api.get("/catalog/log-sources", qradar_enabled=False)) == [2002]
+    assert source_ids(await api.get("/catalog/log-sources", qradar_enabled=True)) == [2001, 2003]
+
+
+async def test_unknown_class_is_422(api: Harness) -> None:
+    await classified_sources(api)
+
+    assert (await api.get("/catalog/log-sources", telemetry_class="windwos")).status_code == 422
+    response = await api.put(
+        "/catalog/log-sources/2001",
+        {"in_scope": True, "telemetry_classes": ["windwos"]},
+        as_role="admin",
+    )
+    assert response.status_code == 422
+
+
+async def test_operator_cannot_assign(api: Harness) -> None:
+    await classified_sources(api)
+
+    response = await api.put(
+        "/catalog/log-sources/2003",
+        {"in_scope": True, "telemetry_classes": ["email-security"]},
+        as_role="operator",
+    )
+
+    assert response.status_code == 403
+
+
+async def test_duplicate_class_is_422(api: Harness) -> None:
+    await classified_sources(api)
+
+    response = await api.put(
+        "/catalog/log-sources/2001",
+        {"in_scope": True, "telemetry_classes": ["windows", "windows"]},
+        as_role="admin",
+    )
+
+    assert response.status_code == 422
+    assert response.json()["title"] == "catalog.log_source_invalid"
+
+
 async def test_an_admin_edits_a_log_source_and_it_becomes_defined(api: Harness) -> None:
     await add_catalog(api.sessions, rules=[], log_sources=[(2001, "SRV-0001.example.com")])
 

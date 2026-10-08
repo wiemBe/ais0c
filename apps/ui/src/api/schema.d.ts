@@ -157,7 +157,9 @@ export interface paths {
         };
         /**
          * Get Log Sources
-         * @description The log sources by ID. `q` matches part of the name or the type name.
+         * @description The log sources by ID. `q` matches part of the name or the type name. `telemetry_class`
+         *     keeps the log sources with that effective class and `unclassified=true` those QRadar counts
+         *     that have none (T-95).
          */
         get: operations["get_log_sources_api_v1_catalog_log_sources_get"];
         put?: never;
@@ -844,10 +846,14 @@ export interface components {
             /** Context Note */
             context_note: string | null;
             criticality: components["schemas"]["Level"] | null;
+            /** Default Telemetry Classes */
+            default_telemetry_classes: components["schemas"]["TelemetryClass"][];
             /** Defined */
             defined: boolean;
             /** Description */
             description: string | null;
+            /** Effective Telemetry Classes */
+            effective_telemetry_classes: components["schemas"]["TelemetryClass"][];
             /** In Scope */
             in_scope: boolean;
             /** Log Source Id */
@@ -858,6 +864,10 @@ export interface components {
             name: string;
             /** Owner */
             owner: string | null;
+            /** Qradar Enabled */
+            qradar_enabled: boolean;
+            /** Telemetry Classes */
+            telemetry_classes: components["schemas"]["TelemetryClass"][] | null;
             /** Type Name */
             type_name: string;
             /**
@@ -882,6 +892,8 @@ export interface components {
             in_scope: boolean;
             /** Owner */
             owner?: string | null;
+            /** Telemetry Classes */
+            telemetry_classes?: components["schemas"]["TelemetryClass"][] | null;
         };
         /**
          * CatalogMode
@@ -1705,6 +1717,12 @@ export interface components {
             triggered: true;
         };
         /**
+         * TelemetryClass
+         * @description `catalog_log_sources.telemetry_classes` and `default_telemetry_classes` (T-95).
+         * @enum {string}
+         */
+        TelemetryClass: "windows" | "linux" | "firewall" | "ids" | "vpn" | "waf" | "email-security" | "proxy" | "dns" | "edr" | "identity-cloud" | "database" | "network-device" | "siem-internal" | "other";
+        /**
          * ToolCallItem
          * @description One gateway call of an agent run: the policy decision and how long it took.
          */
@@ -2043,6 +2061,9 @@ export interface operations {
                 defined?: boolean | null;
                 in_scope?: boolean | null;
                 missing?: boolean | null;
+                qradar_enabled?: boolean | null;
+                telemetry_class?: components["schemas"]["TelemetryClass"] | null;
+                unclassified?: boolean | null;
                 q?: string | null;
                 cursor?: string | null;
                 limit?: number;

@@ -112,6 +112,11 @@ def log_source_values(row: CatalogLogSourceRow) -> dict[str, JsonValue]:
         "criticality": None if row.criticality is None else row.criticality.value,
         "in_scope": row.in_scope,
         "context_note": row.context_note,
+        "telemetry_classes": (
+            None
+            if row.telemetry_classes is None
+            else list[JsonValue](sorted(row.telemetry_classes))
+        ),
     }
 
 
@@ -347,6 +352,7 @@ async def _apply_log_source(
             criticality=body.criticality,
             in_scope=body.in_scope,
             context_note=body.context_note,
+            telemetry_classes=body.telemetry_classes,
             updated_by=approver.subject,
             updated_at=now(),
         )

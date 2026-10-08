@@ -307,6 +307,7 @@ async def test_log_sources_that_send_nothing_alarm_and_the_others_do_not(
             criticality=None,
             in_scope=False,
             context_note=None,
+            telemetry_classes=None,
             updated_by="admin",
             updated_at=T0,
         )
