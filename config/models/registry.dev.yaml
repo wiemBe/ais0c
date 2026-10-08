@@ -93,7 +93,7 @@ soc-report:
   context_window: 262144
   tool_parser: null  # chosen by the OpenRouter provider; not visible
   reasoning_parser: null  # chosen by the OpenRouter provider; not visible
-  turkish_quality: 4.26  # mean of the 5 rubric scores over 13 scored runs: turkish-quality suite 98f388976afe, soc-reasoning evaluator v1, k=5, 2026-10-07 (accuracy 4.15, fluency 5.0, terminology 4.23, uncertainty 3.0, brevity 4.92)
+  turkish_quality: 4.41  # mean of the 5 rubric scores over 40 scored runs: turkish-quality suite (4 scenarios) reporting prompt v2, soc-reasoning evaluator v1, k=5 twice, 2026-10-08 (accuracy 4.05, fluency 4.55, terminology 4.55, uncertainty 3.9, brevity 5.0)
   artifact: qwen/qwen3.5-122b-a10b
   artifact_hash: null  # OpenRouter does not show which weights the provider runs
   quantization: null  # varies with the provider OpenRouter picks for each request
