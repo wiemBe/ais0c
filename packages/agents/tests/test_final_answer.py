@@ -18,13 +18,14 @@ from pydantic_ai.messages import (
     ModelMessage,
     ModelRequest,
     ModelResponse,
+    ToolCallPart,
     ToolReturnPart,
     UserPromptPart,
 )
 from pydantic_ai.models.function import AgentInfo
 from pydantic_ai.usage import RequestUsage, RunUsage, UsageLimits
 
-from ais0c_agents import AgentRun, runner
+from ais0c_agents import AgentRun, FakeGatewayClient, runner
 from ais0c_agents.runner import (
     FINAL_ANSWER_PROMPT,
     REQUEST_RESERVE,
@@ -33,7 +34,14 @@ from ais0c_agents.runner import (
     budget_spent,
 )
 from ais0c_agents.toolset import render_tool_result
-from ais0c_contracts import DataGap, DataGapReason, RunStatus, ToolResult, VerificationResult
+from ais0c_contracts import (
+    DataGap,
+    DataGapReason,
+    RunStatus,
+    ToolResult,
+    TriageResult,
+    VerificationResult,
+)
 
 from .helpers import (
     DOUBTED_CLAIM,
@@ -54,6 +62,7 @@ from .helpers import (
     run_verification,
     triage_manifest,
     triage_output,
+    triage_task,
     verification_agent_task,
     verification_gateway,
     verification_manifest,
@@ -182,13 +191,88 @@ def test_with_the_tool_call_budget_used_up_the_next_request_can_only_answer() ->
         answer(triage_output(alias(1))),
     )
 
-    run = run_triage(build(script, gateway(), triage_manifest(tool_calls=2)))
+    run = run_triage(build(script, gateway(), triage_manifest(tool_calls=3)))
 
     assert run.status is RunStatus.COMPLETED
     assert [bool(tools) for tools in offered_tools(script)] == [True, True, False]
     assert told_to_answer(script) == [False, False, True]
     assert run.result is not None
     assert run.result.data_gaps == [budget_gap("triage")]
+
+
+def run_long_triage(script: ScriptedModel, fake: FakeGatewayClient) -> AgentRun[TriageResult]:
+    """A triage run with the 24 tool call budget the dcsync skill runs measured (T-072)."""
+    manifest = triage_manifest(max_steps=40, tool_calls=24)
+    return run_triage(build(script, fake, manifest), triage_task(tool_calls=24))
+
+
+def parallel_calls(count: int) -> Step:
+    """One model response asking for `count` tool calls at once."""
+
+    def step(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        return ModelResponse(
+            parts=[
+                ToolCallPart(
+                    "get_offense",
+                    {
+                        "reason": "Read the offense as QRadar stores it.",
+                        "expected_evidence": "The offense record with its source and rules.",
+                        "arguments": {"offense_id": 4711},
+                    },
+                )
+                for _ in range(count)
+            ]
+        )
+
+    return step
+
+
+def test_a_parallel_batch_at_the_tool_limit_keeps_the_answer() -> None:
+    # 23 single calls leave one call of 24: a batch of two would be refused whole by Pydantic AI
+    # and the run would end without its answer (T-072), so the tools go while two still fit.
+    script = ScriptedModel(
+        *[call("get_offense", offense_id=4711)] * 23,
+        while_tools_remain(parallel_calls(2), answer(triage_output(alias(1)))),
+    )
+    fake = gateway()
+
+    run = run_long_triage(script, fake)
+
+    assert run.status is RunStatus.COMPLETED
+    assert run.result is not None
+    assert run.result.data_gaps == [budget_gap("triage")]
+    assert [bool(tools) for tools in offered_tools(script)] == [True] * 23 + [False]
+    assert told_to_answer(script)[-1]
+    assert len(fake.intents) == 23
+
+
+def test_a_larger_batch_seen_earlier_raises_the_reserve() -> None:
+    # After a batch of three the reserve is three calls: the tools go with two calls left.
+    script = ScriptedModel(
+        parallel_calls(3),
+        while_tools_remain(call("get_offense", offense_id=4711), answer(triage_output(alias(1)))),
+    )
+    fake = gateway()
+
+    run = run_long_triage(script, fake)
+
+    assert run.status is RunStatus.COMPLETED
+    # 3 calls in the batch, then single calls up to 22 of 24; 24 - 22 < 3 withdraws the tools.
+    assert len(fake.intents) == 22
+    assert [bool(tools) for tools in offered_tools(script)] == [True] * 20 + [False]
+
+
+def test_sequential_runs_lose_one_call_at_most() -> None:
+    script = ScriptedModel(
+        while_tools_remain(call("get_offense", offense_id=4711), answer(triage_output(alias(1))))
+    )
+    fake = gateway()
+
+    run = run_long_triage(script, fake)
+
+    assert run.status is RunStatus.COMPLETED
+    assert len(fake.intents) == 23
+    assert [bool(tools) for tools in offered_tools(script)] == [True] * 23 + [False]
 
 
 def test_once_withdrawn_the_tools_stay_withdrawn_through_an_output_retry() -> None:
@@ -198,7 +282,7 @@ def test_once_withdrawn_the_tools_stay_withdrawn_through_an_output_retry() -> No
         answer(triage_output(alias(1))),
     )
 
-    run = run_triage(build(script, gateway(), triage_manifest(tool_calls=1)))
+    run = run_triage(build(script, gateway(), triage_manifest(tool_calls=2)))
 
     assert run.status is RunStatus.COMPLETED
     assert offered_tools(script)[1:] == [[], []]
@@ -219,7 +303,7 @@ def test_investigation_and_verification_keep_their_answer_too() -> None:
 
     found = run_investigation(
         build_investigation(investigation, investigation_gateway()),
-        investigation_task(tool_calls=1),
+        investigation_task(tool_calls=2),
     )
     checked = run_verification(
         build_verification(
@@ -227,7 +311,7 @@ def test_investigation_and_verification_keep_their_answer_too() -> None:
             verification_gateway(),
             verification_manifest().model_copy(
                 update={
-                    "budgets": verification_manifest().budgets.model_copy(update={"tool_calls": 1})
+                    "budgets": verification_manifest().budgets.model_copy(update={"tool_calls": 2})
                 }
             ),
         )
@@ -299,15 +383,16 @@ def test_a_model_that_calls_a_tool_after_the_token_threshold_ends_budget_exhaust
 
 
 def test_a_model_that_calls_a_tool_after_the_tool_budget_ends_budget_exhausted() -> None:
-    script = ScriptedModel(*[call("get_offense", offense_id=4711)] * 3)
+    # Two single calls leave one of three, so the tools go; a pair then crosses the limit.
+    script = ScriptedModel(*[call("get_offense", offense_id=4711)] * 2, parallel_calls(2))
     fake = gateway()
 
-    run = run_triage(build(script, fake, triage_manifest(tool_calls=2)))
+    run = run_triage(build(script, fake, triage_manifest(tool_calls=3)))
 
     assert run.status is RunStatus.BUDGET_EXHAUSTED
     assert run.result is None
     assert run.error is not None
-    assert "tool_calls_limit of 2" in run.error
+    assert "tool_calls_limit of 3" in run.error
     assert told_to_answer(script)[-1]
     assert len(fake.intents) == 2
 
@@ -499,9 +584,12 @@ def test_the_rule_reads_the_last_request_and_all_three_budgets() -> None:
     assert not spent(total=1000, last=3000)  # 9000 left, three times the last is 9000
     assert spent(total=1001, last=3000)
     assert spent(total=100, last=100, tool_calls=5)
-    assert not spent(total=100, last=100, tool_calls=4)
+    assert spent(total=100, last=100, tool_calls=4)  # one call left, a batch of two needs two
+    assert not spent(total=100, last=100, tool_calls=3)
     assert not budget_spent(RunUsage(input_tokens=10**9), UsageLimits(total_tokens_limit=None), [])
     assert not budget_spent(RunUsage(), None, [])
+    # An agent with no tool call budget answers at once.
+    assert budget_spent(RunUsage(), UsageLimits(tool_calls_limit=0), [])
 
     requests = UsageLimits(request_limit=3)  # the answer and one correction stay
     assert not budget_spent(RunUsage(requests=0), requests, [])

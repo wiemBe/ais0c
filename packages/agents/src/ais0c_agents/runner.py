@@ -11,7 +11,9 @@ it would be lost. Every run therefore carries FinalAnswer (decision T-52): befor
 runs out it withdraws the agent's function tools, so the next request can only return the
 result, and a run that ends this way completes with a `budget_exhausted` data gap. A model
 that calls a tool anyway runs into the tool call or token budget and ends `budget_exhausted`
-as before.
+as before. Pydantic AI refuses a response whose tool calls together would cross the tool call
+limit, so the tools go while a whole batch no longer fits: MIN_TOOL_BATCH calls, or more if the
+model has already asked for a bigger batch in this run (T-072).
 
 What the tools go is decided from what the next request costs at least: the whole conversation
 goes again, plus the tool result that came since. TOKEN_RESERVE_FACTOR holds three of those, for
@@ -37,6 +39,7 @@ from pydantic_ai.messages import (
     ModelMessage,
     ModelRequest,
     ModelResponse,
+    ToolCallPart,
     ToolReturnPart,
     UserPromptPart,
 )
@@ -62,6 +65,9 @@ correction of that answer (case-36: the answer broke a length limit and the corr
 crossed the budget)."""
 REQUEST_RESERVE: Final = 2
 """Model requests kept back when the tools go: the answer and one correction of it."""
+MIN_TOOL_BATCH: Final = 2
+"""Tool calls one model response may ask for at once, at least: tools are withdrawn
+while that many still fit (the dev reasoning model cannot be told to call one at a time)."""
 TOOL_RESULT_CHARS_PER_TOKEN: Final = 4
 """Characters per token when a tool result's size in tokens is needed (no tokenizer is here)."""
 UNNAMED_AGENT: Final = "agent"
@@ -106,8 +112,9 @@ def budget_spent(
 ) -> bool:
     """Whether the run must answer now instead of calling another tool (decision T-52).
 
-    True when no more than REQUEST_RESERVE model requests remain, the tool call budget is used up, or when fewer
-    tokens remain than TOKEN_RESERVE_FACTOR times what the next request costs at least (T-051):
+    True when no more than REQUEST_RESERVE model requests remain, when fewer tool calls remain
+    than the largest batch the model has asked for at once (at least MIN_TOOL_BATCH, T-072),
+    which also covers a tool call budget that is used up, or when fewer tokens remain than TOKEN_RESERVE_FACTOR times what the next request costs at least (T-051):
     it sends the whole conversation again, so that is the last request's total tokens plus the
     tool results the model has read since. Counting the tool result matters because a result
     bigger than the last request makes the next request cost more than twice the last one,
@@ -121,12 +128,26 @@ def budget_spent(
         and limits.request_limit - usage.requests <= REQUEST_RESERVE
     ):
         return True
-    if limits.tool_calls_limit is not None and usage.tool_calls >= limits.tool_calls_limit:
-        return True
+    if limits.tool_calls_limit is not None:
+        batch = max(MIN_TOOL_BATCH, _largest_tool_batch(messages))
+        if limits.tool_calls_limit - usage.tool_calls < batch:
+            return True
     if limits.total_tokens_limit is None:
         return False
     spent = limits.total_tokens_limit - usage.total_tokens
     return spent < TOKEN_RESERVE_FACTOR * _next_request_tokens(messages)
+
+
+def _largest_tool_batch(messages: Sequence[ModelMessage]) -> int:
+    """The most ToolCallParts any ModelResponse in `messages` holds; 0 when none."""
+    return max(
+        (
+            sum(isinstance(part, ToolCallPart) for part in message.parts)
+            for message in messages
+            if isinstance(message, ModelResponse)
+        ),
+        default=0,
+    )
 
 
 def _next_request_tokens(messages: Sequence[ModelMessage]) -> int:

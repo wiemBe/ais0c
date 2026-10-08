@@ -3,6 +3,9 @@
 Budgets are Pydantic AI usage limits; the agents package keeps no counters of its own.
 """
 
+from pydantic_ai.messages import ModelMessage, ModelResponse, ToolCallPart
+from pydantic_ai.models.function import AgentInfo
+
 from ais0c_agents.runner import prompt_tool_budget, usage_limits
 from ais0c_contracts import Budget, RunStatus
 
@@ -25,25 +28,43 @@ def offense_calls(count: int) -> list[Step]:
     return [call("get_offense", offense_id=4711)] * count
 
 
+def offense_batch(count: int) -> Step:
+    """One response asking for `count` get_offense calls at once."""
+
+    def step(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        arguments = {
+            "reason": "Read the offense as QRadar stores it.",
+            "expected_evidence": "The offense record with its source and rules.",
+            "arguments": {"offense_id": 4711},
+        }
+        return ModelResponse(parts=[ToolCallPart("get_offense", arguments)] * count)
+
+    return step
+
+
+# T-072: the tools go while fewer than two calls remain, so a limit is only reached by a batch
+# that does not fit (Pydantic AI refuses it whole) or by a model that ignores the withdrawal.
+
+
 def test_tool_call_limit_of_the_manifest_ends_the_run_as_budget_exhausted() -> None:
     fake = gateway()
-    script = ScriptedModel(*offense_calls(3), answer(triage_output(alias(1))))
+    script = ScriptedModel(*offense_calls(1), offense_batch(3), answer(triage_output(alias(1))))
 
-    run = run_triage(build(script, fake, triage_manifest(tool_calls=2)))
+    run = run_triage(build(script, fake, triage_manifest(tool_calls=3)))
 
     assert run.status is RunStatus.BUDGET_EXHAUSTED
     assert run.result is None
-    assert len(fake.intents) == 2
-    assert run.usage.tool_calls == 2
+    assert len(fake.intents) == 1
+    assert run.usage.tool_calls == 1
     assert run.error is not None
-    assert "tool_calls_limit of 2" in run.error
+    assert "tool_calls_limit of 3" in run.error
 
 
 def test_run_within_the_tool_call_limit_completes() -> None:
     fake = gateway()
     script = ScriptedModel(*offense_calls(2), answer(triage_output(alias(1))))
 
-    run = run_triage(build(script, fake, triage_manifest(tool_calls=2)))
+    run = run_triage(build(script, fake, triage_manifest(tool_calls=3)))
 
     assert run.status is RunStatus.COMPLETED
     assert run.usage.tool_calls == len(fake.intents) == 2
@@ -51,9 +72,9 @@ def test_run_within_the_tool_call_limit_completes() -> None:
 
 def test_smaller_task_budget_applies() -> None:
     fake = gateway()
-    script = ScriptedModel(*offense_calls(2), answer(triage_output(alias(1))))
+    script = ScriptedModel(*offense_calls(1), offense_batch(3), answer(triage_output(alias(1))))
 
-    run = run_triage(build(script, fake), triage_task(tool_calls=1))
+    run = run_triage(build(script, fake), triage_task(tool_calls=3))
 
     assert run.status is RunStatus.BUDGET_EXHAUSTED
     assert len(fake.intents) == 1
@@ -83,11 +104,11 @@ def test_token_limit_ends_the_run_as_budget_exhausted() -> None:
 
 
 def test_exhausted_run_still_reports_its_usage() -> None:
-    script = ScriptedModel(*offense_calls(3))
+    script = ScriptedModel(*offense_calls(1), offense_batch(3))
 
-    run = run_triage(build(script, gateway(), triage_manifest(tool_calls=2)))
+    run = run_triage(build(script, gateway(), triage_manifest(tool_calls=3)))
 
-    assert run.usage.tool_calls == 2
+    assert run.usage.tool_calls == 1
     assert run.usage.tokens > 0
     assert run.usage.seconds == 1.5
 

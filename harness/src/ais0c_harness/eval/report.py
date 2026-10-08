@@ -275,6 +275,8 @@ class RunFile(_Model):
     record: RunRecord
     attempts: list[AttemptFile]
     """Infrastructure failures first, the final attempt last; empty when the run did not run."""
+    error_traceback: str | None = None
+    """A harness error's traceback, last 50 lines at most; only the run file has it (T-072)."""
 
 
 def attempt_file(attempt: Attempt) -> AttemptFile:

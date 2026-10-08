@@ -2,6 +2,7 @@
 suite's pass rate, the report's order and the token ceiling."""
 
 import asyncio
+import json
 import re
 from dataclasses import replace
 from datetime import UTC, datetime
@@ -18,6 +19,7 @@ from ais0c_contracts import RunStatus
 from ais0c_harness.eval import (
     AgentConfig,
     Attempt,
+    Evaluation,
     Job,
     Report,
     ScenarioBase,
@@ -25,7 +27,14 @@ from ais0c_harness.eval import (
     infra_failure,
     load_suite,
 )
-from ais0c_harness.eval.runner import JobResult, run_job
+from ais0c_harness.eval.runner import (
+    TRACEBACK_LINES,
+    JobResult,
+    git_state,
+    record_of,
+    run_file_of,
+    run_job,
+)
 
 from .eval_helpers import (
     REPO_ROOT,
@@ -245,6 +254,38 @@ def test_a_harness_error_is_recorded_as_the_run_error() -> None:
     )
 
     assert (result.outcome, result.error) == ("error", "harness error: LookupError: a harness bug")
+
+
+def _descend(depth: int) -> int:
+    return _descend(depth + 1)
+
+
+class _RecursingAdapter(_CannedAdapter):
+    def evaluate(self, scenario: ScenarioBase, attempt: Attempt) -> Evaluation:
+        _descend(0)
+        raise AssertionError("unreachable")
+
+
+def test_a_harness_error_keeps_its_traceback() -> None:
+    trust = suite("trust-layers")
+    job = Job(suite=trust, scenario=trust.scenarios[0], number=1)
+    adapter = _RecursingAdapter(triage_config())
+
+    result = asyncio.run(run_job(job, adapter=adapter, model=TestModel(), options=fast()))
+    record = record_of(result, adapter=adapter, k=1, git=git_state(REPO_ROOT))
+    run_file = run_file_of(result, record)
+
+    assert result.outcome == "error"
+    assert result.error is not None
+    assert result.error.startswith("harness error: RecursionError: maximum recursion depth")
+    assert run_file.error_traceback is not None
+    assert "RecursionError" in run_file.error_traceback
+    assert "in _descend" in run_file.error_traceback
+    assert len(run_file.error_traceback.splitlines()) <= TRACEBACK_LINES
+    # The report stays as it was: the traceback is only in the run's file.
+    assert "error_traceback" not in record.model_dump()
+    assert "in _descend" not in record.model_dump_json()
+    assert "error_traceback" in json.loads(run_file.model_dump_json())
 
 
 # --- quality suites -----------------------------------------------------------------------------

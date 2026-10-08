@@ -23,6 +23,7 @@ in the order they finished.
 
 import asyncio
 import subprocess
+import traceback
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -62,6 +63,8 @@ INFRA_RETRY_DELAY_SECONDS: Final = 10.0
 """The pause before an infrastructure failure is retried, so a rate limit can clear."""
 RUN_ID_PREFIX: Final = "harness"
 RETRY_SUFFIX: Final = "-retry"
+TRACEBACK_LINES: Final = 50
+"""The last lines of a harness error's traceback that the run file keeps."""
 
 type ModelFactory = Callable[[AgentConfig, ScenarioBase], Model]
 """The model a scenario runs against; a real model ignores the scenario, a scripted one plays it."""
@@ -101,6 +104,8 @@ class JobResult:
     """Infrastructure failures first, the final attempt last; empty when the run did not run."""
     evaluation: Evaluation | None
     description: dict[str, str] = field(default_factory=dict[str, str])
+    error_traceback: str | None = None
+    """Set only for a harness error: the traceback's last lines, for the run file, not the report."""
 
     @property
     def tokens_spent(self) -> int:
@@ -214,6 +219,7 @@ async def run_job(
             error=f"harness error: {type(failure).__name__}: {failure}"[:1000],
             attempts=tuple(attempts),
             evaluation=None,
+            error_traceback=_last_lines(traceback.format_exception(failure), TRACEBACK_LINES),
         )
     outcome: Outcome
     error: str | None = None
@@ -311,8 +317,17 @@ def _execution_mode(
     return "replay" if modes == {"replay"} else "fixture"
 
 
+def _last_lines(chunks: Sequence[str], count: int) -> str:
+    """The last `count` lines of the text `chunks` make up."""
+    return "\n".join("".join(chunks).rstrip("\n").split("\n")[-count:])
+
+
 def run_file_of(result: JobResult, record: RunRecord) -> RunFile:
-    return RunFile(record=record, attempts=[attempt_file(attempt) for attempt in result.attempts])
+    return RunFile(
+        record=record,
+        attempts=[attempt_file(attempt) for attempt in result.attempts],
+        error_traceback=result.error_traceback,
+    )
 
 
 def record_of(result: JobResult, *, adapter: AgentAdapter, k: int, git: GitState) -> RunRecord:
