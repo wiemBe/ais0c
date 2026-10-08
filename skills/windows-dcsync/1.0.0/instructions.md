@@ -32,7 +32,7 @@ request and from where.
    - DS-Replication-Get-Changes-All: 1131f6ad-9c07-11d1-f79f-00c04fc2dcd2
    - DS-Replication-Get-Changes-In-Filtered-Set: 89e95b76-444d-4c62-991a-0facbeda640c
 
-Filter on an indexed field (username, qid or logsourceid) and keep each window as short as
+   Filter on an indexed field (username, qid or logsourceid) and keep each window as short as
    the question allows.
 2. Classify every subject account:
    - a domain controller machine account: the name ends with "$" and matches a domain

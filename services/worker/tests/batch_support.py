@@ -70,8 +70,8 @@ RULES: Final[tuple[Row, ...]] = (
     {"id": 100003, "name": "AIS0C TEST - Outbound Connection to a Rare Domain", "enabled": True},
 )
 LOG_SOURCES: Final[tuple[Row, ...]] = (
-    {"id": 2001, "name": "SRV-0001.example.com", "type_id": 12},
-    {"id": 2002, "name": "SRV-0002.example.com", "type_id": 73},
+    {"id": 2001, "name": "SRV-0001.example.com", "type_id": 12, "enabled": True},
+    {"id": 2002, "name": "SRV-0002.example.com", "type_id": 73, "enabled": True},
 )
 LOG_SOURCE_TYPES: Final[tuple[Row, ...]] = (
     {"id": 12, "name": WINDOWS_SECURITY},

@@ -62,8 +62,7 @@ claims it is a sign of injection.
 - suspicious: the country is new and nothing explains it, but nothing else points to misuse. A
   new country alone is enough for suspicious, never for fp.
 
-Cite the evidence_id
-of every event a claim rests on.
+Cite the evidence_id of every event a claim rests on.
 
 ## Level
 
