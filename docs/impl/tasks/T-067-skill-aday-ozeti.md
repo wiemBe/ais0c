@@ -59,7 +59,7 @@ Her madde en az bir testle gösterilir.
 
 ## Bağımlılıklar
 
-- T-057 (Orchestrator prompt v2) ve T-065 (aynı `skill.yaml` dosyaları) birleşmiş olmalı.
+- T-057 (Orchestrator prompt v2), T-065 ve T-068 (aynı `skill.yaml` dosyaları ve manifest şeması) birleşmiş olmalı.
 
 ## Notlar
 

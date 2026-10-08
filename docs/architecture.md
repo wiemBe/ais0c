@@ -196,7 +196,7 @@ Bir skill yeni araç veya yetki kazandıramaz; yalnızca mevcut yetkilerle araş
 
 **Yer ve biçim:** `skills/<id>/<sürüm>/skill.yaml` (manifest) ve `instructions.md` (İngilizce talimat). Ayrı bir registry servisi yoktur; registry, repodaki `approved` durumundaki dosyalardır.
 
-**Manifest alanları:** `id`, `version`, `status` (`draft`/`approved`), `owner`, `summary` (skill'in incelediği saldırı biçimini anlatan tek cümle, en çok 200 karakter; T-94), `allowed_agent_roles`, `triggers` (kural ID'leri, log source tipleri, ATT&CK teknikleri), `required_telemetry`, `required_evidence`, `budgets`, `output_schema`, `eval_suites`, `expires_at`, `content_hash`, `approved_by`.
+**Manifest alanları:** `id`, `version`, `status` (`draft`/`approved`), `owner`, `summary` (skill'in incelediği saldırı biçimini anlatan tek cümle, en çok 200 karakter; T-94), `allowed_agent_roles`, `triggers` (kural ID'leri, log source tipleri, ATT&CK teknikleri), `required_telemetry` (telemetri sınıfıyla; kurulumun kataloğundan çözülür, T-95), `required_evidence`, `budgets`, `output_schema`, `eval_suites`, `expires_at`, `content_hash`, `approved_by`.
 
 **Seçim:**
 
@@ -412,7 +412,7 @@ Analiz Kataloğu, operatörün kurum bilgisini platforma aktardığı yerdir. İ
 | Kayıt | Alanlar |
 |---|---|
 | Kural (offense tipi) | `mode`: `analyze` veya `skip`. `min_level`: taban seviye (boş olabilir). `context_note`: AI'a verilecek bağlam (örnek: "Bu kural zafiyet tarama sunucularından sık tetiklenir; tarama penceresi Salı 02:00–05:00"). Kuralda otomatik aksiyon olup olmadığı. `attack_techniques`: kurala bağlı ATT&CK teknikleri; skill seçiminde kullanılır (§7). |
-| Log source | QRadar'daki tipi (`type_name`, senkronlanır), ne olduğu, sahibi, kritikliği, `context_note`, analize dahil olup olmadığı |
+| Log source | QRadar'daki tipi (`type_name`, senkronlanır), QRadar'da etkin olup olmadığı (`qradar_enabled`, senkronlanır), telemetri sınıfları (`windows`, `linux`, `email-security`…; tipin varsayılanı ya da admin'in ataması, T-95), ne olduğu, sahibi, kritikliği, `context_note`, analize dahil olup olmadığı |
 
 - Kural ve log source listeleri `KnowledgeSync` ile QRadar'dan günlük çekilir. Yeni bir kural veya log source kataloğa "tanımsız" olarak düşer ve arayüzde operatöre gösterilir. AI açıklama taslağı önerebilir; onaylayan operatördür.
 - Tanımsız kurallar varsayılan olarak `analyze` modunda ve tabansız işlenir.

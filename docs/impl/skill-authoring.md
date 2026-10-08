@@ -1,6 +1,6 @@
 # Skill yazım rehberi
 
-Bu rehber, `skills/` altındaki inceleme skill'lerini yazacak kodlama ajanı (örnek: GLM 5.3) ve onları inceleyen kişi içindir. Biçimin kuralları `skills/README.md`'dedir ve yükleyici (`ais0c_knowledge.skills`) onları zorlar. Bu rehber **içeriğin** nasıl yazılacağını anlatır. Kararlar: T-21, T-26, T-84, T-85, T-88, T-90, T-92, T-93, T-94.
+Bu rehber, `skills/` altındaki inceleme skill'lerini yazacak kodlama ajanı (örnek: GLM 5.3) ve onları inceleyen kişi içindir. Biçimin kuralları `skills/README.md`'dedir ve yükleyici (`ais0c_knowledge.skills`) onları zorlar. Bu rehber **içeriğin** nasıl yazılacağını anlatır. Kararlar: T-21, T-26, T-84, T-85, T-88, T-90, T-92, T-93, T-94, T-95.
 
 ## 1. Skill nedir, ne değildir
 
@@ -55,19 +55,27 @@ Kimlik (`id`) `<kaynak>-<olay>` biçimindedir (`windows-kerberoasting`, `web-sql
 
 İlk parti (T-064) bu listeden geniş: 60 taslak, tam liste `skills/CATALOG.md`'de (T-92). Hiçbir skill silinmez; telemetrisi bugün olmayan skill'ler taslak kalır.
 
-### Telemetri adları (T-93)
+### Telemetri sınıfları (T-95)
 
-`required_telemetry`'deki `log_source_type`, QRadar'ın log source type adıdır (katalogdaki `type_name`). Bugün geçerli adlar şunlardır:
+Skill telemetriyi ürün adıyla değil sınıfla ister. Hangi ürünün o sınıfı karşıladığı kurulumun Analiz Kataloğu'ndan çözülür, skill'e yazılmaz. `required_telemetry[].telemetry_class` şu listedendir:
 
-| Ad | Ürün | Not |
+| Sınıf | Kapsam | Lab'daki ve bankadaki örnekler |
 |---|---|---|
-| `Microsoft Windows Security Event Log` | WinCollect ile Windows logları | PowerShell Operational (4103, 4104) de bu tiple gelir; ayrı bir PowerShell tipi yoktur |
-| `Fortinet FortiGate Security Gateway` | FortiGate firewall ve VPN | |
-| `F5 Networks BIG-IP ASM` | WAF | Bankanın WAF markası belirtilmedi (T-78) |
-| `FireEye` | Trellix EX (e-posta) | QRadar'ın stok DSM adı FireEye'dır |
-| `Microsoft Entra ID` | Entra sign-in ve audit logları | Banka on-prem AD kullanıyor (2026-10-08); Entra skill'leri taslak kalır, öncelikleri en sondadır |
+| `windows` | WinCollect ile Windows logları (Security, PowerShell Operational, Sysmon) | Microsoft Windows Security Event Log |
+| `linux` | Linux/Unix işletim sistemi ve kimlik doğrulama logları | |
+| `firewall` | Ağ firewall'ı trafiği ve IPS | Fortinet FortiGate Security Gateway |
+| `vpn` | Uzaktan erişim VPN'i | Fortinet FortiGate Security Gateway |
+| `waf` | Web uygulama firewall'ı | F5 Networks BIG-IP ASM (bankanın markası belirtilmedi, T-78) |
+| `email-security` | Mail gateway (ESG), mail sandbox, dosya temizleme | Trellix EX (QRadar'da `FireEye`), Brightmail, OPSWAT (S-14) |
+| `proxy` | Web proxy, secure web gateway | |
+| `dns` | DNS sunucusu ve resolver | |
+| `edr` | Endpoint (Falcon, Faz 2) | |
+| `identity-cloud` | Bulut kimliği | Microsoft Entra ID (bankada yok, on-prem AD; S-15) |
+| `database` | Veritabanı audit'i | |
+| `network-device` | Router, switch, load balancer | |
+| `other` | Bilinen ama yukarıdakilerin dışında | |
 
-Bankanın diğer iki e-posta ürününün, Brightmail'in (Symantec Messaging Gateway) ve OPSWAT'ın, QRadar'da stok DSM'i yoktur. Tip adları prod kataloğundan okunur (S-14). O zamana kadar talimat bu ürünleri adlandırabilir, ama manifest'e onlar için satır girmez. Listeye yeni ad, `packages/knowledge/tests`'teki listeyle birlikte eklenir.
+Event satırı ürün adı vermeden alanı ve event'i anlatır: "4769 with ticket encryption type 0x17" ya da "WAF request log: attack_type, request_status, response_code". Ürüne özgü alan adları (F5'in `attack_type`'ı gibi) örnek olarak kalabilir. Bankanın ürünü farklıysa yalnızca alan adları değişir.
 
 Bankanın WAF'ı F5 değilse yalnızca telemetri satırları ve alan adları değişir (T-78). OWASP Top 10'un WAF'ta görünmeyen sınıfları (IDOR, iş mantığı, yetkilendirme hataları) logda imza bırakmaz ve skill'e uygun değildir.
 
@@ -81,7 +89,7 @@ Alanların anlamı `skills/README.md`'dedir. İçerik kuralları:
   - `attack_techniques`: tam eşleşir (`T1110` ile `T1110.003` farklıdır). Kuralın kataloğa yazılabilecek tekniğini ve gerekiyorsa üst tekniğini yazın.
   - `rule_ids: []`. Prod QRadar'ın kural kimlikleri onayda girer; lab kimlikleri asla girmez (T-26).
   - `log_source_types: []`, yalnızca tek bir ürünün uyarılarıyla ilgili skill'lerde doldurulur, çünkü o tipten gelen her offense'te tetiklenir.
-- `required_telemetry`: QRadar'ın log source type adıyla (katalogdaki `type_name`). Yöntem onsuz sonuca varamıyorsa `required: true` olur. Her event satırı tek cümledir (≤ 300 karakter): event kimliği, nerede ve hangi alan.
+- `required_telemetry`: telemetri sınıfıyla (`telemetry_class`, §2; T-068'e kadar alanın adı `log_source_type`). Yöntem onsuz sonuca varamıyorsa `required: true` olur. Her event satırı tek cümledir (≤ 300 karakter): event kimliği, nerede ve hangi alan.
 - `required_evidence`: ajanın sonuçlanmadan önce toplayacağı ya da data gap olarak yazacağı kanıtlar. Kimlikler kısa ve tirelidir (`request-source`). Üç ile beş madde yeterlidir.
 - `budgets` (T-85): `tokens: 600000`, `tool_calls: 24`, `wall_clock_seconds: 360`. Token kaçak korumasıdır; yöntem altıdan fazla Ariel araması istiyorsa (her arama en az dört araç çağrısıdır) PR'da yazılır.
 - `output_schema: InvestigationResult`.
@@ -151,7 +159,7 @@ Which events the operator should see first, in order.
 
 ## 5. Kontrol listesi (PR'dan önce)
 
-1. `uv run python -m ais0c_knowledge.skills check --mode dev` bütün skill'leri yükler; telemetri adları §2'deki listededir.
+1. `uv run python -m ais0c_knowledge.skills check --mode dev` bütün skill'leri yükler; telemetri sınıfları §2'deki listededir (T-068'den sonra).
 2. Talimatta sömürü adımı, payload, atlatma tekniği, araç komutu yoktur. İmzalar yalnızca log alanı kalıbıdır.
 3. Örneklerin hepsi sentetiktir (RFC 5737, `example.com`, lab adları).
 4. Her `required_evidence` maddesi bir adımda toplanır ya da data gap'e döner.
