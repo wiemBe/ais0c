@@ -38,7 +38,8 @@ ais0c/
 ├── hunt-packs/                # onaylı hunt pack YAML'ları (hunt-pack.md)
 ├── harness/                   # eval suite'leri, senaryolar, fixture'lar, sentetik log üretici
 ├── deploy/
-│   └── compose/               # docker-compose.dev.yaml, docker-compose.prod.yaml
+│   ├── compose/               # docker-compose.dev.yaml, docker-compose.prod.yaml
+│   └── images/                # platform (worker'lar + API) ve ui (nginx) imajlarının Dockerfile'ları
 └── tests/                     # paketler arası entegrasyon ve contract testleri
 ```
 

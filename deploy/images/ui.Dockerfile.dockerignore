@@ -1,0 +1,11 @@
+# Build context of deploy/images/ui.Dockerfile, which is the repository root. BuildKit reads this
+# file instead of a .dockerignore at the root.
+#
+# Only the UI sources and the nginx configuration get in. node_modules and dist stay out; .env,
+# secrets, docs and the Python code never enter the context.
+*
+!apps/ui
+!deploy/images/nginx/ui.conf
+apps/ui/node_modules
+apps/ui/dist
+**/node_modules

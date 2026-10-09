@@ -1,0 +1,23 @@
+# Build context of deploy/images/platform.Dockerfile, which is the repository root. BuildKit reads
+# this file instead of a .dockerignore at the root.
+#
+# Only what `uv sync --package ais0c-worker --package ais0c-api` needs gets in (uv reads every
+# workspace member's pyproject.toml to check uv.lock, and builds the two services and the
+# workspace packages they depend on), plus the approved content the image carries. Docs, tests,
+# config/litellm, deploy files, .env and local secrets stay out.
+*
+!.python-version
+!pyproject.toml
+!uv.lock
+!harness/pyproject.toml
+!packages/*/pyproject.toml
+!services/*/pyproject.toml
+!packages/*/src
+!services/worker/src
+!services/api/src
+!config/agents
+!config/models
+!prompts
+!skills
+**/__pycache__
+**/*.pyc
