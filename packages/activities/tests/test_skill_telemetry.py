@@ -140,7 +140,7 @@ async def test_unknown_skill_gives_nothing(sessions: SessionFactory) -> None:
     assert await resolve(sessions, "unknown-skill") == []
 
 
-async def test_unsafe_type_name_is_not_rendered(sessions: SessionFactory) -> None:
+async def test_unsafe_type_name_becomes_none(sessions: SessionFactory) -> None:
     await sync(
         sessions,
         SyncedLogSource(
@@ -155,3 +155,42 @@ async def test_unsafe_type_name_is_not_rendered(sessions: SessionFactory) -> Non
     [source] = await resolve(sessions)
     assert source.type_name is None
     assert source.log_source_ids == (12,)
+
+
+@pytest.mark.parametrize("type_name", ["Unsafe\nType", "Unsafe<Type"])
+async def test_type_name_with_unsafe_characters_becomes_none(
+    sessions: SessionFactory, type_name: str
+) -> None:
+    await sync(
+        sessions,
+        SyncedLogSource(
+            12,
+            "Synthetic unsafe characters",
+            type_name,
+            True,
+            (TelemetryClass.WINDOWS,),
+        ),
+    )
+
+    [source] = await resolve(sessions)
+    assert source.type_name is None
+
+
+async def test_activity_caps_ids_at_20(sessions: SessionFactory) -> None:
+    await sync(
+        sessions,
+        *(
+            SyncedLogSource(
+                log_source_id,
+                f"Synthetic source {log_source_id}",
+                "Microsoft Windows Security Event Log",
+                True,
+                (TelemetryClass.WINDOWS,),
+            )
+            for log_source_id in range(45, 11, -1)
+        ),
+    )
+
+    [source] = await resolve(sessions)
+    assert source.log_source_ids == tuple(range(12, 32))
+    assert source.total == 34

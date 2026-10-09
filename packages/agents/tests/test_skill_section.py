@@ -160,6 +160,32 @@ def test_render_caps_ids_at_20() -> None:
     ) in section
 
 
+@pytest.mark.parametrize("unsafe_name", ["Unsafe\nType", "Unsafe<Type"])
+def test_unsafe_type_name_is_not_rendered(unsafe_name: str) -> None:
+    with pytest.raises(ValidationError):
+        SkillTelemetrySource(
+            telemetry_class="windows",
+            type_name=unsafe_name,
+            log_source_ids=(12,),
+            total=1,
+        )
+
+    section = render_skill(
+        skill_input(
+            telemetry_sources=(
+                SkillTelemetrySource(
+                    telemetry_class="windows",
+                    type_name=None,
+                    log_source_ids=(12,),
+                    total=1,
+                ),
+            )
+        )
+    )
+    assert "In this installation: a custom type, 1 log source (logsourceid 12)." in section
+    assert unsafe_name not in section
+
+
 def test_the_section_is_part_of_the_prompt_not_untrusted_data() -> None:
     for skill in (skill_input(), None):
         prompt = SUMMARY_PROMPT.render({"evidence": "No evidence.", "skill": render_skill(skill)})
