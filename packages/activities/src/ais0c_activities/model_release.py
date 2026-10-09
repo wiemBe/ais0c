@@ -33,7 +33,12 @@ type InferenceValue = str | int | float | bool
 _Text = Annotated[str, StringConstraints(min_length=1, pattern=r"\S")]
 # Registry fields that go into a release's inference_params under their own name; an entry's
 # `inference_params` must not set them again.
-REQUEST_SETTINGS: Final = ("forced_tool_choice", "parallel_tool_calls", "reasoning_parser")
+REQUEST_SETTINGS: Final = (
+    "forced_tool_choice",
+    "parallel_tool_calls",
+    "provider",
+    "reasoning_parser",
+)
 
 
 class ModelReleaseError(ValueError):
@@ -52,6 +57,8 @@ class _ReleaseEntry(BaseModel):
     parallel_tool_calls: bool | None
     # As the agents read it (ais0c_agents.registry): absent means true.
     forced_tool_choice: bool = True
+    # The pinned hosted provider (dev); absent in prod.
+    provider: _Text | None = None
     artifact: _Text
     # Required, but null when the value is not known (the registry says why next to it).
     artifact_hash: _Text | None
@@ -92,6 +99,8 @@ def _release(alias: str, entry: _ReleaseEntry) -> ModelRelease:
     settings: dict[str, InferenceValue] = {"forced_tool_choice": entry.forced_tool_choice}
     if entry.parallel_tool_calls is not None:
         settings["parallel_tool_calls"] = entry.parallel_tool_calls
+    if entry.provider is not None:
+        settings["provider"] = entry.provider
     if entry.reasoning_parser is not None:
         settings["reasoning_parser"] = entry.reasoning_parser
     return ModelRelease(

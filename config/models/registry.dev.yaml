@@ -26,6 +26,8 @@
 #   context_window.
 # - artifact: the model ID OpenRouter serves. OpenRouter does not show which weights, engine
 #   or settings its provider runs, so the fields after it are null in dev.
+# - provider: the OpenRouter provider pinned in litellm.dev.yaml (order[0]); it goes into the
+#   release's inference_params. Absent in prod (on-prem vLLM), which counts as null.
 # - inference_params: sampling parameters (temperature, top_p, ...) set for the alias. Neither
 #   the platform nor LiteLLM sets any; the provider's defaults apply. The release's
 #   inference_params also hold the request settings above (parallel_tool_calls when not null,
@@ -45,9 +47,10 @@ soc-fast:
   turkish_quality: null
   artifact: deepseek/deepseek-v4-flash
   artifact_hash: null  # OpenRouter does not show which weights the provider runs
-  quantization: null  # varies with the provider OpenRouter picks for each request
+  quantization: null  # the pinned provider's; not visible through OpenRouter
   tokenizer: null  # the provider's tokenizer files are not visible through OpenRouter
   engine_version: null  # the provider's inference engine is not visible through OpenRouter
+  provider: AtlasCloud
   inference_params: {}
 
 soc-reasoning:
@@ -62,9 +65,10 @@ soc-reasoning:
   turkish_quality: null
   artifact: deepseek/deepseek-v4-flash
   artifact_hash: null  # OpenRouter does not show which weights the provider runs
-  quantization: null  # varies with the provider OpenRouter picks for each request
+  quantization: null  # the pinned provider's; not visible through OpenRouter
   tokenizer: null  # the provider's tokenizer files are not visible through OpenRouter
   engine_version: null  # the provider's inference engine is not visible through OpenRouter
+  provider: AtlasCloud
   inference_params: {}
 
 soc-verifier:
@@ -79,9 +83,10 @@ soc-verifier:
   turkish_quality: null
   artifact: qwen/qwen3.5-122b-a10b
   artifact_hash: null  # OpenRouter does not show which weights the provider runs
-  quantization: null  # varies with the provider OpenRouter picks for each request
+  quantization: null  # the pinned provider's; not visible through OpenRouter
   tokenizer: null  # the provider's tokenizer files are not visible through OpenRouter
   engine_version: null  # the provider's inference engine is not visible through OpenRouter
+  provider: Alibaba
   inference_params: {}
 
 soc-report:
@@ -96,7 +101,8 @@ soc-report:
   turkish_quality: 4.41  # mean of the 5 rubric scores over 40 scored runs: turkish-quality suite (4 scenarios) reporting prompt v2, soc-reasoning evaluator v1, k=5 twice, 2026-10-08 (accuracy 4.05, fluency 4.55, terminology 4.55, uncertainty 3.9, brevity 5.0)
   artifact: qwen/qwen3.5-122b-a10b
   artifact_hash: null  # OpenRouter does not show which weights the provider runs
-  quantization: null  # varies with the provider OpenRouter picks for each request
+  quantization: null  # the pinned provider's; not visible through OpenRouter
   tokenizer: null  # the provider's tokenizer files are not visible through OpenRouter
   engine_version: null  # the provider's inference engine is not visible through OpenRouter
+  provider: Novita
   inference_params: {}

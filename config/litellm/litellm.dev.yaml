@@ -12,7 +12,12 @@
 # OpenRouter provider routing (extra_body.provider), the same for every alias:
 # - require_parameters: route only to providers that support every request parameter, so tool
 #   calls and structured output are never dropped silently;
-# - data_collection: deny: skip providers that store prompts or train on them.
+# - data_collection: deny: skip providers that store prompts or train on them;
+# - order and allow_fallbacks: the provider is pinned (the one that answered the alias's last
+#   valid measurement), so harness measurements run on the same provider and the registry can
+#   name it in the model release (T-102);
+# - when the pinned provider is down the request fails, and the harness retries it once as an
+#   infrastructure error (T-103).
 
 model_list:
   # Triage. Same model as soc-reasoning; soc-verifier checks both, so it uses the other model.
@@ -25,6 +30,8 @@ model_list:
         provider:
           require_parameters: true
           data_collection: deny
+          order: [AtlasCloud]
+          allow_fallbacks: false
   - model_name: soc-reasoning
     litellm_params:
       # The prod model (D-12, D-44).
@@ -34,6 +41,8 @@ model_list:
         provider:
           require_parameters: true
           data_collection: deny
+          order: [AtlasCloud]
+          allow_fallbacks: false
 
   # Independent verification: a different model family from soc-reasoning (§19).
   - model_name: soc-verifier
@@ -44,6 +53,8 @@ model_list:
         provider:
           require_parameters: true
           data_collection: deny
+          order: [Alibaba]
+          allow_fallbacks: false
 
   # Turkish report. Chosen by the harness Turkish suite (D-07); not measured yet.
   - model_name: soc-report
@@ -55,6 +66,8 @@ model_list:
         provider:
           require_parameters: true
           data_collection: deny
+          order: [Novita]
+          allow_fallbacks: false
 
 general_settings:
   # Clients (agents, the smoke script) send this key as a bearer token.

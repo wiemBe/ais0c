@@ -11,17 +11,23 @@ lost its answer because a tool result made the next request cost more than twice
 while the rule still offered the tools.
 """
 
+import asyncio
 from collections.abc import Sequence
+from types import SimpleNamespace
+from typing import cast
 
 import pytest
+from pydantic_ai import RunContext
 from pydantic_ai.messages import (
     ModelMessage,
     ModelRequest,
     ModelResponse,
+    TextPart,
     ToolCallPart,
     ToolReturnPart,
     UserPromptPart,
 )
+from pydantic_ai.models import ModelRequestContext
 from pydantic_ai.models.function import AgentInfo
 from pydantic_ai.usage import RequestUsage, RunUsage, UsageLimits
 
@@ -31,9 +37,10 @@ from ais0c_agents.runner import (
     REQUEST_RESERVE,
     TOKEN_RESERVE_FACTOR,
     TOOL_RESULT_CHARS_PER_TOKEN,
+    FinalAnswer,
     budget_spent,
 )
-from ais0c_agents.toolset import render_tool_result
+from ais0c_agents.toolset import RunDeps, render_tool_result
 from ais0c_contracts import (
     DataGap,
     DataGapReason,
@@ -753,3 +760,105 @@ def test_at_the_request_limit_an_answer_that_needs_a_correction_is_corrected(
         assert [bool(tools) for tools in offered_tools(script)] == [True, True, False, False]
     else:
         assert run.result is None
+
+
+# --- T-073 (decision T-98): a batch larger than the remaining tool call budget is cut
+
+
+def sent_responses(run: AgentRun[TriageResult]) -> list[ModelResponse]:
+    return [message for message in run.messages if isinstance(message, ModelResponse)]
+
+
+def function_calls(response: ModelResponse) -> list[ToolCallPart]:
+    return [
+        part
+        for part in response.parts
+        if isinstance(part, ToolCallPart) and part.tool_name == "get_offense"
+    ]
+
+
+def test_a_batch_larger_than_the_budget_is_cut() -> None:
+    script = ScriptedModel(
+        parallel_calls(34),
+        while_tools_remain(call("get_offense", offense_id=4711), answer(triage_output(alias(1)))),
+    )
+    fake = gateway()
+
+    run = run_long_triage(script, fake)
+
+    assert run.status is RunStatus.COMPLETED
+    assert run.result is not None
+    assert len(fake.intents) == 24
+    assert len(function_calls(sent_responses(run)[0])) == 24
+    assert [bool(tools) for tools in offered_tools(script)] == [True, False]
+    assert told_to_answer(script)[-1]
+
+
+def test_cut_keeps_the_final_result_part() -> None:
+    script = ScriptedModel(
+        *[call("get_offense", offense_id=4711)] * 21,
+        mixed_batch(10, triage_output(alias(1))),
+    )
+    fake = gateway()
+
+    run = run_long_triage(script, fake)
+
+    assert run.status is RunStatus.COMPLETED
+    cut = sent_responses(run)[21]
+    assert len(function_calls(cut)) == 3
+    assert [part.tool_name for part in cut.parts if isinstance(part, ToolCallPart)][-1] == (
+        "final_result"
+    )
+
+
+def mixed_batch(count: int, output: dict[str, object]) -> Step:
+    """`count` function tool calls and the output tool call, in one response."""
+
+    def step(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        calls = cast(ModelResponse, parallel_calls(count)(messages, info)).parts
+        return ModelResponse(parts=[*calls, ToolCallPart(info.output_tools[0].name, output)])
+
+    return step
+
+
+def test_a_batch_within_the_budget_is_untouched() -> None:
+    response, context = batch_of(3)
+
+    assert asyncio_hook(5, response, context) is response
+
+
+def test_cut_is_deterministic() -> None:
+    response, context = batch_of(10)
+
+    first = asyncio_hook(3, response, context)
+    second = asyncio_hook(3, response, context)
+
+    assert first == second
+    assert len(function_calls(first)) == 3
+    assert len(response.parts) == 11  # the input is not modified
+
+
+def batch_of(count: int) -> tuple[ModelResponse, ModelRequestContext]:
+    calls = [ToolCallPart("get_offense", {"n": n}) for n in range(count)]
+    parameters = SimpleNamespace(function_tools=[SimpleNamespace(name="get_offense")])
+    context = cast(ModelRequestContext, SimpleNamespace(model_request_parameters=parameters))
+    return ModelResponse(parts=[TextPart("looking"), *calls]), context
+
+
+def asyncio_hook(
+    remaining: int, response: ModelResponse, context: ModelRequestContext
+) -> ModelResponse:
+    """FinalAnswer's hook with a 24 call limit of which 24 - `remaining` are spent."""
+    ctx = cast(
+        RunContext[RunDeps],
+        SimpleNamespace(
+            usage=RunUsage(tool_calls=24 - remaining),
+            usage_limits=UsageLimits(tool_calls_limit=24),
+            deps=SimpleNamespace(run_id="run-1"),
+        ),
+    )
+    return asyncio.run(
+        FinalAnswer(enabled=True).after_model_request(
+            ctx, request_context=context, response=response
+        )
+    )

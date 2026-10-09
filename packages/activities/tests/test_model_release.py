@@ -118,6 +118,7 @@ def test_every_alias_has_a_release_built_from_its_entry(env: str) -> None:
         settings = {
             "forced_tool_choice": entry["forced_tool_choice"],
             "parallel_tool_calls": entry["parallel_tool_calls"],
+            "provider": entry.get("provider"),
             "reasoning_parser": entry["reasoning_parser"],
         }
         assert built.inference_params == entry["inference_params"] | {
@@ -219,6 +220,22 @@ def test_inference_params_add_the_request_settings_to_the_sampling_parameters() 
         "forced_tool_choice": entry["forced_tool_choice"],
         "reasoning_parser": entry["reasoning_parser"],
     }
+
+
+def test_release_carries_the_provider() -> None:
+    dev = load_model_releases(REGISTRIES["dev"])
+    prod = load_model_releases(REGISTRIES["prod"])
+
+    assert dev["soc-reasoning"].inference_params["provider"] == "AtlasCloud"
+    assert all("provider" not in built.inference_params for built in prod.values())
+
+
+def test_a_provider_repeated_in_inference_params_is_refused() -> None:
+    data = registry_data("dev")
+    data["soc-fast"]["inference_params"] = {"provider": "Other"}
+
+    with pytest.raises(ModelReleaseError, match="must not set provider"):
+        parse_model_releases(data)
 
 
 # --- Changes against the recorded releases (criterion 5)

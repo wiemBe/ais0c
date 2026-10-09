@@ -244,7 +244,42 @@ def test_dev_config_reaches_every_alias_through_openrouter() -> None:
         assert params["model"].startswith("openrouter/"), entry["model_name"]
         assert params["api_key"] == "os.environ/OPENROUTER_API_KEY"
         # Providers must honour every parameter (tools, response format) and keep no prompts.
-        assert params["extra_body"]["provider"] == {
+        provider = dict(params["extra_body"]["provider"])
+        # The provider pin is checked by test_dev_config_pins_one_provider_per_alias.
+        provider.pop("order", None)
+        provider.pop("allow_fallbacks", None)
+        assert provider == {
             "require_parameters": True,
             "data_collection": "deny",
         }, entry["model_name"]
+
+
+def pin_problems(config: dict[str, Any]) -> list[str]:
+    """Aliases whose OpenRouter routing does not pin exactly one provider without fallbacks."""
+    problems: list[str] = []
+    for entry in config["model_list"]:
+        provider = entry["litellm_params"]["extra_body"]["provider"]
+        order = provider.get("order")
+        if not isinstance(order, list) or len(order) != 1:
+            problems.append(f"{entry['model_name']}: order must name exactly one provider")
+        if provider.get("allow_fallbacks") is not False:
+            problems.append(f"{entry['model_name']}: allow_fallbacks must be false")
+    return problems
+
+
+def test_dev_config_pins_one_provider_per_alias() -> None:
+    assert pin_problems(load_config("dev")) == []
+
+
+def test_a_provider_pin_with_two_providers_or_without_allow_fallbacks_is_reported() -> None:
+    config = copy.deepcopy(load_config("dev"))
+    first, second = (
+        e["litellm_params"]["extra_body"]["provider"] for e in config["model_list"][:2]
+    )
+    first["order"] = ["AtlasCloud", "Novita"]
+    del second["allow_fallbacks"]
+
+    assert pin_problems(config) == [
+        "soc-fast: order must name exactly one provider",
+        "soc-reasoning: allow_fallbacks must be false",
+    ]

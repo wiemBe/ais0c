@@ -27,9 +27,10 @@ The wall-clock budget is not enforced here: the Temporal activity and workflow t
 (T-012, agent-harness.md §2).
 """
 
+import logging
 import time
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Final
 
 from pydantic_ai import Agent, RunContext, capture_run_messages
@@ -52,6 +53,8 @@ from ais0c_agents.manifest import AgentManifest
 from ais0c_agents.prompts import PromptTemplate
 from ais0c_agents.toolset import RunDeps
 from ais0c_contracts import AgentResult, Budget, DataGap, DataGapReason, RunStatus, Usage
+
+logger = logging.getLogger(__name__)
 
 MAX_ERROR_LENGTH: Final = 1000
 FINAL_ANSWER_PROMPT: Final = (
@@ -200,6 +203,41 @@ class FinalAnswer(AbstractCapability[RunDeps]):
             # The request this step made: the sentence stays in the run's history.
             request.parts = [*request.parts, UserPromptPart(FINAL_ANSWER_PROMPT)]
         return request_context
+
+    async def after_model_request(
+        self,
+        ctx: RunContext[RunDeps],
+        *,
+        request_context: ModelRequestContext,
+        response: ModelResponse,
+    ) -> ModelResponse:
+        """Cut a response whose tool calls exceed the remaining tool call budget (T-98).
+
+        Pydantic AI refuses a whole batch that crosses the tool call limit, and the run ends
+        without its answer. Only the first `remaining` function tool calls stay, in order; text,
+        thinking and the output tool call keep their place. Only the response and the run's
+        counters are read, so the hook is deterministic.
+        """
+        limit = ctx.usage_limits.tool_calls_limit if ctx.usage_limits else None
+        if not self.enabled or limit is None:
+            return response
+        remaining = max(0, limit - ctx.usage.tool_calls)
+        function_tools = {
+            tool.name for tool in request_context.model_request_parameters.function_tools
+        }
+        call_positions = [
+            position
+            for position, part in enumerate(response.parts)
+            if isinstance(part, ToolCallPart) and part.tool_name in function_tools
+        ]
+        if len(call_positions) <= remaining:
+            return response
+        dropped = set(call_positions[remaining:])
+        logger.warning("run %s: cut %d tool calls beyond the budget", ctx.deps.run_id, len(dropped))
+        return replace(
+            response,
+            parts=[part for position, part in enumerate(response.parts) if position not in dropped],
+        )
 
     def _withdraw_now(self, ctx: RunContext[RunDeps]) -> bool:
         return _tools_were_withdrawn(ctx.messages) or budget_spent(

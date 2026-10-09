@@ -37,6 +37,8 @@ FIELDS: dict[str, tuple[type, ...]] = {
     "engine_version": (str, type(None)),
     "inference_params": (dict,),
 }
+# Present in dev only: the OpenRouter provider pinned in litellm.dev.yaml (T-102).
+OPTIONAL_FIELDS: dict[str, tuple[type, ...]] = {"provider": (str,)}
 # Values agent manifests use in required_model_capabilities (architecture §8.1).
 CAPABILITIES = {"tool_calling", "structured_output"}
 
@@ -60,9 +62,9 @@ def entry_problems(alias: str, entry: object) -> list[str]:
     problems: list[str] = []
     if missing := FIELDS.keys() - entry.keys():
         problems.append(f"{alias}: missing {sorted(missing)}")
-    if unknown := entry.keys() - FIELDS.keys():
+    if unknown := entry.keys() - FIELDS.keys() - OPTIONAL_FIELDS.keys():
         problems.append(f"{alias}: unknown {sorted(unknown)}")
-    for field, types in FIELDS.items():
+    for field, types in (FIELDS | OPTIONAL_FIELDS).items():
         value = entry.get(field)
         # bool is an int subclass; True is not a context window or a score.
         if field in entry and (
@@ -120,6 +122,21 @@ def test_prod_registry_records_the_vllm_settings() -> None:
     for alias, entry in load_registry("prod").items():
         assert entry["prod_equivalent"] == entry["target"], alias
         assert entry["tool_parser"], f"{alias}: vLLM tool parser missing (§8.4)"
+
+
+def test_dev_registry_provider_matches_litellm() -> None:
+    config = yaml.safe_load((REPO_ROOT / "config/litellm/litellm.dev.yaml").read_text("utf-8"))
+    pinned = {
+        entry["model_name"]: entry["litellm_params"]["extra_body"]["provider"]["order"][0]
+        for entry in config["model_list"]
+    }
+
+    registry = load_registry("dev")
+    assert {alias: entry["provider"] for alias, entry in registry.items()} == pinned
+
+
+def test_prod_registry_has_no_provider() -> None:
+    assert all("provider" not in entry for entry in load_registry("prod").values())
 
 
 def test_dev_registry_runs_the_prod_models() -> None:

@@ -37,27 +37,26 @@ def offense_batch(count: int) -> Step:
             "expected_evidence": "The offense record with its source and rules.",
             "arguments": {"offense_id": 4711},
         }
-        return ModelResponse(parts=[ToolCallPart("get_offense", arguments)] * count)
+        return ModelResponse(parts=[ToolCallPart("get_offense", arguments) for _ in range(count)])
 
     return step
 
 
-# T-072: the tools go while fewer than two calls remain, so a limit is only reached by a batch
-# that does not fit (Pydantic AI refuses it whole) or by a model that ignores the withdrawal.
+# T-072: the tools go while fewer than two calls remain. T-073 (T-98): a batch that does not fit
+# is cut to the calls that remain instead of being refused whole, so the run keeps its answer.
 
 
-def test_tool_call_limit_of_the_manifest_ends_the_run_as_budget_exhausted() -> None:
+def test_a_batch_beyond_the_tool_call_limit_of_the_manifest_is_cut() -> None:
     fake = gateway()
     script = ScriptedModel(*offense_calls(1), offense_batch(3), answer(triage_output(alias(1))))
 
     run = run_triage(build(script, fake, triage_manifest(tool_calls=3)))
 
-    assert run.status is RunStatus.BUDGET_EXHAUSTED
-    assert run.result is None
-    assert len(fake.intents) == 1
-    assert run.usage.tool_calls == 1
-    assert run.error is not None
-    assert "tool_calls_limit of 3" in run.error
+    assert run.status is RunStatus.COMPLETED
+    assert run.result is not None
+    # One call, then the batch of three cut to the two that remain.
+    assert len(fake.intents) == 3
+    assert run.usage.tool_calls == 3
 
 
 def test_run_within_the_tool_call_limit_completes() -> None:
@@ -76,8 +75,8 @@ def test_smaller_task_budget_applies() -> None:
 
     run = run_triage(build(script, fake), triage_task(tool_calls=3))
 
-    assert run.status is RunStatus.BUDGET_EXHAUSTED
-    assert len(fake.intents) == 1
+    assert run.status is RunStatus.COMPLETED
+    assert len(fake.intents) == 3
 
 
 def test_step_limit_ends_the_run_as_budget_exhausted() -> None:
@@ -108,7 +107,7 @@ def test_exhausted_run_still_reports_its_usage() -> None:
 
     run = run_triage(build(script, gateway(), triage_manifest(tool_calls=3)))
 
-    assert run.usage.tool_calls == 1
+    assert run.usage.tool_calls == 3
     assert run.usage.tokens > 0
     assert run.usage.seconds == 1.5
 
