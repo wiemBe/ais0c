@@ -63,6 +63,8 @@ input:
       version: 1.0.0
       content_hash: sha256:0000000000000000000000000000000000000000000000000000000000000000
     agent_role: investigation
+    summary: 'DCSync: an account asks a domain controller to replicate directory data and receives password
+      hashes in return.'
     required_evidence:
     - id: replication-events
       description: 'The 4662 events with a DS-Replication right: time, domain controller and subject account'

@@ -41,6 +41,9 @@ LogSourceType = Annotated[str, StringConstraints(max_length=255, pattern=_ONE_LI
 # A person or team.
 Name = Annotated[str, StringConstraints(max_length=100, pattern=_ONE_LINE)]
 Description = Annotated[str, StringConstraints(max_length=300, pattern=_ONE_LINE)]
+# One sentence in printable ASCII that ends with a period: the attack the skill investigates and
+# what tells it apart from skills that share its technique (T-94). The Orchestrator sees it.
+Summary = Annotated[str, StringConstraints(max_length=200, pattern=r"^[!-~][ -~]*\.$")]
 
 SkillStatus = Literal["draft", "approved"]
 # The agents of architecture §7, named as their prompts/<agent>/ directories (prompts.md).
@@ -144,6 +147,7 @@ class SkillManifest(_ManifestModel):
     version: SemVer
     status: SkillStatus
     owner: Name
+    summary: Summary
     allowed_agent_roles: Annotated[frozenset[AgentRole], Field(min_length=1)]
     triggers: SkillTriggers
     required_telemetry: Annotated[

@@ -1,0 +1,203 @@
+id: orc-06-web-path-traversal-among-t1190
+suite: orchestrator-gold
+agent: orchestrator
+title: Path traversal is chosen among the six T1190 skills
+description: Same six candidates as orc-05. The offense is a WAF path traversal rule, and Triage's focus
+  names ../ and encoded directory-escape sequences and whether files such as /etc/passwd and web.config
+  came back with 200. The Orchestrator binds web-path-traversal.
+input:
+  triage:
+    verdict: tp
+    confidence: high
+    ai_level: high
+    needs_investigation: true
+    investigation_focus:
+    - Look for ../ and encoded directory-escape sequences (%2e%2e%2f, ..%5c) in the request URIs and parameters
+      from 203.0.113.45.
+    - Determine whether files such as /etc/passwd and web.config were returned with status 200.
+    data_gaps: []
+    injection_suspected: false
+  offense:
+    offense_id: 42
+    description: 'WAF: path traversal request'
+    offense_type: Source IP
+    offense_source: 203.0.113.45
+    rule_ids:
+    - 100355
+    rule_names:
+    - AIS0C LAB - WAF path traversal
+    categories:
+    - Application
+    magnitude: 5
+    start_time: '2026-10-06T20:14:18.108000Z'
+    last_updated_time: '2026-10-06T20:14:18.108000Z'
+    event_count: 9
+    log_source_ids:
+    - 214
+    source_ips:
+    - 203.0.113.45
+    destination_ips:
+    - 198.51.100.20
+    usernames: []
+  candidates:
+  - ref:
+      skill_id: web-command-injection
+      version: 1.0.0
+      content_hash: sha256:0000000000000000000000000000000000000000000000000000000000000000
+    agent_role: investigation
+    summary: 'OS command injection against a web application behind the WAF: shell syntax in request inputs
+      (WAF attack_type Command Execution); decides whether the server ran a command.'
+    required_evidence:
+    - id: request-summary
+      description: 'Per source address: request count, signature families, request_status values and response
+        codes'
+    - id: reached-application
+      description: Whether any command injection request was passed on (alerted) and answered by the application
+    - id: host-followup
+      description: 'What the web server host did after answered requests: outbound connections, new processes
+        or services, or a data gap'
+    - id: source-scope
+      description: Other requests and attack families from the same source
+    budgets:
+      tokens: 600000
+      tool_calls: 24
+      wall_clock_seconds: 360
+  - ref:
+      skill_id: web-deserialization
+      version: 1.0.0
+      content_hash: sha256:0000000000000000000000000000000000000000000000000000000000000000
+    agent_role: investigation
+    summary: 'Insecure deserialization against a web application: serialized-object and gadget signatures
+      in requests; decides whether the server unpacked the object into running code.'
+    required_evidence:
+    - id: request-summary
+      description: 'Per source: the serialized-object signature requests, endpoints, blocked and answered
+        counts'
+    - id: reached-application
+      description: Whether any was passed on (alerted) and answered
+    - id: blob-shapes
+      description: 'The parameter shapes: dense base64 or serialized structures in parameters that normally
+        hold plain values'
+    - id: host-aftermath
+      description: The web server's outbound connections, new processes or services afterwards, or a data
+        gap
+    budgets:
+      tokens: 600000
+      tool_calls: 24
+      wall_clock_seconds: 360
+  - ref:
+      skill_id: web-file-upload
+      version: 1.0.0
+      content_hash: sha256:0000000000000000000000000000000000000000000000000000000000000000
+    agent_role: investigation
+    summary: 'Malicious file upload to a web application: executable or script files sent to upload endpoints;
+      decides whether a web shell was stored and later requested.'
+    required_evidence:
+    - id: upload-requests
+      description: 'The upload attempts: source, endpoint, the file name patterns and whether the application
+        accepted them'
+    - id: shell-path-requests
+      description: 'Any later request to an uploaded file''s path, from any source: the shell being used'
+    - id: reached-application
+      description: Whether uploads or path requests were passed on (alerted) and answered
+    - id: server-followup
+      description: 'What the web server did after answered requests: outbound connections and volume,
+        or a data gap'
+    budgets:
+      tokens: 600000
+      tool_calls: 24
+      wall_clock_seconds: 360
+  - ref:
+      skill_id: web-path-traversal
+      version: 1.0.0
+      content_hash: sha256:0000000000000000000000000000000000000000000000000000000000000000
+    agent_role: investigation
+    summary: 'Path traversal against a web application behind the WAF: parent-directory segments in the
+      URI or parameters (WAF attack_type Path Traversal); decides whether files were served.'
+    required_evidence:
+    - id: request-summary
+      description: 'Per source address: request count, the path patterns requested, request_status values
+        and response codes'
+    - id: reached-application
+      description: Whether any traversal request was passed on (alerted) and answered by the application
+    - id: target-paths
+      description: 'Which paths the attacker walked towards: application files only, or system and configuration
+        file names'
+    - id: source-scope
+      description: Other requests and attack families from the same source
+    budgets:
+      tokens: 600000
+      tool_calls: 24
+      wall_clock_seconds: 360
+  - ref:
+      skill_id: web-sql-injection
+      version: 1.0.0
+      content_hash: sha256:0000000000000000000000000000000000000000000000000000000000000000
+    agent_role: investigation
+    summary: SQL injection against a web application behind the WAF (WAF attack_type SQL-Injection); decides
+      whether the injection reached the application and was answered.
+    required_evidence:
+    - id: request-summary
+      description: 'Per source address: request count, signature families, request_status values and response
+        codes'
+    - id: reached-application
+      description: Whether any request was passed on (alerted) and answered by the application
+    - id: signature-families
+      description: 'What the signatures say was tried: extraction, tautology, time-based or out-of-band
+        probing'
+    - id: source-scope
+      description: Other requests, URIs and attack families from the same source, and other sources doing
+        the same
+    - id: aftermath
+      description: 'What followed in the window: bulk data retrieval, error responses or new sessions
+        from the source'
+    budgets:
+      tokens: 600000
+      tool_calls: 24
+      wall_clock_seconds: 360
+  - ref:
+      skill_id: web-ssrf
+      version: 1.0.0
+      content_hash: sha256:0000000000000000000000000000000000000000000000000000000000000000
+    agent_role: investigation
+    summary: 'Server-side request forgery: request parameters naming internal, link-local or metadata
+      addresses; decides whether the web server fetched them inside the network.'
+    required_evidence:
+    - id: request-pattern
+      description: 'The requests whose parameters carry internal addresses or metadata host names: source,
+        endpoint, parameter and outcome'
+    - id: outbound-probe
+      description: Connections from the web server to internal or metadata addresses in the same minutes,
+        from the firewall log
+    - id: reached-application
+      description: Whether any request was passed on (alerted) and answered by the application
+    - id: target-assessment
+      description: 'What the named targets are: internal services, cloud metadata endpoints or administrative
+        interfaces'
+    budgets:
+      tokens: 600000
+      tool_calls: 24
+      wall_clock_seconds: 360
+  agents:
+  - agent_id: investigation
+    budgets:
+      tokens: 300000
+      tool_calls: 24
+      wall_clock_seconds: 300
+  - agent_id: verification
+    budgets:
+      tokens: 120000
+      tool_calls: 12
+      wall_clock_seconds: 180
+  plan_budget:
+    tokens: 440000
+    tool_calls: 40
+    seconds: 480
+  evaluated_at: '2026-10-06T20:17:22+00:00'
+expect:
+  expected_agents:
+  - investigation
+  - verification
+  skill_of_agent:
+    investigation: web-path-traversal
+  injection_suspected: false

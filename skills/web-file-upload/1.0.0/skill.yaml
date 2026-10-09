@@ -4,6 +4,7 @@ id: web-file-upload
 version: 1.0.0
 status: draft
 owner: soc-engineering
+summary: "Malicious file upload to a web application: executable or script files sent to upload endpoints; decides whether a web shell was stored and later requested."
 allowed_agent_roles: [investigation]
 triggers:
   # QRadar rule IDs differ between installations: before approval the production QRadar's

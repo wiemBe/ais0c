@@ -20,6 +20,7 @@ from ais0c_agents import (
     CandidateSkill,
     OrchestratorTask,
     PlanAgent,
+    SkillEvidence,
     TriageDecision,
     orchestrator,
 )
@@ -28,7 +29,9 @@ from ais0c_agents.orchestrator import (
     FOCUS_SOURCE,
     NO_CANDIDATES,
     OFFENSE_SOURCE,
+    render_candidates,
 )
+from ais0c_contracts import SkillRef
 
 from .helpers import (
     BLOCK,
@@ -42,7 +45,9 @@ from .helpers import (
 )
 from .orchestrator_helpers import (
     CLAIM_MARKER,
+    DCSYNC,
     DCSYNC_EVIDENCE,
+    DCSYNC_SUMMARY,
     DESCRIPTION_MARKER,
     FOCUS,
     RATIONALE_MARKER,
@@ -98,6 +103,7 @@ def test_the_task_carries_the_fields_of_t45() -> None:
     assert set(CandidateSkill.model_fields) == {
         "ref",
         "agent_role",
+        "summary",
         "required_evidence",
         "budgets",
     }
@@ -271,9 +277,11 @@ def test_the_candidates_manifest_information_is_part_of_the_prompt() -> None:
     outside = outside_blocks(text)
     assert (
         "- skill_id windows-dcsync, skill_version 1.0.0, for investigation; budget tokens "
-        "120000, tool_calls 24, seconds 300. Required evidence:\n"
-        f"  - replication-events: {DCSYNC_EVIDENCE[0].description}\n"
-        f"  - request-source: {DCSYNC_EVIDENCE[1].description}"
+        "120000, tool_calls 24, seconds 300.\n"
+        f"  Summary: {DCSYNC_SUMMARY}\n"
+        "  Required evidence:\n"
+        f"    - replication-events: {DCSYNC_EVIDENCE[0].description}\n"
+        f"    - request-source: {DCSYNC_EVIDENCE[1].description}"
     ) in outside
     # Not data: no block holds it.
     assert all("windows-dcsync" not in content for content in blocks(text).values())
@@ -306,3 +314,35 @@ def test_the_user_prompt_is_the_tasks_objective() -> None:
 
     [(messages, info)] = script.requests
     assert model_inputs(messages, info)[1:] == ["Plan the rest of case case-4711."]
+
+
+def test_render_candidates_shows_the_summary() -> None:
+    second = dcsync_candidate().model_copy(
+        update={
+            "ref": SkillRef(
+                skill_id="web-sql-injection", version="1.0.0", content_hash=DCSYNC.content_hash
+            ),
+            "summary": "SQL injection against a web application behind the WAF.",
+            "required_evidence": (SkillEvidence(id="request-summary", description="Requests."),),
+        }
+    )
+    assert render_candidates((dcsync_candidate(), second)) == (
+        "- skill_id windows-dcsync, skill_version 1.0.0, for investigation; budget tokens "
+        "120000, tool_calls 24, seconds 300.\n"
+        f"  Summary: {DCSYNC_SUMMARY}\n"
+        "  Required evidence:\n"
+        f"    - replication-events: {DCSYNC_EVIDENCE[0].description}\n"
+        f"    - request-source: {DCSYNC_EVIDENCE[1].description}\n"
+        "- skill_id web-sql-injection, skill_version 1.0.0, for investigation; budget tokens "
+        "120000, tool_calls 24, seconds 300.\n"
+        "  Summary: SQL injection against a web application behind the WAF.\n"
+        "  Required evidence:\n"
+        "    - request-summary: Requests."
+    )
+
+
+@pytest.mark.parametrize("summary", ["One line.\nTwo lines.", "x" * 200 + "."])
+def test_candidate_with_a_bad_summary_is_refused(summary: str) -> None:
+    data = dcsync_candidate().model_dump() | {"summary": summary}
+    with pytest.raises(ValidationError):
+        CandidateSkill.model_validate(data)

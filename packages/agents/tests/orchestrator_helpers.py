@@ -70,6 +70,10 @@ INVESTIGATION_BUDGETS = Budgets(tokens=150000, tool_calls=24, wall_clock_seconds
 VERIFICATION_BUDGETS = Budgets(tokens=80000, tool_calls=12, wall_clock_seconds=180)
 PLAN_BUDGET = Budget(tokens=250000, tool_calls=40, seconds=480)
 DCSYNC = SkillRef(skill_id="windows-dcsync", version="1.0.0", content_hash="sha256:" + "a" * 64)
+DCSYNC_SUMMARY = (
+    "DCSync: an account asks a domain controller to replicate directory data and receives "
+    "password hashes in return."
+)
 DCSYNC_EVIDENCE = (
     SkillEvidence(
         id="replication-events",
@@ -149,6 +153,7 @@ def dcsync_candidate() -> CandidateSkill:
     return CandidateSkill(
         ref=DCSYNC,
         agent_role="investigation",
+        summary=DCSYNC_SUMMARY,
         required_evidence=DCSYNC_EVIDENCE,
         budgets=Budgets(tokens=120000, tool_calls=24, wall_clock_seconds=300),
     )

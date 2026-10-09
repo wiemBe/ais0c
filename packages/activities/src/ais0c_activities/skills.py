@@ -116,6 +116,7 @@ def candidate_skill(skill: Skill, *, agent_role: str) -> CandidateSkill:
     return CandidateSkill(
         ref=skill.ref,
         agent_role=agent_role,
+        summary=skill.manifest.summary,
         required_evidence=tuple(
             SkillEvidence(id=item.id, description=item.description)
             for item in skill.manifest.required_evidence

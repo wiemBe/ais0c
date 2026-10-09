@@ -27,6 +27,7 @@ top of `skills/`, such as this README, are not skills.
 | `version` | `MAJOR.MINOR.PATCH` |
 | `status` | `draft` or `approved` |
 | `owner` | The person or team that maintains the skill |
+| `summary` | One sentence in printable ASCII that ends with a period, at most 200 characters: the attack the skill investigates and what tells it apart from skills that share its technique (T-94). The Orchestrator sees it next to each candidate, as approved content, and chooses between candidates by it |
 | `allowed_agent_roles` | The agents that may use it, e.g. `[investigation]` |
 | `triggers` | `rule_ids`, `log_source_types`, `attack_techniques`: when the router offers the skill |
 | `required_telemetry` | Telemetry classes and the events the method reads; each item's `telemetry_class` is one of the classes of `ais0c_storage.TelemetryClass` except `siem-internal` (decision T-95). Without a `required: true` source the agent reports a data gap instead of concluding; a `required: false` source only adds detail. |

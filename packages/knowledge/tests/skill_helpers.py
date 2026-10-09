@@ -45,6 +45,7 @@ def manifest_data(**changes: object) -> dict[str, Any]:
         "version": "1.0.0",
         "status": "draft",
         "owner": "soc-engineering",
+        "summary": "Password spraying: one source tries a few passwords against many accounts.",
         "allowed_agent_roles": ["investigation"],
         "triggers": {
             "rule_ids": [100001],

@@ -25,7 +25,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Annotated, Final, Self
 
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, StringConstraints, model_validator
 from pydantic_ai import Agent, AgentRetries
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.models import Model
@@ -106,6 +106,10 @@ class TriageDecision(BaseModel):
         )
 
 
+# As ais0c_knowledge.skills.manifest.Summary; the agents package cannot import knowledge.
+SkillSummary = Annotated[str, StringConstraints(max_length=200, pattern=r"^[!-~][ -~]*\.$")]
+
+
 class CandidateSkill(BaseModel):
     """A skill the router listed for one agent (ais0c_knowledge.skills.candidate_skills).
 
@@ -118,6 +122,8 @@ class CandidateSkill(BaseModel):
     ref: SkillRef
     agent_role: Name
     """The agent the router listed it for; a plan step of that agent may use it."""
+    summary: SkillSummary
+    """What the skill investigates; the Orchestrator chooses between candidates by it."""
     required_evidence: Annotated[tuple[SkillEvidence, ...], Field(min_length=1, max_length=10)]
     budgets: Budgets
 
@@ -271,8 +277,9 @@ class OrchestratorAgent:
 def render_candidates(candidates: Sequence[CandidateSkill]) -> str:
     """The candidate skills as prompt text: approved content, not wrapped (architecture §7).
 
-    Per skill: its ID and version, the agent it is for, its budget and its required evidence.
-    The loader scanned this text when it loaded the skill.
+    Per skill: its ID and version, the agent it is for, its budget, its summary and its required
+    evidence. The summary is not wrapped: it is approved content, like the rest. The loader
+    scanned this text when it loaded the skill.
     """
     if not candidates:
         return NO_CANDIDATES
@@ -281,10 +288,13 @@ def render_candidates(candidates: Sequence[CandidateSkill]) -> str:
         ref = candidate.ref
         lines.append(
             f"- skill_id {ref.skill_id}, skill_version {ref.version}, for "
-            f"{candidate.agent_role}; budget {_budget(candidate.budgets)}. Required evidence:"
+            f"{candidate.agent_role}; budget {_budget(candidate.budgets)}."
         )
+        lines.append(f"  Summary: {candidate.summary}")
+        lines.append("  Required evidence:")
         lines.extend(
-            f"  - {evidence.id}: {evidence.description}" for evidence in candidate.required_evidence
+            f"    - {evidence.id}: {evidence.description}"
+            for evidence in candidate.required_evidence
         )
     return "\n".join(lines)
 

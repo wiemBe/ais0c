@@ -4,6 +4,7 @@ id: windows-security-log-cleared
 version: 1.0.0
 status: draft
 owner: soc-engineering
+summary: "Log clearing: the Security event log of a Windows host was erased."
 allowed_agent_roles: [investigation]
 triggers:
   # QRadar rule IDs differ between installations: before approval the production QRadar's

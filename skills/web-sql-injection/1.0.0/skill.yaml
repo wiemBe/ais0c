@@ -4,6 +4,7 @@ id: web-sql-injection
 version: 1.0.0
 status: draft
 owner: soc-engineering
+summary: "SQL injection against a web application behind the WAF (WAF attack_type SQL-Injection); decides whether the injection reached the application and was answered."
 allowed_agent_roles: [investigation]
 triggers:
   # QRadar rule IDs differ between installations: before approval the production QRadar's
@@ -11,7 +12,7 @@ triggers:
   rule_ids: []
   log_source_types: []
   # T1190 is shared by several web skills: the router offers them all, the orchestrator
-  # connects the one whose Purpose names this WAF attack type.
+  # chooses by the summary.
   attack_techniques: [T1190]
 required_telemetry:
   - telemetry_class: waf

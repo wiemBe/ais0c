@@ -476,7 +476,7 @@ def test_the_runner_plays_the_orchestrator_and_the_reporting_suites() -> None:
     runs = {
         (record.envelope.agent_id, record.envelope.scenario_id): record for record in report.runs
     }
-    assert len(report.runs) == 2 * (4 + 4)
+    assert len(report.runs) == 2 * (7 + 4)
     # Orchestrator: orc-02 expects injection_suspected, which the scripted plan does not set.
     outcomes = {scenario.scenario_id: scenario.status for scenario in report.scenarios}
     assert outcomes["orc-01-dcsync-chain"] == "passed"

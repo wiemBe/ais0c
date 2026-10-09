@@ -380,3 +380,9 @@ def test_errors_name_the_manifest(tmp_path: Path) -> None:
     directory = write_skill(tmp_path, manifest_data(owner=""))
     with pytest.raises(SkillError, match=str(directory / "skill.yaml")):
         load_skill(directory)
+
+
+def test_summary_is_covered_by_the_content_hash() -> None:
+    first = dump(manifest_data(summary="Password spraying: one source, many accounts."))
+    second = dump(manifest_data(summary="Password guessing: one source, one account."))
+    assert content_hash(first, INSTRUCTIONS) != content_hash(second, INSTRUCTIONS)

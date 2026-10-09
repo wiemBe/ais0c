@@ -4,6 +4,7 @@ id: vpn-new-country
 version: 1.0.0
 status: draft
 owner: soc-engineering
+summary: "A VPN login from a country the user has not logged in from before."
 allowed_agent_roles: [investigation]
 triggers:
   # QRadar rule IDs differ between installations: before approval the production QRadar's

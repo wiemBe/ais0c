@@ -4,6 +4,7 @@ id: windows-account-discovery
 version: 1.0.0
 status: draft
 owner: soc-engineering
+summary: "Account and permission discovery: someone is enumerating users, groups and privileges to pick the next target."
 allowed_agent_roles: [investigation]
 triggers:
   # QRadar rule IDs differ between installations: before approval the production

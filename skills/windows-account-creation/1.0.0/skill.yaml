@@ -4,6 +4,7 @@ id: windows-account-creation
 version: 1.0.0
 status: draft
 owner: soc-engineering
+summary: "A new account created to keep access: after a compromise, an intruder with administrative rights creates an account that looks like routine infrastructure."
 allowed_agent_roles: [investigation]
 triggers:
   # QRadar rule IDs differ between installations: before approval the production QRadar's

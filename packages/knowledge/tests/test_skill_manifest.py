@@ -23,6 +23,7 @@ ARCHITECTURE_FIELDS = {
     "version",
     "status",
     "owner",
+    "summary",
     "allowed_agent_roles",
     "triggers",
     "required_telemetry",
@@ -326,3 +327,42 @@ def test_expiry_needs_an_aware_time() -> None:
     manifest = parse_manifest(manifest_data())
     with pytest.raises(ValueError, match="timezone-aware"):
         manifest.is_expired(datetime(2026, 10, 4, 12, 0))  # noqa: DTZ001 - the naive time is the test
+
+
+def test_manifest_requires_a_summary() -> None:
+    data = manifest_data()
+    del data["summary"]
+    assert "summary" in str(refused(data))
+
+
+@pytest.mark.parametrize(
+    "summary",
+    [
+        "x" * 200 + ".",
+        "Spraying.\nSecond line.",
+        "Spraying \N{EM DASH} one source, many accounts.",
+        "Spraying: one source, many accounts",
+        "",
+        " Leading space.",
+    ],
+    ids=["longer-than-200", "newline", "non-ascii", "no-final-period", "empty", "leading-space"],
+)
+def test_a_malformed_summary_is_refused(summary: str) -> None:
+    refused(manifest_data(summary=summary))
+
+
+def test_summary_longer_than_200_is_refused() -> None:
+    refused(manifest_data(summary="x" * 200 + "."))
+    parse_manifest(manifest_data(summary="x" * 199 + "."))
+
+
+def test_summary_with_a_newline_is_refused() -> None:
+    refused(manifest_data(summary="One line.\nAnother line."))
+
+
+def test_summary_with_non_ascii_is_refused() -> None:
+    refused(manifest_data(summary="DCSync \N{EM DASH} replication of password hashes."))
+
+
+def test_summary_without_a_final_period_is_refused() -> None:
+    refused(manifest_data(summary="DCSync: replication of password hashes"))

@@ -5,6 +5,7 @@ id: password-spraying
 version: 1.0.0
 status: draft
 owner: soc-engineering
+summary: "Password spraying: one source tries a few passwords against many accounts (Windows 4625, 4771, 4776 or VPN failures) and stays under each account's lockout threshold."
 allowed_agent_roles: [investigation]
 triggers:
   # QRadar rule IDs differ between installations: before approval the production QRadar's

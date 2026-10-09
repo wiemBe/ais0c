@@ -334,3 +334,75 @@ def test_dcsync_approval_comes_from_org_context(skills: dict[str, Skill]) -> Non
     sentences = [part for part in re.split(r"(?<=[.;:]) ", text) if "MSOL_" in part]
     assert sentences
     assert all("not evidence" in sentence for sentence in sentences)
+
+
+PLANNED_SUMMARIES = {
+    "web-sql-injection": (
+        "SQL injection against a web application behind the WAF (WAF attack_type SQL-Injection); decides whether the injection reached the application and was answered."
+    ),
+    "web-command-injection": (
+        "OS command injection against a web application behind the WAF: shell syntax in request inputs (WAF attack_type Command Execution); decides whether the server ran a command."
+    ),
+    "web-path-traversal": (
+        "Path traversal against a web application behind the WAF: parent-directory segments in the URI or parameters (WAF attack_type Path Traversal); decides whether files were served."
+    ),
+    "web-deserialization": (
+        "Insecure deserialization against a web application: serialized-object and gadget signatures in requests; decides whether the server unpacked the object into running code."
+    ),
+    "web-file-upload": (
+        "Malicious file upload to a web application: executable or script files sent to upload endpoints; decides whether a web shell was stored and later requested."
+    ),
+    "web-ssrf": (
+        "Server-side request forgery: request parameters naming internal, link-local or metadata addresses; decides whether the web server fetched them inside the network."
+    ),
+    "password-spraying": (
+        "Password spraying: one source tries a few passwords against many accounts (Windows 4625, 4771, 4776 or VPN failures) and stays under each account's lockout threshold."
+    ),
+    "windows-brute-force": (
+        "Password guessing against one Windows account: many 4625, 4771 or 4776 failures for a single account name from one or a few sources."
+    ),
+    "vpn-brute-force": (
+        "Brute force against the VPN portal: many SSL VPN authentication failures from one remote address, and whether a tunnel came up afterwards."
+    ),
+    "web-credential-stuffing": (
+        "Credential stuffing: stolen username and password pairs replayed against the bank's web login endpoints, many usernames per source in the WAF request log."
+    ),
+    "email-phishing": (
+        "Phishing mail that makes the recipient open, click or comply: gateway verdicts, link and attachment shapes, and clicks from inside to the campaign's destinations."
+    ),
+    "email-sender-spoofing": (
+        "Sender spoofing: mail that claims to come from the bank or a partner but fails sender authentication, with display name and reply-to mismatches."
+    ),
+    "web-open-redirect": (
+        "Open redirect abuse: the bank's web application forwards users to an external URL taken from the request, so a phishing link starts at the bank's domain."
+    ),
+    "network-c2-beaconing": (
+        "Command-and-control beaconing: an internal host connects to the same external destination at regular intervals; finds what on the host beacons."
+    ),
+    "network-data-exfiltration": (
+        "Data leaving the network: an internal host sends far more bytes to an external destination than its baseline, through the firewall or a web application."
+    ),
+}
+
+
+def test_every_skill_has_a_summary(skills: dict[str, Skill]) -> None:
+    assert len(skills) == 60
+    for skill_id, skill in skills.items():
+        assert skill.manifest.summary, skill_id
+
+
+def test_skills_sharing_a_technique_have_distinct_summaries(skills: dict[str, Skill]) -> None:
+    by_technique: dict[str, list[str]] = {}
+    for skill in skills.values():
+        for technique in skill.manifest.triggers.attack_techniques:
+            by_technique.setdefault(technique, []).append(skill.manifest.summary)
+    shared = {name: texts for name, texts in by_technique.items() if len(texts) > 1}
+    assert {"T1190", "T1110", "T1566.002", "T1041"} <= set(shared)
+    for technique, texts in shared.items():
+        assert len(set(texts)) == len(texts), technique
+
+
+def test_shared_technique_summaries_are_the_planned_texts(skills: dict[str, Skill]) -> None:
+    assert len(PLANNED_SUMMARIES) == 15
+    for skill_id, text in PLANNED_SUMMARIES.items():
+        assert skills[skill_id].manifest.summary == text, skill_id

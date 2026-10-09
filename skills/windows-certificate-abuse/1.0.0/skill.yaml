@@ -5,6 +5,7 @@ id: windows-certificate-abuse
 version: 1.0.0
 status: draft
 owner: soc-engineering
+summary: "Certificate abuse: the enterprise certificate services issued, or an attacker misused, a certificate that authenticates as a powerful identity."
 allowed_agent_roles: [investigation]
 triggers:
   # QRadar rule IDs differ between installations: before approval the production

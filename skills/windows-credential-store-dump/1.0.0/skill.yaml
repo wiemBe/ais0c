@@ -5,6 +5,7 @@ id: windows-credential-store-dump
 version: 1.0.0
 status: draft
 owner: soc-engineering
+summary: "A dump of credentials at rest: the local account database, the domain controller's directory database, or the LSA secrets store."
 allowed_agent_roles: [investigation]
 triggers:
   # QRadar rule IDs differ between installations: before approval the production

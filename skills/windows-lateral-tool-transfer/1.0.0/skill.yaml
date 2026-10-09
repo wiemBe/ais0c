@@ -4,6 +4,7 @@ id: windows-lateral-tool-transfer
 version: 1.0.0
 status: draft
 owner: soc-engineering
+summary: "Lateral tool transfer: executables written to other hosts over administrative shares."
 allowed_agent_roles: [investigation]
 triggers:
   # QRadar rule IDs differ between installations: before approval the production
