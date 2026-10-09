@@ -104,11 +104,15 @@ Sırayla:
    - `test_cut_keeps_the_final_result_part`: 10 araç çağrısı ve bir `final_result`, kalan bütçe 3. Üç çağrı kalır, `final_result` da kalır.
    - `test_a_batch_within_the_budget_is_untouched`: kalan 5, grup 3; cevap aynen döner.
    - `test_cut_is_deterministic`: aynı cevap ve sayaçla iki çağrı aynı sonucu verir.
-4. **Ölçüm (gerçek model):** dev stack'in `litellm`'i yeni config'le yeniden başlatılır, ana checkout'tan:
+4. **Ölçüm (gerçek model):** dev stack'in `litellm`'i bu worktree'deki yeni config'le yeniden başlatılır. Compose, config'i kendi dosyasının checkout'undan bağlar (`../../config/litellm/litellm.dev.yaml`), bu yüzden compose dosyası worktree'den, `.env` ana checkout'tan verilir:
 
    ```bash
-   docker compose -p ais0c-dev -f deploy/compose/docker-compose.dev.yaml up -d --no-deps --force-recreate litellm
+   docker compose -p ais0c-dev --env-file /home/efe/Documents/ais0c/deploy/compose/.env \
+       -f /home/efe/Documents/ais0c-T-073/deploy/compose/docker-compose.dev.yaml \
+       up -d --no-deps --force-recreate litellm
    ```
+
+   Ana checkout'tan koşulursa `main`'deki eski config yüklenir ve ölçüm geçersiz olur. Ölçümden sonra `litellm` böyle kalır; planner birleştirmede ana checkout'tan yeniden kurar.
 
    Ardından komut worktree'den koşulur:
 
