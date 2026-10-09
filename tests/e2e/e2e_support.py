@@ -11,6 +11,7 @@ import secrets
 import signal
 import socket
 import subprocess
+import sys
 import time
 import urllib.error
 import urllib.request
@@ -146,6 +147,28 @@ SCENARIO_SPECS: Final = {
         ),
     )
 }
+
+
+def loggen_command(
+    settings: "LabSettings", out_dir: Path, *, python: str = sys.executable
+) -> list[str]:
+    """The generator's command line for the selected scenario (T-008, T-058)."""
+    return [
+        python,
+        "-m",
+        "ais0c_harness.loggen",
+        "run",
+        "--scenario",
+        settings.scenario,
+        "--target",
+        settings.syslog_target,
+        "--seed",
+        settings.seed,
+        "--speed",
+        "100000",
+        "--out-dir",
+        str(out_dir),
+    ]
 
 
 class E2ESetupError(RuntimeError):

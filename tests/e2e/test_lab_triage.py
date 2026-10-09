@@ -38,6 +38,7 @@ from e2e_support import (
     Process,
     agent_profile,
     free_port,
+    loggen_command,
     new_token,
     qradar_get,
     write_secret,
@@ -381,21 +382,7 @@ async def _first_intake_run(client: Client, worker: Process) -> IntakeCheckpoint
 def _send_scenario(settings: LabSettings, tmp_path: Path) -> None:
     """T-008's generator, over TCP syslog; time compressed so the attack is sent at once."""
     subprocess.run(  # noqa: S603 - the repository's own generator
-        [
-            sys.executable,
-            "-m",
-            "ais0c_harness.loggen",
-            "run",
-            "--scenario",
-            "--target",
-            settings.syslog_target,
-            "--seed",
-            settings.seed,
-            "--speed",
-            "100000",
-            "--out-dir",
-            str(tmp_path),
-        ],
+        loggen_command(settings, tmp_path),
         check=True,
         cwd=REPO_ROOT,
     )
