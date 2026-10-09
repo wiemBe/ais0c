@@ -127,6 +127,13 @@ class OrchestratorInput(_Input):
     plan_budget: Budget
 
 
+class TelemetrySource(_Input):
+    telemetry_class: str
+    type_name: str | None
+    log_source_ids: tuple[int, ...]
+    total: int
+
+
 class InvestigationInput(_Input):
     """What Investigation gets (T-45): Triage's structured decision, its claims and its
     investigation focus; the claims' evidence comes beside it."""
@@ -140,6 +147,7 @@ class InvestigationInput(_Input):
     investigation_focus: tuple[str, ...]
     claims: tuple[Claim, ...]
     data_gaps: tuple[DataGap, ...]
+    telemetry: tuple[TelemetrySource, ...] | None = None
 
 
 class VerificationInput(_Input):

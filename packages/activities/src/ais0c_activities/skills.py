@@ -14,7 +14,14 @@ loader's Skill becomes the agents' own types here: `skill_input` for Investigati
 from datetime import datetime
 from typing import Final
 
-from ais0c_agents import Budgets, CandidateSkill, SkillEvidence, SkillInput, SkillTelemetry
+from ais0c_agents import (
+    Budgets,
+    CandidateSkill,
+    SkillEvidence,
+    SkillInput,
+    SkillTelemetry,
+    SkillTelemetrySource,
+)
 from ais0c_contracts import Budget, EnrichmentContext, OffenseSnapshot, SkillRef
 from ais0c_knowledge.skills import AgentRole, Mode, Skill, SkillRegistry, candidate_skills
 
@@ -78,7 +85,9 @@ def skill_budget(skill: Skill) -> Budget:
     )
 
 
-def skill_input(skill: Skill) -> SkillInput:
+def skill_input(
+    skill: Skill, *, telemetry_sources: tuple[SkillTelemetrySource, ...] | None = None
+) -> SkillInput:
     """The skill as Investigation's task carries it (PR-T-043)."""
     manifest = skill.manifest
     return SkillInput(
@@ -98,6 +107,7 @@ def skill_input(skill: Skill) -> SkillInput:
             SkillEvidence(id=item.id, description=item.description)
             for item in manifest.required_evidence
         ),
+        telemetry_sources=telemetry_sources,
     )
 
 

@@ -18,7 +18,7 @@ changes while it runs.
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Final, Protocol, Self
+from typing import Any, Final, Protocol, Self, cast
 
 from pydantic_ai import Agent
 from pydantic_ai.durable_exec.temporal import TemporalDurability
@@ -46,6 +46,7 @@ from ais0c_agents import (
     ReviewedDecision,
     RunDeps,
     SkillInput,
+    SkillTelemetrySource,
     ToolsetProfile,
     TriageDecision,
     VerificationAgent,
@@ -120,7 +121,7 @@ class OrchestratorInputs(Protocol):
     def plan_budget(self) -> Budget: ...
 
 
-class InvestigationInputs(Protocol):
+class _InvestigationInputsBase(Protocol):
     @property
     def offense(self) -> OffenseSnapshot: ...
     @property
@@ -137,6 +138,24 @@ class InvestigationInputs(Protocol):
     def claims(self) -> Sequence[Claim]: ...
     @property
     def data_gaps(self) -> Sequence[DataGap]: ...
+
+
+class InvestigationInputs(_InvestigationInputsBase, Protocol):
+    """The workflow input, including telemetry resolved by T-071."""
+
+    @property
+    def telemetry(self) -> Sequence["TelemetrySourceInput"] | None: ...
+
+
+class TelemetrySourceInput(Protocol):
+    @property
+    def telemetry_class(self) -> str: ...
+    @property
+    def type_name(self) -> str | None: ...
+    @property
+    def log_source_ids(self) -> Sequence[int]: ...
+    @property
+    def total(self) -> int: ...
 
 
 class VerificationInputs(Protocol):
@@ -213,7 +232,7 @@ def orchestrator_task(
 
 def investigation_task(
     task: AgentTask,
-    inputs: InvestigationInputs,
+    inputs: _InvestigationInputsBase,
     evidence: Sequence[EvidenceRef],
     skills: SkillRegistry,
     skill: SkillRef | None,
@@ -239,7 +258,18 @@ def investigation_task(
             data_gaps=list(inputs.data_gaps),
         ),
         context_evidence=cited,
-        skill=None if skill is None else _skill_input(skills, skill),
+        skill=(
+            None
+            if skill is None
+            else _skill_input(
+                skills,
+                skill,
+                cast(
+                    "Sequence[TelemetrySourceInput] | None",
+                    getattr(inputs, "telemetry", None),
+                ),
+            )
+        ),
     )
 
 
@@ -346,13 +376,30 @@ def _fit(
     return kept, [ref for ref in evidence if ref.evidence_id in chosen]
 
 
-def _skill_input(skills: SkillRegistry, ref: SkillRef) -> SkillInput:
+def _skill_input(
+    skills: SkillRegistry,
+    ref: SkillRef,
+    telemetry: Sequence[TelemetrySourceInput] | None,
+) -> SkillInput:
     skill = skills.get(ref.skill_id, ref.version)
     if skill is None or skill.content_hash != ref.content_hash:
         # The record activity checked the skill in this worker; a replay on a worker that loaded
         # other skills must not run the agent with other instructions.
         raise RuntimeError(f"skill {ref.skill_id} {ref.version} is not the one this worker loaded")
-    return skill_input(skill)
+    sources = (
+        None
+        if telemetry is None
+        else tuple(
+            SkillTelemetrySource(
+                telemetry_class=source.telemetry_class,
+                type_name=source.type_name,
+                log_source_ids=tuple(source.log_source_ids),
+                total=source.total,
+            )
+            for source in telemetry
+        )
+    )
+    return skill_input(skill, telemetry_sources=sources)
 
 
 def _budgets(budget: Budget) -> Budgets:

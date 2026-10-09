@@ -57,6 +57,7 @@ from ais0c_workflows.names import (
     PLAN_BUDGETS,
     RECORD_EXECUTOR_FAILURE,
     RECORD_PLAN,
+    SKILL_TELEMETRY,
     TRIAGE_WORKFLOW,
     agent_workflow_id,
     triage_workflow_id,
@@ -84,6 +85,7 @@ with workflow.unsafe.imports_passed_through():
         InvestigationInput,
         OrchestratorInput,
         ReportingInput,
+        TelemetrySource,
         VerificationInput,
     )
     from ais0c_workflows.chain import (
@@ -162,6 +164,16 @@ class AgentChain:
         for step in plan.steps:
             decision = decision_of(triage, investigation)
             if step.agent_id == INVESTIGATION:
+                skill = _skill_of(step, candidates)
+                telemetry: tuple[TelemetrySource, ...] | None = None
+                if skill is not None:
+                    resolved = await call(
+                        SKILL_TELEMETRY,
+                        skill.skill_id,
+                        skill.version,
+                        result_type=list[TelemetrySource],
+                    )
+                    telemetry = tuple(resolved)
                 inputs = InvestigationInput(
                     offense=offense,
                     enrichment=enrichment,
@@ -171,6 +183,7 @@ class AgentChain:
                     investigation_focus=tuple(triage.investigation_focus),
                     claims=tuple(triage.claims),
                     data_gaps=tuple(triage.data_gaps),
+                    telemetry=telemetry,
                 )
                 investigation = await self._agent(
                     self._step_request(

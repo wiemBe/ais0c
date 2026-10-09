@@ -37,6 +37,17 @@ class SkillTelemetry(BaseModel):
     required: bool
 
 
+class SkillTelemetrySource(BaseModel):
+    """The installation's enabled log sources of one type that serve a telemetry class."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    telemetry_class: Slug
+    type_name: Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9 ._()/-]{1,255}$")] | None
+    log_source_ids: Annotated[tuple[int, ...], Field(max_length=20)]
+    total: Annotated[int, Field(ge=1)]
+
+
 class SkillEvidence(BaseModel):
     """Evidence the agent collects, or reports as a data gap, before it concludes."""
 
@@ -62,6 +73,7 @@ class SkillInput(BaseModel):
     instructions: Annotated[str, StringConstraints(min_length=1)]
     required_telemetry: Annotated[tuple[SkillTelemetry, ...], Field(min_length=1, max_length=10)]
     required_evidence: Annotated[tuple[SkillEvidence, ...], Field(min_length=1, max_length=10)]
+    telemetry_sources: tuple[SkillTelemetrySource, ...] | None = None
 
 
 def render_skill(skill: SkillInput | None) -> str:
@@ -77,6 +89,26 @@ def render_skill(skill: SkillInput | None) -> str:
     for telemetry in skill.required_telemetry:
         need = "required" if telemetry.required else "optional"
         lines.append(f"- {telemetry.telemetry_class} ({need}):")
+        if skill.telemetry_sources is not None:
+            sources = [
+                source
+                for source in skill.telemetry_sources
+                if source.telemetry_class == telemetry.telemetry_class
+            ]
+            if not sources:
+                lines.append(
+                    "  - In this installation: no enabled log source of this class; "
+                    "report a data gap for it."
+                )
+            for source in sorted(sources, key=lambda item: item.type_name or "a custom type"):
+                name = source.type_name if source.type_name is not None else "a custom type"
+                noun = "log source" if source.total == 1 else "log sources"
+                ids = ", ".join(str(log_source_id) for log_source_id in source.log_source_ids)
+                if source.total > len(source.log_source_ids):
+                    ids = f"{ids}, first {len(source.log_source_ids)} of {source.total}"
+                lines.append(
+                    f"  - In this installation: {name}, {source.total} {noun} (logsourceid {ids})."
+                )
         lines.extend(f"  - {event}" for event in telemetry.events)
     lines += ["", "## Required evidence", ""]
     lines.extend(f"- {evidence.id}: {evidence.description}" for evidence in skill.required_evidence)

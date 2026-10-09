@@ -82,6 +82,7 @@ CLOSE_CASE: Final = "close_case"
 # The agent chain of an evaluation (T-026): what the plan is made from and how it is recorded.
 EVALUATION_WINDOW: Final = "evaluation_window"
 CANDIDATE_SKILLS: Final = "candidate_skills"
+SKILL_TELEMETRY: Final = "skill_telemetry"
 PLAN_BUDGETS: Final = "plan_budgets"
 RECORD_PLAN: Final = "record_plan"
 # The executor calls of an evaluation (T-045): the case link of a note or e-mail, then the
@@ -141,6 +142,7 @@ ACTIVITY_NAMES: Final = frozenset(
         CLOSE_CASE,
         EVALUATION_WINDOW,
         CANDIDATE_SKILLS,
+        SKILL_TELEMETRY,
         PLAN_BUDGETS,
         RECORD_PLAN,
         CASE_URL,

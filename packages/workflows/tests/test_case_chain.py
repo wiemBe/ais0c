@@ -60,6 +60,7 @@ from ais0c_workflows.agent_runtime import (
     InvestigationInput,
     OrchestratorInput,
     ReportingInput,
+    TelemetrySource,
     VerificationInput,
 )
 from ais0c_workflows.names import CASE_TASK_QUEUE, OFFENSE_CLOSED
@@ -80,6 +81,12 @@ SKILL = SkillRef(
     content_hash="sha256:" + "ab" * 32,
 )
 SKILL_BUDGET = Budget(tokens=120000, tool_calls=24, seconds=300)
+SKILL_TELEMETRY = TelemetrySource(
+    telemetry_class="windows",
+    type_name="Microsoft Windows Security Event Log",
+    log_source_ids=(12, 15),
+    total=2,
+)
 
 
 def claim(text: str, *evidence_ids: str) -> Claim:
@@ -207,6 +214,7 @@ async def chain(
     agents: AgentBehavior = answer_agents,
     floor_level: Level | None = None,
     candidates: tuple[tuple[str, SkillRef, Budget], ...] = (),
+    telemetry: tuple[TelemetrySource, ...] = (),
 ) -> CaseFakes:
     now = await env.get_current_time()
     fakes = CaseFakes(
@@ -215,6 +223,7 @@ async def chain(
         triage_behavior=deciding(triage() if result is None else result),
         agent_behavior=agents,
         candidates=candidates,
+        telemetry=telemetry,
     )
     return await decided_once(fakes, env)
 
@@ -331,8 +340,10 @@ async def test_without_investigation_in_the_plan_triage_decides(env: WorkflowEnv
     assert (decision.verdict, decision.ai_level) == (CaseVerdict.SUSPICIOUS, Level.MEDIUM)
 
 
-async def test_a_step_runs_with_the_skill_the_plan_chose(env: WorkflowEnvironment) -> None:
-    """The step's skill reaches the run with its content hash, for begin_agent_run to check."""
+async def test_investigation_input_carries_the_skill_telemetry(
+    env: WorkflowEnvironment,
+) -> None:
+    """The chosen skill and its resolved telemetry reach Investigation exactly once."""
 
     async def with_skill(call: AgentCall) -> ChainResult:
         if call.agent is AgentKind.ORCHESTRATOR:
@@ -344,7 +355,10 @@ async def test_a_step_runs_with_the_skill_the_plan_chose(env: WorkflowEnvironmen
         return await answer_agents(call)
 
     fakes = await chain(
-        env, agents=with_skill, candidates=(("investigation", SKILL, SKILL_BUDGET),)
+        env,
+        agents=with_skill,
+        candidates=(("investigation", SKILL, SKILL_BUDGET),),
+        telemetry=(SKILL_TELEMETRY,),
     )
 
     orchestrator = only(fakes.requests(AgentKind.ORCHESTRATOR))
@@ -355,8 +369,21 @@ async def test_a_step_runs_with_the_skill_the_plan_chose(env: WorkflowEnvironmen
         SKILL,
         SKILL_BUDGET,
     )
-    assert only(fakes.requests(AgentKind.INVESTIGATION)).skill == SKILL
+    investigation = only(fakes.requests(AgentKind.INVESTIGATION))
+    assert investigation.skill == SKILL
+    assert isinstance(investigation.inputs, InvestigationInput)
+    assert investigation.inputs.telemetry == (SKILL_TELEMETRY,)
+    assert fakes.telemetry_calls == [(SKILL.skill_id, SKILL.version)]
     assert only(fakes.requests(AgentKind.VERIFICATION)).skill is None
+
+
+async def test_no_skill_no_telemetry_call(env: WorkflowEnvironment) -> None:
+    fakes = await chain(env, agents=investigates, telemetry=(SKILL_TELEMETRY,))
+
+    investigation = only(fakes.requests(AgentKind.INVESTIGATION))
+    assert isinstance(investigation.inputs, InvestigationInput)
+    assert investigation.inputs.telemetry is None
+    assert fakes.telemetry_calls == []
 
 
 @pytest.mark.parametrize(

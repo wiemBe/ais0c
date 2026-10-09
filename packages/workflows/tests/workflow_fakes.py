@@ -51,6 +51,7 @@ from ais0c_workflows.agent_runtime import (
     AgentKind,
     InvestigationInput,
     ReportingInput,
+    TelemetrySource,
     VerificationInput,
 )
 from ais0c_workflows.group_summary import GroupRule, GroupValueCount, GroupValues
@@ -86,6 +87,7 @@ from ais0c_workflows.names import (
     RECORD_PLAN,
     REEVALUATION_INTERVAL,
     SEND_EMAIL,
+    SKILL_TELEMETRY,
     START_CASE,
     START_EVALUATION,
     TRIAGE_WORKFLOW,
@@ -629,6 +631,7 @@ class CaseFakes:
         triage_behavior: TriageBehavior = decide_at_once,
         agent_behavior: AgentBehavior = answer_agents,
         candidates: Sequence[tuple[str, SkillRef, Budget]] = (),
+        telemetry: Sequence[TelemetrySource] = (),
         note_behavior: ExecutorBehavior = written,
         email_behavior: ExecutorBehavior = email_sent,
         case_url_base: str = "https://ais0c.example.com/cases",
@@ -641,6 +644,8 @@ class CaseFakes:
         self.triage_behavior = triage_behavior
         self.agent_behavior = agent_behavior
         self.candidates = list(candidates)
+        self.telemetry = list(telemetry)
+        self.telemetry_calls: list[tuple[str, str]] = []
         self.note_behavior = note_behavior
         self.email_behavior = email_behavior
         self.case_url_base = case_url_base
@@ -682,6 +687,7 @@ class CaseFakes:
             self.record_executor_failure,
             self.evaluation_window,
             self.candidate_skills,
+            self.skill_telemetry,
             self.plan_budgets,
             self.record_plan,
             self.scripted_agent,
@@ -842,6 +848,11 @@ class CaseFakes:
         self, offense: OffenseSnapshot, enrichment: EnrichmentContext
     ) -> list[tuple[str, SkillRef, Budget]]:
         return self.candidates
+
+    @activity.defn(name=SKILL_TELEMETRY)
+    async def skill_telemetry(self, skill_id: str, version: str) -> list[TelemetrySource]:
+        self.telemetry_calls.append((skill_id, version))
+        return self.telemetry
 
     @activity.defn(name=PLAN_BUDGETS)
     async def plan_budgets(self) -> tuple[Budget, dict[str, Budget]]:

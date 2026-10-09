@@ -23,6 +23,7 @@ AgentWorkflow, for each chain agent run:
 The audit entries are the system's (`actor_kind` system, `actor_id` the case workflow).
 """
 
+import re
 from collections.abc import Callable, Mapping
 from datetime import datetime
 from typing import Self
@@ -43,11 +44,12 @@ from ais0c_activities.names import (
     LOAD_EVIDENCE,
     PLAN_BUDGETS,
     RECORD_PLAN,
+    SKILL_TELEMETRY,
 )
 from ais0c_activities.settings import CaseSettings
 from ais0c_activities.skills import candidates, check_skill
 from ais0c_activities.triage import evaluation_window
-from ais0c_agents import AgentManifest
+from ais0c_agents import AgentManifest, SkillTelemetrySource
 from ais0c_contracts import (
     AgentTask,
     Budget,
@@ -63,7 +65,7 @@ from ais0c_contracts import (
     Usage,
     VerificationResult,
 )
-from ais0c_knowledge.skills import Mode, SkillRegistry
+from ais0c_knowledge.skills import Mode, SkillRegistry, scan_text
 from ais0c_policy import new_nonce
 from ais0c_storage import ActorKind
 from ais0c_storage.repositories import (
@@ -71,6 +73,7 @@ from ais0c_storage.repositories import (
     finish_agent_run,
     get_agent_run,
     get_evidence_refs,
+    list_catalog_log_sources,
     start_agent_run,
 )
 
@@ -80,6 +83,7 @@ PLAN_REPLACED = "case.plan.replaced"
 PLAN_STEPS_DROPPED = "case.plan.steps_dropped"
 SKILL_REJECTED = "case.skill.rejected"
 AGENT_RUN_OBJECT = "agent_run"
+SAFE_TYPE_NAME = re.compile(r"^[A-Za-z0-9 ._()/-]{1,255}$")
 # The agents a plan step can run, whose manifest budgets the plan is cut to (T-41).
 PLAN_AGENTS = ("investigation", "verification")
 
@@ -128,6 +132,7 @@ class ChainActivities:
         return [
             self.evaluation_window,
             self.candidate_skills,
+            self.skill_telemetry,
             self.plan_budgets,
             self.record_plan,
             self.begin_agent_run,
@@ -150,6 +155,35 @@ class ChainActivities:
         return candidates(
             self._skills, offense, enrichment, now=self._clock(), mode=self._skills_mode
         )
+
+    @activity.defn(name=SKILL_TELEMETRY)
+    async def skill_telemetry(self, skill_id: str, version: str) -> list[SkillTelemetrySource]:
+        """The installation's sources for each telemetry class the loaded skill asks for."""
+        skill = self._skills.get(skill_id, version)
+        if skill is None:
+            return []
+        resolved: list[SkillTelemetrySource] = []
+        classes = dict.fromkeys(item.telemetry_class for item in skill.manifest.required_telemetry)
+        async with self._sessions() as session:
+            for telemetry_class in classes:
+                rows = await list_catalog_log_sources(session, telemetry_class=telemetry_class)
+                by_type: dict[str, list[int]] = {}
+                for row in rows:
+                    by_type.setdefault(row.type_name, []).append(row.log_source_id)
+                for type_name, log_source_ids in sorted(by_type.items()):
+                    resolved.append(
+                        SkillTelemetrySource(
+                            telemetry_class=telemetry_class.value,
+                            type_name=(
+                                type_name
+                                if SAFE_TYPE_NAME.fullmatch(type_name) and not scan_text(type_name)
+                                else None
+                            ),
+                            log_source_ids=tuple(sorted(log_source_ids)[:20]),
+                            total=len(log_source_ids),
+                        )
+                    )
+        return resolved
 
     @activity.defn(name=PLAN_BUDGETS)
     async def plan_budgets(self) -> tuple[Budget, dict[str, Budget]]:

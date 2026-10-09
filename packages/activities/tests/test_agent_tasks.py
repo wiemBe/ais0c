@@ -19,7 +19,7 @@ from ais0c_activities import (
     reporting_task,
     verification_task,
 )
-from ais0c_agents import TriageDecision
+from ais0c_agents import TriageDecision, render_skill
 from ais0c_contracts import (
     AgentTask,
     Budget,
@@ -110,6 +110,14 @@ class Candidate:
 
 
 @dataclass(frozen=True)
+class Telemetry:
+    telemetry_class: str
+    type_name: str | None
+    log_source_ids: tuple[int, ...]
+    total: int
+
+
+@dataclass(frozen=True)
 class Inputs:
     """The union of the four input models' attributes."""
 
@@ -136,6 +144,7 @@ class Inputs:
         default_factory=lambda: Budget(tokens=250000, tool_calls=40, seconds=480)
     )
     urgent_event_candidates: tuple[UrgentEvent, ...] = ()
+    telemetry: tuple[Telemetry, ...] | None = None
 
 
 @pytest.fixture
@@ -193,7 +202,17 @@ def test_a_candidate_this_worker_did_not_load_stops_the_run(skills: SkillRegistr
 def test_investigation_gets_triages_claims_their_evidence_and_the_skill(
     skills: SkillRegistry,
 ) -> None:
-    inputs = Inputs(claims=(claim(1, 1, 2), claim(2, 2)))
+    inputs = Inputs(
+        claims=(claim(1, 1, 2), claim(2, 2)),
+        telemetry=(
+            Telemetry(
+                telemetry_class="windows",
+                type_name="Microsoft Windows Security Event Log",
+                log_source_ids=(12, 15),
+                total=2,
+            ),
+        ),
+    )
 
     built = investigation_task(
         task("investigation"), inputs, [ref(1), ref(2)], skills, dcsync(skills)
@@ -210,6 +229,10 @@ def test_investigation_gets_triages_claims_their_evidence_and_the_skill(
     assert built.skill is not None
     assert loaded is not None
     assert (built.skill.ref, built.skill.instructions) == (loaded.ref, loaded.instructions)
+    assert (
+        "In this installation: Microsoft Windows Security Event Log, 2 log sources "
+        "(logsourceid 12, 15)."
+    ) in render_skill(built.skill)
     assert investigation_task(task("investigation"), inputs, [], skills, None).skill is None
 
 

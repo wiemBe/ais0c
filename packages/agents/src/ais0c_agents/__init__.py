@@ -85,7 +85,14 @@ from ais0c_agents.reporting import (
     build_reporting_agent,
 )
 from ais0c_agents.runner import AgentRun, prompt_tool_budget, run_agent, usage_limits
-from ais0c_agents.skills import NO_SKILL, SkillEvidence, SkillInput, SkillTelemetry, render_skill
+from ais0c_agents.skills import (
+    NO_SKILL,
+    SkillEvidence,
+    SkillInput,
+    SkillTelemetry,
+    SkillTelemetrySource,
+    render_skill,
+)
 from ais0c_agents.toolset import RunDeps, ToolsetProfile, ToolSpec
 from ais0c_agents.triage import TriageAgent, TriageOutput, TriageTask, build_triage_agent
 from ais0c_agents.verification import (
@@ -157,6 +164,7 @@ __all__ = [
     "SkillEvidence",
     "SkillInput",
     "SkillTelemetry",
+    "SkillTelemetrySource",
     "SuggestedAqlCheck",
     "ToolSpec",
     "ToolsetProfile",
