@@ -2,7 +2,7 @@ id: orc-06-web-path-traversal-among-t1190
 suite: orchestrator-gold
 agent: orchestrator
 title: Path traversal is chosen among the six T1190 skills
-description: Same six candidates as orc-05. The offense is a WAF path traversal rule, and Triage's focus
+description: Same six candidates as orc-05. The offense is a WAF path traversal rule (synthetic, because the lab has no such rule; the rule ID 199001 is made up), and Triage's focus
   names ../ and encoded directory-escape sequences and whether files such as /etc/passwd and web.config
   came back with 200. The Orchestrator binds web-path-traversal.
 input:
@@ -23,9 +23,9 @@ input:
     offense_type: Source IP
     offense_source: 203.0.113.45
     rule_ids:
-    - 100355
+    - 199001
     rule_names:
-    - AIS0C LAB - WAF path traversal
+    - AIS0C SYNTHETIC - WAF path traversal
     categories:
     - Application
     magnitude: 5

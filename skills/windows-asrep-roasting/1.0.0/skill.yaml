@@ -4,7 +4,7 @@ id: windows-asrep-roasting
 version: 1.0.0
 status: draft
 owner: soc-engineering
-summary: "AS-REP roasting: an account set to skip Kerberos pre-authentication is asked for tickets that are encrypted with a key from its password and cracked offline."
+summary: "AS-REP roasting: an attacker requests a ticket-granting ticket for a no-pre-authentication account, receives password-derived ciphertext and cracks it offline."
 allowed_agent_roles: [investigation]
 triggers:
   # QRadar rule IDs differ between installations: before approval the production QRadar's

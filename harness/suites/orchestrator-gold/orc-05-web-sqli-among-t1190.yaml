@@ -3,7 +3,7 @@ suite: orchestrator-gold
 agent: orchestrator
 title: SQL injection is chosen among the six T1190 skills
 description: Six web skills share T1190, so the router lists all of them. The offense is a WAF rule for
-  SQL injection that passed, and Triage's focus names UNION and tautology signatures and whether the requests
+  SQL injection that was not blocked, and Triage's focus names UNION and tautology signatures and whether the requests
   reached the application and were answered. The Orchestrator binds web-sql-injection and not the other
   five, which differ in their summaries.
 input:
@@ -25,9 +25,9 @@ input:
     offense_type: Source IP
     offense_source: 203.0.113.45
     rule_ids:
-    - 100354
+    - 100356
     rule_names:
-    - AIS0C LAB - WAF SQL injection passed
+    - AIS0C LAB - WAF SQL injection not blocked
     categories:
     - Application
     magnitude: 6
