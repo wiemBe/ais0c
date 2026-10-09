@@ -139,6 +139,7 @@ services:
       start_period: 10s
 
   # Model gateway (§19). Dev routes every alias to OpenRouter: config/litellm/litellm.dev.yaml.
+  # AIS0C_LITELLM_CONFIG=litellm.dev-free.yaml switches to the free OpenCode Zen model (T-104).
   litellm:
     image: ghcr.io/berriai/litellm:v1.103.2@sha256:f63fb81b831b170ec16851e23c36ac5bf52ef106b271406429524a2ed730bbfd
     command: ["--config", "/etc/litellm/config.yaml", "--port", "4000"]
@@ -146,10 +147,12 @@ services:
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:?Set LITELLM_MASTER_KEY in deploy/compose/.env}
       # Optional: without it the proxy starts, but model calls fail.
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      # Key for litellm.dev-free.yaml; the free tier accepts "public".
+      OPENCODE_ZEN_API_KEY: ${OPENCODE_ZEN_API_KEY:-}
       # Use the model cost map bundled in the image instead of downloading it at startup.
       LITELLM_LOCAL_MODEL_COST_MAP: "True"
     volumes:
-      - ../../config/litellm/litellm.dev.yaml:/etc/litellm/config.yaml:ro,z
+      - ../../config/litellm/${AIS0C_LITELLM_CONFIG:-litellm.dev.yaml}:/etc/litellm/config.yaml:ro,z
     ports:
       - "127.0.0.1:4000:4000"
     # The image runs as root by default; the proxy needs neither root nor a writable image.

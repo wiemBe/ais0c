@@ -1,5 +1,7 @@
 """Processes, settings and lab reads for the end-to-end lab test (tests/e2e/README.md).
 
+AIS0C_E2E_MODEL_REGISTRY selects the model registry (default registry.dev.yaml; T-104).
+
 Nothing here holds a secret: tokens come from the environment and are written only to the
 test's temporary directory, which pytest removes.
 """
@@ -24,7 +26,9 @@ import yaml
 from ais0c_harness.loggen.scenario import generate, load_scenario
 
 REPO_ROOT: Final = Path(__file__).resolve().parents[2]
-MODEL_REGISTRY: Final = "config/models/registry.dev.yaml"
+MODEL_REGISTRY: Final = os.environ.get(
+    "AIS0C_E2E_MODEL_REGISTRY", "config/models/registry.dev.yaml"
+)
 LAB_RULES_DIR: Final = REPO_ROOT / "harness" / "lab" / "qradar" / "rules"
 DEFAULT_SCENARIO: Final = "s2-dcsync"
 # Seeds the DCSync scenario's three events share one account for, so its rule opens one offense.

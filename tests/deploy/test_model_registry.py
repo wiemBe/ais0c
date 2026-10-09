@@ -15,7 +15,7 @@ import pytest
 import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-ENVIRONMENTS = ["dev", "prod"]
+ENVIRONMENTS = ["dev", "dev-free", "prod"]
 # Field names of architecture §8.4. tool_parser is part of the registry (§8.4 rules);
 # reasoning_parser records the other vLLM setting that changes tool calls and structured output.
 # artifact to inference_params are the model release fields of T-016 (ModelRelease, T-24);
@@ -194,3 +194,16 @@ def test_dev_model_that_differs_from_prod_is_reported() -> None:
         "soc-verifier: dev runs 'openrouter/qwen/qwen3.5-397b-a17b', "
         "prod runs 'hosted_vllm/Qwen/Qwen3.5-122B-A10B'"
     ]
+
+
+def test_free_dev_registry_has_no_provider() -> None:
+    assert all("provider" not in entry for entry in load_registry("dev-free").values())
+
+
+def test_free_dev_registry_names_the_prod_equivalents() -> None:
+    prod = load_registry("prod")
+
+    free = load_registry("dev-free")
+    assert free.keys() == prod.keys()
+    for alias, entry in free.items():
+        assert entry["prod_equivalent"] == prod[alias]["target"], alias

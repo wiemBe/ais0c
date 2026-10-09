@@ -1,0 +1,77 @@
+# Model capability registry for dev with the free model (T-104). Same format as
+# registry.dev.yaml (field descriptions there); the differences:
+# - target: the free OpenCode Zen model behind the alias in config/litellm/litellm.dev-free.yaml.
+#   All four aliases use it.
+# - prod_equivalent: the alias's target in registry.prod.yaml.
+# - provider: absent; there is no provider routing.
+# Measurements with this registry are not comparable with the prod models.
+#
+# Checks: tests/deploy/test_model_registry.py.
+
+soc-fast:
+  target: openai/space-bunny-free
+  prod_equivalent: hosted_vllm/deepseek-ai/DeepSeek-V4-Flash
+  capabilities: [tool_calling, structured_output]
+  parallel_tool_calls: null  # accepted but not honoured (false still returned two calls, 2026-10-09)
+  forced_tool_choice: true
+  context_window: 250000  # a 252,663-token request was accepted (2026-10-09); the real limit is not published
+  tool_parser: null
+  reasoning_parser: null
+  turkish_quality: null
+  artifact: space-bunny-free
+  artifact_hash: null
+  quantization: null
+  tokenizer: null
+  engine_version: null
+  inference_params: {}
+
+soc-reasoning:
+  target: openai/space-bunny-free
+  prod_equivalent: hosted_vllm/deepseek-ai/DeepSeek-V4-Flash
+  capabilities: [tool_calling, structured_output]
+  parallel_tool_calls: null  # accepted but not honoured (false still returned two calls, 2026-10-09)
+  forced_tool_choice: true
+  context_window: 250000  # a 252,663-token request was accepted (2026-10-09); the real limit is not published
+  tool_parser: null
+  reasoning_parser: null
+  turkish_quality: null
+  artifact: space-bunny-free
+  artifact_hash: null
+  quantization: null
+  tokenizer: null
+  engine_version: null
+  inference_params: {}
+
+soc-verifier:
+  target: openai/space-bunny-free
+  prod_equivalent: hosted_vllm/Qwen/Qwen3.5-122B-A10B
+  capabilities: [tool_calling, structured_output]
+  parallel_tool_calls: null  # accepted but not honoured (false still returned two calls, 2026-10-09)
+  forced_tool_choice: true
+  context_window: 250000  # a 252,663-token request was accepted (2026-10-09); the real limit is not published
+  tool_parser: null
+  reasoning_parser: null
+  turkish_quality: null
+  artifact: space-bunny-free
+  artifact_hash: null
+  quantization: null
+  tokenizer: null
+  engine_version: null
+  inference_params: {}
+
+soc-report:
+  target: openai/space-bunny-free
+  prod_equivalent: hosted_vllm/Qwen/Qwen3.5-122B-A10B
+  capabilities: [tool_calling, structured_output]
+  parallel_tool_calls: null  # accepted but not honoured (false still returned two calls, 2026-10-09)
+  forced_tool_choice: true
+  context_window: 250000  # a 252,663-token request was accepted (2026-10-09); the real limit is not published
+  tool_parser: null
+  reasoning_parser: null
+  turkish_quality: null
+  artifact: space-bunny-free
+  artifact_hash: null
+  quantization: null
+  tokenizer: null
+  engine_version: null
+  inference_params: {}

@@ -1,0 +1,40 @@
+# LiteLLM proxy configuration for dev when OpenRouter is not available (T-104).
+#
+# OpenRouter credit ran out on 2026-10-09, so every alias goes to the free model of OpenCode
+# Zen, space-bunny-free. D-21 (soc-reasoning and soc-verifier on different models) is broken on
+# purpose here: all four aliases use the same model, because it is the only free-tier model
+# that can be called from outside OpenCode.
+#
+# Measurements taken with this file are not comparable with the prod models. They do not count
+# for the model gate or for prompt acceptance; they only show that the flow works end to end.
+# Send only synthetic and lab data: the free endpoint may keep prompts.
+#
+# Selected in compose with AIS0C_LITELLM_CONFIG=litellm.dev-free.yaml (deploy/compose/README.md).
+# Capabilities of each alias: config/models/registry.dev-free.yaml.
+# Checks: tests/deploy/test_litellm_config.py and tests/deploy/test_model_registry.py.
+
+model_list:
+  - model_name: soc-fast
+    litellm_params:
+      model: openai/space-bunny-free
+      api_base: https://opencode.ai/zen/v1
+      api_key: os.environ/OPENCODE_ZEN_API_KEY
+  - model_name: soc-reasoning
+    litellm_params:
+      model: openai/space-bunny-free
+      api_base: https://opencode.ai/zen/v1
+      api_key: os.environ/OPENCODE_ZEN_API_KEY
+  - model_name: soc-verifier
+    litellm_params:
+      model: openai/space-bunny-free
+      api_base: https://opencode.ai/zen/v1
+      api_key: os.environ/OPENCODE_ZEN_API_KEY
+  - model_name: soc-report
+    litellm_params:
+      model: openai/space-bunny-free
+      api_base: https://opencode.ai/zen/v1
+      api_key: os.environ/OPENCODE_ZEN_API_KEY
+
+general_settings:
+  # Clients (agents, the smoke script) send this key as a bearer token.
+  master_key: os.environ/LITELLM_MASTER_KEY

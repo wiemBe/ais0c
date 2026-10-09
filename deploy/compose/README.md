@@ -11,7 +11,7 @@ Temporal, PostgreSQL + pgvector, LiteLLM, OpenTelemetry collector ve Mailpit e-p
 | `temporal` | Temporal server 1.31.3 | `127.0.0.1:7233` (gRPC) | Workflow motoru |
 | `temporal-admin-tools` | Temporal admin-tools 1.31.3 | | `default` namespace'ini oluşturur, Temporal CLI için açık kalır |
 | `temporal-ui` | Temporal UI 2.54.1 | http://127.0.0.1:8080 | Workflow arayüzü |
-| `litellm` | LiteLLM 1.103.2 | `127.0.0.1:4000` | Model gateway, [`litellm.dev.yaml`](../../config/litellm/litellm.dev.yaml) ile |
+| `litellm` | LiteLLM 1.103.2 | `127.0.0.1:4000` | Model gateway, [`litellm.dev.yaml`](../../config/litellm/litellm.dev.yaml) ile (OpenRouter) ya da `AIS0C_LITELLM_CONFIG` ile seçilen [`litellm.dev-free.yaml`](../../config/litellm/litellm.dev-free.yaml) (ücretsiz model) |
 | `otel-collector` | OTel collector contrib 0.161.0 | `127.0.0.1:4317` (gRPC), `127.0.0.1:4318` (HTTP) | OTLP alır, yalnızca debug exporter'a yazar |
 | `mailpit` | Mailpit 1.31.4 | `127.0.0.1:1025` (SMTP), http://127.0.0.1:8025 (arayüz ve API) | Executor'ın gönderdiği e-postaları yakalar, hiçbir yere iletmez ([T-020](../../docs/impl/tasks/T-020-executor-eposta.md)) |
 
@@ -276,6 +276,23 @@ docker network create -d macvlan -o parent=virbr0 \
 Gateway ve diğer servisler bu ağa girmez. MCP sunucuları yalnızca `mcp` ağındaki adlarında dinlediği için lab segmentinden onlara bağlanılamaz.
 
 Docker, makine açılırken `virbr0`'dan önce başlarsa macvlan sürücüsü ağı yükleyemez ve konteynerler `network id "..." not found` hatasıyla başlamaz. Docker'ı yeniden başlat (`sudo systemctl restart docker`) ya da ağı silip yukarıdaki komutla yeniden oluştur.
+
+## Ücretsiz model yedeği (T-104)
+
+Dev LiteLLM'in iki config'i vardır. Varsayılan [`litellm.dev.yaml`](../../config/litellm/litellm.dev.yaml) alias'ları OpenRouter'a yönlendirir. OpenRouter kredisi yokken [`litellm.dev-free.yaml`](../../config/litellm/litellm.dev-free.yaml) dört alias'ı da OpenCode Zen'in ücretsiz `space-bunny-free` modeline yönlendirir. Hangisinin yükleneceğini `.env`'deki `AIS0C_LITELLM_CONFIG` seçer; boşsa `litellm.dev.yaml` yüklenir. Ücretsiz config için `OPENCODE_ZEN_API_KEY=public` yazılır.
+
+Bu config'le alınan ölçümler prod modelleriyle karşılaştırılamaz: gate ve prompt kabulü için kullanılmaz, yalnızca akışın uçtan uca çalıştığını gösterir. Yalnızca sentetik ve lab verisi gönderilir.
+
+Geçiş (`.env`'de `AIS0C_LITELLM_CONFIG=litellm.dev-free.yaml` ve `OPENCODE_ZEN_API_KEY=public` yazdıktan sonra):
+
+```bash
+docker compose -p ais0c-dev --env-file deploy/compose/.env \
+    -f deploy/compose/docker-compose.dev.yaml up -d --no-deps --force-recreate litellm
+```
+
+Dönüş: `AIS0C_LITELLM_CONFIG`'i boşalt ve aynı komutu koş.
+
+Model registry'si de değişir: harness komutlarına `--registry config/models/registry.dev-free.yaml` verilir, e2e testleri için `AIS0C_E2E_MODEL_REGISTRY=config/models/registry.dev-free.yaml` ayarlanır. Worker'ın ortamında `AIS0C_MODEL_REGISTRY=config/models/registry.dev-free.yaml` olmalıdır.
 
 ## LiteLLM smoke testi
 

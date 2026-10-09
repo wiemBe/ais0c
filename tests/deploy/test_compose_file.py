@@ -412,9 +412,21 @@ def bind_mounts(compose: dict[str, Any]) -> list[tuple[str, str, str, list[str]]
     for name, service in compose["services"].items():
         for volume in service.get("volumes", []):
             if isinstance(volume, str) and volume.startswith((".", "/")):
-                source, target, *options = volume.split(":")
+                # A colon inside ${NAME:-default} is not a separator.
+                parts = re.split(r":(?![^{]*\})", volume)
+                source, target, *options = parts
                 mounts.append((name, source, target, ",".join(options).split(",")))
     return mounts
+
+
+def resolve_default(source: str, env: dict[str, str] | None = None) -> str:
+    """Resolve ${NAME} and ${NAME:-default} in a bind mount source; an empty value takes the default."""
+    values = env or {}
+
+    def substitute(match: re.Match[str]) -> str:
+        return values.get(match["name"]) or match["arg"] or ""
+
+    return INTERPOLATION.sub(substitute, source)
 
 
 def test_bind_mounts_are_read_only_and_exist() -> None:
@@ -422,21 +434,38 @@ def test_bind_mounts_are_read_only_and_exist() -> None:
 
     assert mounts
     for name, source, target, options in mounts:
-        assert (COMPOSE_DIR / source).exists(), f"{name}: {source} does not exist"
+        assert (COMPOSE_DIR / resolve_default(source)).exists(), f"{name}: {source} does not exist"
         assert "ro" in options, f"{name}: {target} is writable"
         assert "z" in options, f"{name}: {target} needs the SELinux label z"
 
 
-def test_litellm_runs_the_dev_config() -> None:
+def litellm_config_source(env: dict[str, str]) -> Path:
     compose = load_compose()
     command = compose["services"]["litellm"]["command"]
     config = command[command.index("--config") + 1]
     mounted = {
         target: source for name, source, target, _ in bind_mounts(compose) if name == "litellm"
     }
+    return (COMPOSE_DIR / resolve_default(mounted[config], env)).resolve()
 
-    source = (COMPOSE_DIR / mounted[config]).resolve()
-    assert source == REPO_ROOT / "config/litellm/litellm.dev.yaml"
+
+def test_litellm_runs_the_dev_config() -> None:
+    assert litellm_config_source({}) == REPO_ROOT / "config/litellm/litellm.dev.yaml"
+    assert litellm_config_source({"AIS0C_LITELLM_CONFIG": ""}).name == "litellm.dev.yaml"
+
+
+def test_litellm_config_variable_selects_the_free_config() -> None:
+    source = litellm_config_source({"AIS0C_LITELLM_CONFIG": "litellm.dev-free.yaml"})
+
+    assert source == REPO_ROOT / "config/litellm/litellm.dev-free.yaml"
+    assert source.exists()
+
+
+def test_litellm_receives_the_opencode_zen_key_from_the_environment() -> None:
+    environment = load_compose()["services"]["litellm"]["environment"]
+
+    assert environment["OPENCODE_ZEN_API_KEY"] == "${OPENCODE_ZEN_API_KEY:-}"
+    assert {"AIS0C_LITELLM_CONFIG", "OPENCODE_ZEN_API_KEY"} <= set(env_example())
 
 
 # --- docker compose -----------------------------------------------------------------------

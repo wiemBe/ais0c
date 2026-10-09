@@ -18,7 +18,9 @@ import pytest
 import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-ENVIRONMENTS = ["dev", "prod"]
+ENVIRONMENTS = ["dev", "dev-free", "prod"]
+# dev-free sends all aliases to one model on purpose (T-104), so D-21 does not apply to it.
+DISTINCT_MODEL_ENVIRONMENTS = ["dev", "prod"]
 # soc-embed is not needed in phase 0 (T-003).
 ALIASES = {"soc-fast", "soc-reasoning", "soc-verifier", "soc-report"}
 ON_PREM_PREFIX = "hosted_vllm/"
@@ -127,7 +129,7 @@ def test_config_defines_each_alias_once(environment: str) -> None:
     assert set(counts.values()) == {1}  # the registry describes one model per alias
 
 
-@pytest.mark.parametrize("environment", ENVIRONMENTS)
+@pytest.mark.parametrize("environment", DISTINCT_MODEL_ENVIRONMENTS)
 def test_reasoning_and_verifier_use_different_models(environment: str) -> None:
     config = load_config(environment)
 
@@ -282,4 +284,49 @@ def test_a_provider_pin_with_two_providers_or_without_allow_fallbacks_is_reporte
     assert pin_problems(config) == [
         "soc-fast: order must name exactly one provider",
         "soc-reasoning: allow_fallbacks must be false",
+    ]
+
+
+# --- dev-free: OpenCode Zen free model (T-104) -------------------------------------------
+
+ZEN_API_BASE = "https://opencode.ai/zen/v1"
+ZEN_MODEL = "openai/space-bunny-free"
+ZEN_KEY = "os.environ/OPENCODE_ZEN_API_KEY"
+
+
+def free_config_problems(config: dict[str, Any]) -> list[str]:
+    """Describe every deployment that does not go to the free OpenCode Zen model."""
+    problems: list[str] = []
+    for entry in config["model_list"]:
+        alias, params = entry["model_name"], entry["litellm_params"]
+        if params.get("model") != ZEN_MODEL:
+            problems.append(f"{alias}: model {params.get('model')!r} is not {ZEN_MODEL!r}")
+        if params.get("api_base") != ZEN_API_BASE:
+            problems.append(f"{alias}: api_base {params.get('api_base')!r} is not {ZEN_API_BASE!r}")
+        if params.get("api_key") != ZEN_KEY:
+            problems.append(f"{alias}: api_key {params.get('api_key')!r} is not {ZEN_KEY!r}")
+        if "extra_body" in params:
+            problems.append(f"{alias}: extra_body is set")
+    return problems
+
+
+def test_free_dev_config_routes_every_alias_to_opencode_zen() -> None:
+    assert free_config_problems(load_config("dev-free")) == []
+
+
+def test_free_dev_config_reads_no_openrouter_key() -> None:
+    path = REPO_ROOT / "config/litellm/litellm.dev-free.yaml"
+
+    assert "OPENROUTER" not in path.read_text(encoding="utf-8")
+
+
+def test_free_dev_config_with_an_openrouter_deployment_is_reported() -> None:
+    config = copy.deepcopy(load_config("dev-free"))
+    params = config["model_list"][0]["litellm_params"]
+    params["model"] = "openrouter/deepseek/deepseek-v4-flash"
+    params["api_key"] = "os.environ/OPENROUTER_API_KEY"
+
+    assert free_config_problems(config) == [
+        f"soc-fast: model 'openrouter/deepseek/deepseek-v4-flash' is not {ZEN_MODEL!r}",
+        f"soc-fast: api_key 'os.environ/OPENROUTER_API_KEY' is not {ZEN_KEY!r}",
     ]
