@@ -1,4 +1,4 @@
-"""The worker processes: `python -m ais0c_worker`, `... batch` and `... executor`.
+"""The worker processes and deployment commands of ``python -m ais0c_worker``.
 
 | Variable | Meaning | Default |
 |---|---|---|
@@ -42,11 +42,13 @@ from ais0c_activities import (
     ModelReleaseChange,
     RuntimeConfigError,
     SessionFactory,
+    deploy,
     load_batch_runtime,
     load_case_runtime,
     load_executor_runtime,
     model_release_changes,
 )
+from ais0c_worker import preflight
 from ais0c_worker.batch_worker import build_batch_worker
 from ais0c_worker.case_worker import build_case_worker, connect
 from ais0c_worker.executor_worker import build_executor_worker
@@ -65,9 +67,13 @@ HEALTH_SCHEDULE_ENV: Final = "AIS0C_HEALTH_SCHEDULE"
 CASE_COMMAND: Final = "case"
 BATCH_COMMAND: Final = "batch"
 EXECUTOR_COMMAND: Final = "executor"
+MIGRATE_COMMAND: Final = "migrate"
+PREFLIGHT_COMMAND: Final = "preflight"
 
 # A setting, a file or a secret the worker needs is missing or invalid.
 EXIT_CONFIG_ERROR: Final = 2
+EXIT_DATABASE_ERROR: Final = 1
+EXIT_DATABASE_BEHIND: Final = 3
 
 type Run = Callable[[asyncio.Event, Mapping[str, str]], Awaitable[None]]
 
@@ -183,19 +189,29 @@ def main(argv: Sequence[str] | None = None, environ: Mapping[str, str] | None = 
         level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
     )
     env = os.environ if environ is None else environ
+    args = _arguments(argv)
     try:
-        asyncio.run(_run_until_signal(_RUNNERS[_command(argv)], env))
+        if args.command == MIGRATE_COMMAND:
+            return _migrate(env, check=args.check)
+        if args.command == PREFLIGHT_COMMAND:
+            options = [
+                *(("--skip-models",) if args.skip_models else ()),
+                *(("--json",) if args.json else ()),
+            ]
+            return preflight.main(options, env)
+        command = CASE_COMMAND if args.command is None else str(args.command)
+        asyncio.run(_run_until_signal(_RUNNERS[command], env))
     except RuntimeConfigError as error:
         print(f"error: {error}", file=sys.stderr)
         return EXIT_CONFIG_ERROR
     return 0
 
 
-def _command(argv: Sequence[str] | None) -> str:
-    """The worker the command line asks for; the case worker when it asks for none."""
+def _arguments(argv: Sequence[str] | None) -> argparse.Namespace:
+    """Parse a worker or deployment command."""
     parser = argparse.ArgumentParser(
         prog="python -m ais0c_worker",
-        description="Temporal workers of the ais0c platform (architecture §6).",
+        description="Temporal workers and deployment checks of the ais0c platform.",
     )
     commands = parser.add_subparsers(dest="command")
     commands.add_parser(
@@ -207,8 +223,37 @@ def _command(argv: Sequence[str] | None) -> str:
         EXECUTOR_COMMAND,
         help="the soc-executor worker: the QRadar note and the alert e-mail",
     )
-    args = parser.parse_args(argv)
-    return CASE_COMMAND if args.command is None else str(args.command)
+    migrate = commands.add_parser(MIGRATE_COMMAND, help="upgrade the application database")
+    migrate.add_argument(
+        "--check", action="store_true", help="report whether the database is at head"
+    )
+    before = commands.add_parser(PREFLIGHT_COMMAND, help="check production shadow prerequisites")
+    before.add_argument("--skip-models", action="store_true", help="do not call model aliases")
+    before.add_argument("--json", action="store_true", help="write the check list as JSON")
+    return parser.parse_args(argv)
+
+
+def _migrate(env: Mapping[str, str], *, check: bool) -> int:
+    database_url = env.get("AIS0C_DATABASE_URL", "").strip()
+    if not database_url:
+        raise RuntimeConfigError("AIS0C_DATABASE_URL is not set")
+    try:
+        if check:
+            current, head = deploy.database_revision(database_url)
+            if current == head:
+                print(f"at head {head}")
+                return 0
+            print(f"behind: {current or 'none'} -> {head}")
+            return EXIT_DATABASE_BEHIND
+        revision = deploy.migrate_to_head(database_url)
+    except Exception as error:  # noqa: BLE001 - a failed migration is a defined CLI outcome.
+        print(
+            f"error: database migration failed ({type(error).__name__})",
+            file=sys.stderr,
+        )
+        return EXIT_DATABASE_ERROR
+    print(f"migrated to {revision}")
+    return 0
 
 
 def _address(env: Mapping[str, str]) -> str:

@@ -1,4 +1,4 @@
-"""Run a worker: `python -m ais0c_worker` (the case worker), `... batch` or `... executor`.
+"""Run a worker or the ``migrate`` and ``preflight`` deployment commands.
 
 Settings: `ais0c_worker.main`.
 """
