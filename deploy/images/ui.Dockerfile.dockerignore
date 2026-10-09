@@ -9,3 +9,5 @@
 apps/ui/node_modules
 apps/ui/dist
 **/node_modules
+**/.env
+**/.env.*

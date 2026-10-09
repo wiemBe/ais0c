@@ -6,6 +6,7 @@ the ones test_compose_file.py uses for the dev stack's built images.
 """
 
 import importlib.util
+import json
 import re
 import shutil
 import subprocess
@@ -121,44 +122,97 @@ def test_ui_image_runs_unprivileged() -> None:
 # --- 3. no secret, no environment --------------------------------------------------------------
 
 
-FORBIDDEN_IN_CONTEXT = ("deploy/compose/.env", "deploy/compose/secrets", ".git")
-
-
-def reopened(lines: list[str]) -> list[str]:
-    """The `!` lines that bring a forbidden path back into the context."""
-    found: list[str] = []
-    for line in lines:
-        if not line.startswith("!"):
-            continue
-        allowed = line[1:].rstrip("/")
-        for forbidden in FORBIDDEN_IN_CONTEXT:
-            if (
-                allowed == forbidden
-                or forbidden.startswith(allowed + "/")
-                or allowed.startswith(forbidden + "/")
-                or allowed in ("*", "**", "deploy", "deploy/compose")
-            ):
-                found.append(line)
-                break
-    return found
-
-
-@pytest.mark.parametrize("dockerignore", DOCKERIGNORES, ids=lambda path: path.name)
-def test_dockerignore_keeps_secrets_out(dockerignore: Path) -> None:
-    lines = [
+def ignore_patterns(dockerignore: Path) -> list[str]:
+    return [
         line.strip()
         for line in dockerignore.read_text("utf-8").splitlines()
         if line.strip() and not line.startswith("#")
     ]
 
-    assert lines[0] == "*"
-    assert reopened(lines) == []
+
+def glob_regex(pattern: str) -> re.Pattern[str]:
+    """A .dockerignore pattern as a regex: `**` crosses slashes, `*` does not; a match on a
+    directory also covers everything below it."""
+    out = ""
+    i = 0
+    while i < len(pattern):
+        if pattern.startswith("**/", i):
+            out += "(?:.*/)?"
+            i += 3
+        elif pattern.startswith("**", i):
+            out += ".*"
+            i += 2
+        elif pattern[i] == "*":
+            out += "[^/]*"
+            i += 1
+        elif pattern[i] == "?":
+            out += "[^/]"
+            i += 1
+        else:
+            out += re.escape(pattern[i])
+            i += 1
+    return re.compile(out + "(?:/.*)?")
+
+
+def in_context(patterns: list[str], path: str) -> bool:
+    """Whether the build context includes `path`: the last matching pattern wins, and `!`
+    includes. A file is also kept out when a parent directory is excluded last."""
+    included = False
+    for pattern in patterns:
+        negate = pattern.startswith("!")
+        if glob_regex(pattern.removeprefix("!").rstrip("/")).fullmatch(path):
+            included = negate
+    return included
+
+
+FORBIDDEN_IN_CONTEXT = (
+    "deploy/compose/.env",
+    "deploy/compose/secrets/db-password",
+    ".git/config",
+    "apps/ui/.env",
+    "apps/ui/.env.local",
+    "apps/ui/.env.production",
+    "config/agents/.env",
+    "config/models/.env.local",
+    "prompts/.env",
+    "skills/.env",
+    "packages/agents/src/.env",
+)
+
+
+@pytest.mark.parametrize("dockerignore", DOCKERIGNORES, ids=lambda path: path.name)
+def test_dockerignore_keeps_secrets_out(dockerignore: Path) -> None:
+    patterns = ignore_patterns(dockerignore)
+
+    assert patterns[0] == "*"
+    assert [path for path in FORBIDDEN_IN_CONTEXT if in_context(patterns, path)] == []
+
+
+def test_dockerignore_rules_include_what_the_images_need() -> None:
+    platform = ignore_patterns(DOCKERIGNORES[0])
+    ui = ignore_patterns(DOCKERIGNORES[1])
+
+    for path in ("uv.lock", "config/agents/triage.yaml", "prompts/x.md", "skills/a/SKILL.md"):
+        assert in_context(platform, path), path
+    for path in ("apps/ui/package.json", "apps/ui/src/main.tsx", "deploy/images/nginx/ui.conf"):
+        assert in_context(ui, path), path
+
+
+def test_platform_dockerignore_drops_litellm_even_after_a_broad_reopen() -> None:
+    patterns = ignore_patterns(DOCKERIGNORES[0])
+    broad = ["*", "!config", *patterns[1:]]
+
+    assert not in_context(broad, "config/litellm/config.yaml")
+    assert in_context(broad, "config/agents/triage.yaml")
+    # Without the closing exclusions, the same re-open would let it in.
+    assert in_context(["*", "!config"], "config/litellm/config.yaml")
 
 
 def test_dockerignore_check_catches_a_reopened_secret() -> None:
-    lines = ["*", "!prompts", "!deploy/compose/secrets", "!deploy/compose", "!.git"]
-
-    assert reopened(lines) == lines[2:]
+    for broad in ("!config", "!config/**", "!deploy/**", "!**", "!deploy/compose", "!.git"):
+        patterns = ["*", broad]
+        leaked = [path for path in FORBIDDEN_IN_CONTEXT if in_context(patterns, path)]
+        assert leaked, broad
 
 
 def test_platform_image_has_no_litellm_config() -> None:
@@ -171,9 +225,10 @@ def test_platform_image_has_no_litellm_config() -> None:
     ]
 
     assert not [word for word in copied if "litellm" in word]
-    ignore = (IMAGES_DIR / "platform.Dockerfile.dockerignore").read_text("utf-8")
-    patterns = [line for line in ignore.splitlines() if line and not line.startswith("#")]
-    assert not [line for line in patterns if "litellm" in line]
+    assert not in_context(ignore_patterns(DOCKERIGNORES[0]), "config/litellm/config.yaml")
+
+
+APPROVED = ("config/agents", "config/models", "prompts", "skills")
 
 
 # --- 4. content --------------------------------------------------------------------------------
@@ -183,8 +238,12 @@ def test_platform_image_carries_the_approved_content() -> None:
     rows = final_stage(PLATFORM)
 
     copies = {tuple(row[1:]) for row in rows if row[0].upper() == "COPY"}
-    for source in ("config/agents", "config/models", "prompts", "skills"):
-        assert (source, f"/app/{source}") in copies
+    # Exactly the venv and the four approved trees; nothing else enters the final stage.
+    assert copies == {
+        ("--from=build", "/opt/venv", "/opt/venv"),
+        *{(source, f"/app/{source}") for source in APPROVED},
+    }
+    for source in APPROVED:
         assert (REPO_ROOT / source).is_dir()
     env = " ".join(" ".join(row) for row in rows if row[0].upper() == "ENV")
     assert re.search(r"\bAIS0C_WORKER_ROOT=/app\b", env)
@@ -204,13 +263,14 @@ def test_nginx_serves_only_tls() -> None:
     assert "ssl_certificate_key /run/secrets/ui-tls.key;" in directives
     assert "ssl_protocols       TLSv1.2 TLSv1.3;" in directives
     assert "server_tokens off;" in directives
+    assert "root /usr/share/nginx/html;" in directives
 
 
 def test_nginx_proxies_api_to_the_api_service() -> None:
     directives = nginx_directives(NGINX_CONF)
 
     assert "location /api/ {" in directives
-    assert "proxy_pass http://api:8000;" in directives
+    assert [d for d in directives if d.startswith("proxy_pass")] == ["proxy_pass http://api:8000;"]
     for header in ("Host $host", "X-Forwarded-For $proxy_add_x_forwarded_for"):
         assert f"proxy_set_header {header};" in directives
     assert "proxy_set_header X-Forwarded-Proto $scheme;" in directives
@@ -227,6 +287,13 @@ def test_nginx_sends_the_security_headers() -> None:
         "Content-Security-Policy \"default-src 'self'\"",
     ):
         assert f"add_header {header} always;" in directives
+
+
+def test_ui_package_manager_is_pinned_by_hash() -> None:
+    # Corepack checks the downloaded pnpm against this hash.
+    package = json.loads((REPO_ROOT / "apps/ui/package.json").read_text("utf-8"))
+
+    assert re.fullmatch(r"pnpm@\d+\.\d+\.\d+\+sha512\.[0-9a-f]{128}", package["packageManager"])
 
 
 # --- 6. real build -----------------------------------------------------------------------------

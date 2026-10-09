@@ -21,3 +21,6 @@
 !skills
 **/__pycache__
 **/*.pyc
+**/.env
+**/.env.*
+config/litellm
