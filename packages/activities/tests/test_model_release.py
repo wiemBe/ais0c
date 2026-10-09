@@ -226,7 +226,8 @@ def test_release_carries_the_provider() -> None:
     dev = load_model_releases(REGISTRIES["dev"])
     prod = load_model_releases(REGISTRIES["prod"])
 
-    assert dev["soc-reasoning"].inference_params["provider"] == "AtlasCloud"
+    pinned = registry_data("dev")["soc-reasoning"]["provider"]
+    assert dev["soc-reasoning"].inference_params["provider"] == pinned
     assert all("provider" not in built.inference_params for built in prod.values())
 
 

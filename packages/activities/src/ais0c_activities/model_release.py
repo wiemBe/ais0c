@@ -6,7 +6,8 @@ every alias (docs/impl/contracts.md). `load_model_releases` builds the releases 
 target, artifact, artifact_hash, quantization, tokenizer, engine_version and tool_parser as
 written, max_context from the entry's context_window, and inference_params from the entry's
 sampling parameters together with the request settings the platform sends (parallel_tool_calls,
-forced_tool_choice) and the server's reasoning parser.
+forced_tool_choice), the hosted provider pinned in dev (the entry's `provider`; prod has
+none) and the server's reasoning parser.
 
 Every agent run records the release of its alias in `agent_runs.model_release`. A release that
 differs from the last one recorded for its alias is a new model release, and the model gate
