@@ -14,6 +14,7 @@ Yalnızca bunlar:
 - `deploy/images/README.md` (T-076: imajlar ve servis başına komutlar)
 - `services/worker/README.md`'de `migrate` ve `preflight` (T-078)
 - `deploy/compose/README.md`'de "Executor worker" ve "API" bölümleri (gerekli değişkenler)
+- `deploy/compose/make_secrets.py:1-40` ve `--directory` seçeneği (sır dizininin düzeni)
 - `tests/deploy/test_compose_file.py` (dev dosyasının denetimleri; prod için aynı yardımcılar)
 
 ## Branch ve worktree
@@ -59,13 +60,13 @@ Ana checkout'ta çalışılmaz, branch değiştirilmez, push yapılmaz.
 
 3. **Bağımlılıklar:** `case-worker`, `batch-worker`, `executor-worker` ve `api`, `migrate`'e `condition: service_completed_successfully` ile bağlanır; worker'lar `temporal` ve `mcp-gateway`'e `service_healthy` ile.
 
-4. **Sırlar:** compose `secrets:`'ın her girdisi `file: ${AIS0C_SECRETS_DIR:?}/<ad>`. Adlar dev'dekiyle aynı (gateway ve MCP token'ları, QRadar token'ları), ek olarak `api-dev-users.json` ve `ui-tls.crt`, `ui-tls.key`. Executor yalnızca `gateway-token-qradar-note-write` (ve varsa `smtp-password`) alır; case worker not token'ını **almaz** (dev'deki ayrım).
+4. **Sırlar:** dizin düzeni `deploy/compose/make_secrets.py`'ninkiyle aynıdır; script prod'da `--directory $AIS0C_SECRETS_DIR` ile koşar. Compose `secrets:`'ın her girdisi `file: ${AIS0C_SECRETS_DIR:?}/<alt dizin>/<ad>`: `agents/gateway-token-<profil>`, `executor/gateway-token-qradar-note-write`, `mcp/mcp-token-<instance>`, `qradar/qradar-token-read`, `qradar/qradar-token-note` (dev'deki secret adlarıyla), ek olarak `api/dev-users.json`, `ui/tls.crt`, `ui/tls.key`. Konteyner içindeki adlar dev'dekiyle aynı kalır (`/run/secrets/<ad>`). Executor yalnızca `gateway-token-qradar-note-write` (ve varsa `smtp-password`) alır; case worker not token'ını **almaz** (dev'deki ayrım).
 
 5. **Güvenlik:** kendi servislerimiz ve fork'ta `read_only: true`, `cap_drop: [ALL]`, `security_opt: ["no-new-privileges:true"]`, `tmpfs: [/tmp]`, `restart: unless-stopped` (`migrate` hariç). Dışarı açılan tek port `ui`'nin 8443'ü; `temporal-ui` 127.0.0.1'de.
 
 6. **Değişkenler** (`.env.prod.example`, değerler boş, her birinin üstünde Türkçe tek satır açıklama): `AIS0C_VERSION`, `AIS0C_SECRETS_DIR`, `POSTGRES_PASSWORD`, `AIS0C_DB_PASSWORD`, `TEMPORAL_DB_PASSWORD`, `LITELLM_MASTER_KEY`, `VLLM_*` (litellm.prod.yaml'ın okuduğu her değişken), `QRADAR_CONSOLE_FQDN`, `QRADAR_VERIFY_SSL`, `AIS0C_SMTP_HOST`, `AIS0C_SMTP_PORT`, `AIS0C_SMTP_TLS`, `AIS0C_SMTP_FROM`, `AIS0C_CASE_URL_BASE`, `AIS0C_QRADAR_OFFENSE_URL_TEMPLATE`, `AIS0C_API_AUTH`, `AIS0C_UI_BIND`, `AIS0C_ALARM_SYSLOG_HOST`/`PORT`/`PROTOCOL` (H-8). Sır olanlar compose'da varsayılansız (`${X:?}` ya da `${X:-}`; dev'deki `secret_problems` kuralı).
 
-7. **README "Prod (shadow)" bölümü** (Türkçe): sırayla `docker load`, `.env` ve sırlar dizini, `docker compose -f docker-compose.prod.yaml up -d`, `docker compose run --rm case-worker preflight` (ya da `exec`), kill switch'in kapalı kaldığı, API'nin bugün yalnızca `dev` kimlik doğrulamasıyla çalıştığı (OIDC T-035; kullanıcı dosyası sırlar dizininde, token'ların sha256'sı).
+7. **README "Prod (shadow)" bölümü** (Türkçe): sırayla `docker load`, `.env`, `make_secrets.py --directory` ile sırlar dizini, `docker compose -f docker-compose.prod.yaml up -d`, `docker compose run --rm case-worker preflight` (ya da `exec`), kill switch'in kapalı kaldığı, API'nin bugün yalnızca `dev` kimlik doğrulamasıyla çalıştığı (OIDC T-035; kullanıcı dosyası sırlar dizininde, token'ların sha256'sı).
 
 ## Kabul kriterleri ve testler
 
@@ -74,7 +75,7 @@ Ana checkout'ta çalışılmaz, branch değiştirilmez, push yapılmaz.
 1. `test_prod_images_are_pinned`: üçüncü taraf imajlar etiket ve digest'li; kendi imajlarımız `${AIS0C_VERSION:?}` etiketli, `build:` yok, `pull_policy: never`. Negatif: `test_own_image_with_latest_is_reported`.
 2. `test_prod_fixes_skills_mode_and_registry`: üç worker'da `AIS0C_SKILLS_MODE: prod` ve `AIS0C_MODEL_REGISTRY: config/models/registry.prod.yaml` sabit; `test_dev_skills_mode_in_prod_is_reported` (negatif).
 3. `test_only_the_ui_port_is_published`: dışarı açılan port yalnızca `ui:8443`, `temporal-ui` yalnızca `127.0.0.1`. Negatif: `test_published_api_port_is_reported`.
-4. `test_prod_secrets_come_only_from_files_or_the_environment`: dev'deki `secret_problems` prod dosyasında boş; sır dosyaları `${AIS0C_SECRETS_DIR:?}` altında.
+4. `test_prod_secrets_come_only_from_files_or_the_environment`: dev'deki `secret_problems` prod dosyasında boş; sır dosyaları `${AIS0C_SECRETS_DIR:?}` altında, `make_secrets.py`'nin alt dizinlerinde.
 5. `test_case_worker_gets_no_note_token` ve `test_executor_gets_only_the_note_token`.
 6. `test_workers_wait_for_migrate`: dört servis `migrate`'e `service_completed_successfully` ile bağlı; `migrate`'in `restart`'ı `"no"`.
 7. `test_hardening_on_every_own_service`: `read_only`, `cap_drop: [ALL]`, `no-new-privileges`.
