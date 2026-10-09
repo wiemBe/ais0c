@@ -219,13 +219,15 @@ def _models(env: Mapping[str, str], *, skip: bool) -> CheckResult:
         root = Path(env.get(ROOT_ENV, ".") or ".")
         registry = _required(env, MODEL_REGISTRY_ENV)
         aliases = load_model_releases(root / registry)
+        if not aliases:
+            raise ValueError("model registry has no aliases")
         base_url = _required(env, LITELLM_URL_ENV).rstrip("/")
         key = env.get(LITELLM_KEY_ENV, "").strip()
         headers = {"Authorization": f"Bearer {key}"} if key else {}
         with httpx2.Client(timeout=DEFAULT_TIMEOUT_SECONDS, follow_redirects=False) as client:
             for alias in aliases:
                 response = client.post(
-                    f"{base_url}/chat/completions",
+                    f"{base_url}/v1/chat/completions",
                     headers=headers,
                     json={
                         "model": alias,

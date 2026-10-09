@@ -1,5 +1,6 @@
 """Deployment database operations use the real migrations and repositories."""
 
+import asyncio
 import secrets
 from collections.abc import Iterator
 
@@ -7,9 +8,16 @@ import pytest
 from sqlalchemy import URL
 from storage_postgres import Server  # pyright: ignore[reportMissingImports]
 
-from ais0c_activities.deploy import database_revision, migrate_to_head
-from ais0c_storage import create_sync_engine
+from ais0c_activities.deploy import database_revision, migrate_to_head, writes_enabled
+from ais0c_storage import (
+    ActorKind,
+    PlatformFlag,
+    create_engine,
+    create_session_factory,
+    create_sync_engine,
+)
 from ais0c_storage.migrate import upgrade
+from ais0c_storage.repositories import set_platform_flag
 
 
 @pytest.fixture
@@ -54,3 +62,33 @@ def test_database_revision_reports_behind(empty_database: URL) -> None:
 
     assert current == "0001"
     assert head != current
+
+
+def test_writes_enabled_is_false_without_a_flag_row(database_url: URL) -> None:
+    url = database_url.render_as_string(hide_password=False)
+
+    assert writes_enabled(url) is False
+
+
+def test_writes_enabled_is_true_when_the_flag_is_on(database_url: URL) -> None:
+    url = database_url.render_as_string(hide_password=False)
+
+    async def enable() -> None:
+        engine = create_engine(url)
+        try:
+            sessions = create_session_factory(engine)
+            async with sessions.begin() as session:
+                await set_platform_flag(
+                    session,
+                    PlatformFlag.WRITES_ENABLED,
+                    enabled=True,
+                    reason="Canary is approved for the synthetic test.",
+                    actor_kind=ActorKind.USER,
+                    actor_id="test-admin",
+                )
+        finally:
+            await engine.dispose()
+
+    asyncio.run(enable())
+
+    assert writes_enabled(url) is True
