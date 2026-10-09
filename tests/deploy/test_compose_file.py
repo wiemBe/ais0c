@@ -420,13 +420,25 @@ def bind_mounts(compose: dict[str, Any]) -> list[tuple[str, str, str, list[str]]
 
 
 def resolve_default(source: str, env: dict[str, str] | None = None) -> str:
-    """Resolve ${NAME} and ${NAME:-default} in a bind mount source; an empty value takes the default."""
+    """Resolve ${NAME:-default} in a bind mount source; an unset or empty value takes the default.
+
+    Any other form (${NAME}, ${NAME-x}, ${NAME:+x}, ${NAME:?x}) raises: Compose can resolve it to
+    an empty file name, so a mount source may use only the ":-" operator.
+    """
     values = env or {}
 
     def substitute(match: re.Match[str]) -> str:
-        return values.get(match["name"]) or match["arg"] or ""
+        if match["op"] != ":-":
+            raise ValueError(f"bind mount source {source!r} uses {match[0]!r}; only ${{NAME:-x}}")
+        return values.get(match["name"]) or match["arg"]
 
     return INTERPOLATION.sub(substitute, source)
+
+
+@pytest.mark.parametrize("source", ["${X:+a.yaml}", "${X-a.yaml}", "${X}", "${X:?msg}"])
+def test_mount_source_with_another_operator_is_reported(source: str) -> None:
+    with pytest.raises(ValueError, match="only"):
+        resolve_default(f"../../config/{source}")
 
 
 def test_bind_mounts_are_read_only_and_exist() -> None:
