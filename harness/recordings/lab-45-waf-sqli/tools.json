@@ -1,0 +1,191 @@
+[
+  {
+    "tool_id": "get_offense",
+    "arguments": {
+      "offense_id": 45
+    },
+    "result": {
+      "status": "ok",
+      "deny_reason": null,
+      "evidence_id": "ev_01a121cc766b734c8ea31ff165ead5b0",
+      "data": [
+        {
+          "last_persisted_time": 1791565006000,
+          "username_count": 0,
+          "description": "SQL-Injection\n",
+          "rules": [
+            {
+              "id": 100356,
+              "type": "CRE_RULE"
+            }
+          ],
+          "event_count": 5,
+          "flow_count": 0,
+          "assigned_to": null,
+          "security_category_count": 1,
+          "follow_up": false,
+          "source_address_ids": [
+            19
+          ],
+          "source_count": 1,
+          "inactive": false,
+          "protected": false,
+          "closing_user": null,
+          "destination_networks": [
+            "Net-10-172-192.Net_10_0_0_0"
+          ],
+          "source_network": "other",
+          "category_count": 1,
+          "close_time": null,
+          "remote_destination_count": 0,
+          "start_time": 1791564627027,
+          "magnitude": 4,
+          "last_updated_time": 1791564627027,
+          "credibility": 2,
+          "id": 45,
+          "categories": [
+            "SQL Injection"
+          ],
+          "severity": 10,
+          "policy_category_count": 0,
+          "log_sources": [
+            {
+              "type_name": "F5ASM",
+              "type_id": 213,
+              "name": "waf-prod-01@F5-WAF",
+              "id": 214
+            }
+          ],
+          "closing_reason_id": null,
+          "device_count": 1,
+          "last_assigned_user_time": 1791564984000,
+          "first_persisted_time": 1791564628000,
+          "offense_type": 0,
+          "relevance": 2,
+          "domain_id": 0,
+          "offense_source": "198.51.100.23",
+          "local_destination_address_ids": [
+            664,
+            670,
+            669,
+            668,
+            667
+          ],
+          "local_destination_count": 5,
+          "status": "OPEN"
+        }
+      ],
+      "truncated": false,
+      "coverage": {
+        "complete": true,
+        "gaps": []
+      }
+    }
+  },
+  {
+    "tool_id": "get_rule",
+    "arguments": {
+      "rule_id": 100356
+    },
+    "result": {
+      "status": "ok",
+      "deny_reason": null,
+      "evidence_id": "ev_01a121cc7697757ca1bcf747f40bde85",
+      "data": [
+        {
+          "owner": "admin",
+          "identifier": "478494dd-1fff-5d6c-aa3b-8bfd2415103d",
+          "base_host_id": 53,
+          "capacity_timestamp": 1791568332548,
+          "origin": "USER",
+          "creation_date": 1791381600000,
+          "type": "EVENT",
+          "enabled": true,
+          "modification_date": 1791382356584,
+          "linked_rule_identifier": null,
+          "name": "AIS0C LAB - WAF SQL injection not blocked",
+          "average_capacity": 9161704,
+          "id": 100356,
+          "base_capacity": 9161704
+        }
+      ],
+      "truncated": false,
+      "coverage": {
+        "complete": true,
+        "gaps": []
+      }
+    }
+  },
+  {
+    "tool_id": "get_log_source",
+    "arguments": {
+      "log_source_id": 214
+    },
+    "result": {
+      "status": "ok",
+      "deny_reason": null,
+      "evidence_id": "ev_01a121cc76c573808963d4943f4511a0",
+      "data": [
+        {
+          "sending_ip": null,
+          "internal": false,
+          "log_source_identifiers": [
+            {
+              "identifier": "waf-prod-01",
+              "parsing_order": 3
+            }
+          ],
+          "protocol_parameters": [
+            {
+              "name": "identifier",
+              "id": 0,
+              "value": "waf-prod-01"
+            },
+            {
+              "name": "incomingPayloadEncoding",
+              "id": 1,
+              "value": "UTF-8"
+            }
+          ],
+          "description": "",
+          "coalesce_events": false,
+          "enabled": true,
+          "parsing_order": 2,
+          "average_eps": 0,
+          "group_ids": [
+            0
+          ],
+          "credibility": 5,
+          "id": 214,
+          "store_event_payload": true,
+          "target_event_collector_id": 7,
+          "protocol_type_id": 0,
+          "language_id": 1,
+          "creation_date": 1785672373089,
+          "wincollect_external_destination_ids": null,
+          "log_source_extension_id": null,
+          "syslog_event_timeout": null,
+          "name": "waf-prod-01@F5-WAF",
+          "modified_date": 1785672373089,
+          "auto_discovered": false,
+          "type_id": 213,
+          "last_event_time": 1791567232728,
+          "requires_deploy": false,
+          "gateway": false,
+          "wincollect_internal_destination_id": null,
+          "status": {
+            "last_updated": 0,
+            "messages": null,
+            "status": "SUCCESS"
+          },
+          "disconnected_log_collector_id": null
+        }
+      ],
+      "truncated": false,
+      "coverage": {
+        "complete": true,
+        "gaps": []
+      }
+    }
+  }
+]

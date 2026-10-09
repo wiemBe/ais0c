@@ -1,0 +1,64 @@
+{
+  "schema_version": 2,
+  "recording_id": "lab-45-waf-sqli",
+  "offense_id": 45,
+  "offense_view": "open",
+  "window": {
+    "start": "2026-10-09T15:50:27.027000Z",
+    "end": "2026-10-09T17:50:27.027000Z"
+  },
+  "events": 16283,
+  "columns": [
+    "starttime",
+    "endtime",
+    "qid",
+    "qidname",
+    "category",
+    "categoryname",
+    "logsourceid",
+    "logsourcename",
+    "logsourcetypename",
+    "devicetype",
+    "sourceip",
+    "destinationip",
+    "sourceport",
+    "destinationport",
+    "username",
+    "eventcount",
+    "magnitude",
+    "payload"
+  ],
+  "excluded": [
+    "Health Metrics"
+  ],
+  "recorded_at": "2026-10-09T18:02:41.606627Z",
+  "gateway_version": "0.1.0+registry.2b9ac3da49e2",
+  "fork_version": "7dcf3ce72062978e74975c7bca4f77e21d383a68",
+  "files": [
+    {
+      "name": "offense.json",
+      "sha256": "4e0d160a8538890b5f856670064c26d8f8a686598b23baf250c871ed37fb74ee",
+      "size": 624
+    },
+    {
+      "name": "enrichment.json",
+      "sha256": "faf2df9de8c1cc914b39ed120136cd5f4734da59bbff6de44c32b2955fd97543",
+      "size": 556
+    },
+    {
+      "name": "tools.json",
+      "sha256": "9b6ded17e5163f5a2b5bb29b9b004de8fd085a505db807f45f749ad00e562951",
+      "size": 5020
+    },
+    {
+      "name": "events.jsonl.gz",
+      "sha256": "2ff3d5bbc563d3c18c209c00db08fe5c7dc41a0b9af453d576159c3ae0382e97",
+      "size": 659428
+    },
+    {
+      "name": "audits.json",
+      "sha256": "141f1d30b0b7304d5e67259c04e945379fda1615226ea026999fe7daeb22e270",
+      "size": 16359
+    }
+  ]
+}

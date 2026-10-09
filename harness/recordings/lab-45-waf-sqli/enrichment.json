@@ -1,0 +1,29 @@
+{
+  "catalog": {
+    "rules": [
+      {
+        "rule_id": 100356,
+        "mode": "analyze",
+        "min_level": null,
+        "context_note": null,
+        "attack_techniques": [
+          "T1190"
+        ]
+      }
+    ],
+    "log_sources": [
+      {
+        "log_source_id": 214,
+        "type_name": "F5 Networks BIG-IP ASM",
+        "description": null,
+        "criticality": null,
+        "context_note": null
+      }
+    ]
+  },
+  "critical_asset_hits": [],
+  "ioc_hits": [],
+  "entity_resolutions": [],
+  "group_id": null,
+  "floor_level": null
+}

@@ -1,0 +1,33 @@
+{
+  "offense_id": 45,
+  "description": "SQL-Injection",
+  "offense_type": "Source IP",
+  "offense_source": "198.51.100.23",
+  "rule_ids": [
+    100356
+  ],
+  "rule_names": [
+    "AIS0C LAB - WAF SQL injection not blocked"
+  ],
+  "categories": [
+    "SQL Injection"
+  ],
+  "magnitude": 4,
+  "start_time": "2026-10-09T16:50:27.027000Z",
+  "last_updated_time": "2026-10-09T16:50:27.027000Z",
+  "event_count": 5,
+  "log_source_ids": [
+    214
+  ],
+  "source_ips": [
+    "198.51.100.23"
+  ],
+  "destination_ips": [
+    "192.0.2.68",
+    "192.0.2.65",
+    "192.0.2.45",
+    "192.0.2.29",
+    "192.0.2.78"
+  ],
+  "usernames": []
+}
