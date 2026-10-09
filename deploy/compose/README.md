@@ -358,6 +358,62 @@ docker buildx imagetools inspect docker.io/temporalio/server:<sürüm>
 
 Temporal server ve admin-tools aynı sürümde tutulur. LiteLLM imajları cosign ile imzalıdır; yeni bir sürümü sabitlemeden önce imzayı LiteLLM'in sürüm notlarındaki anahtarla doğrula.
 
+## Prod (shadow)
+
+[`docker-compose.prod.yaml`](docker-compose.prod.yaml) prod shadow'u tek bir Linux sunucuda çalıştırır ([T-077](../../docs/impl/tasks/T-077-prod-compose.md)). Bütün platform servisleri imajdan çalışır ([deploy/images](../images/README.md)); `migrate` veritabanını bir kez son sürüme taşıyıp çıkar, worker'lar ve API onu bekler. Dev dosyasından bağımsızdır, `profiles` yoktur, Mailpit yoktur. Shadow hiçbir şey yazmaz ve göndermez (T-23): kill switch yeni veritabanında kapalıdır ve açmak iki admin ister (T-033). Bu dosyada yazmayı açan hiçbir ayar yoktur.
+
+| Servis | İmaj | Not |
+|---|---|---|
+| `postgres`, `temporal-schema`, `temporal`, `temporal-admin-tools`, `temporal-ui`, `otel-collector`, `litellm` | Dev'dekilerle aynı (etiket + digest) | LiteLLM `config/litellm/litellm.prod.yaml`'ı yükler; dışarı port açılmaz. `temporal-admin-tools` `default` namespace'ini kurar |
+| `mcp-gateway` | `ais0c-mcp-gateway:${AIS0C_VERSION}` | Yalnızca iç ağda |
+| `qradar-mcp-read`, `qradar-mcp-note` | Dev'deki fork imajı (aynı commit etiketi) | `mcp` ağı `internal`; `qradar-egress` normal bir bridge'dir |
+| `migrate` | `ais0c-platform:${AIS0C_VERSION}` | `ais0c_worker migrate`, `restart: "no"` |
+| `case-worker`, `batch-worker`, `executor-worker` | aynı | Komutlar: `ais0c_worker`, `ais0c_worker batch`, `ais0c_worker executor` |
+| `api` | aynı | `ais0c_api`, yalnızca iç ağda |
+| `ui` | `ais0c-ui:${AIS0C_VERSION}` | Dışarı açılan tek port: `8443` (TLS) |
+
+Kendi imajlarımız hiçbir zaman indirilmez ve compose'ta `build:` yoktur (`pull_policy: never`): release tar'ından `docker load` ile gelir. `AIS0C_SKILLS_MODE=prod`, `AIS0C_MODEL_REGISTRY=config/models/registry.prod.yaml`, `AIS0C_GATEWAY_URL`, `LITELLM_BASE_URL` ve `TEMPORAL_ADDRESS` compose'da yazılıdır; `.env.prod` bunları değiştiremez.
+
+Ağ ve ayrım:
+
+- Dışarı yalnızca `ui`'nin `8443`'ü açılır (`AIS0C_UI_BIND` ile belirli bir arayüze bağlanabilir). `temporal-ui` yalnızca sunucunun `127.0.0.1:8233` adresindedir; Temporal'da kimlik doğrulama yoktur.
+- Case worker not token'ını (`gateway-token-qradar-note-write`) almaz; yalnızca triage, investigate ve verify ajan token'larını alır. Executor yalnızca not token'ını alır. Batch worker yalnızca envanter token'ını alır.
+- `case-worker` ayrıca `config/litellm/litellm.prod.yaml` dosyasını ve `VLLM_*` adreslerini alır: `preflight` model sürümünü (H-7) bu dosya ve adreslerle doğrular. İmajda olmayan `config/policies`, `config/sigma` (case worker) ve `config/telemetry` (batch worker) salt okunur bind mount olarak bağlanır; bu yüzden repo `deploy/compose/`'un iki üst dizininde sunucuda durur.
+
+### Kurulum sırası
+
+1. **İmajlar.** Release tar'ından yükle: `docker load -i ais0c-<sürüm>.tar`. Yüklenen imajlar `ais0c-platform`, `ais0c-ui`, `ais0c-mcp-gateway` ve fork imajı `qradar-mcp-fork:<commit>`'tir (etiketi `docker-compose.prod.yaml` ve `config/connectors/qradar.yaml` ile aynıdır).
+2. **`.env.prod`.** `cp .env.prod.example .env.prod`, bütün değerleri doldur (sırlar için `openssl rand -hex 24`). Dosya git dışıdır.
+3. **Sır dizini.** Repo dışında, yalnızca bu sunucudaki bir dizin seç ve `.env.prod`'daki `AIS0C_SECRETS_DIR`'e yaz. Gateway ve MCP token'larını üret; QRadar token'ları QRadar'dan gelir (okuma token'ı yalnızca okuyabilmeli, not token'ı not ekleyebilmelidir):
+
+   ```bash
+   AIS0C_QRADAR_READ_TOKEN=... AIS0C_QRADAR_NOTE_TOKEN=... \
+     uv run python deploy/compose/make_secrets.py --directory "$AIS0C_SECRETS_DIR"
+   ```
+
+   Betik `agents/`, `executor/`, `mcp/` ve `qradar/` alt dizinlerini yazar. Ek olarak şunlar elle konur (dizin `0700`, dosyalar konteynerlerin okuyabilmesi için `0644`):
+
+   - `ui/tls.crt` ve `ui/tls.key`: UI'nin sertifikası (gerekirse zincirle) ve özel anahtarı.
+   - `api/dev-users.json`: API'nin bugün yalnızca `dev` kimlik doğrulamasıyla çalıştığı (`AIS0C_API_AUTH=dev`; OIDC T-035'tir) için kullanıcı dosyası. Dosyada token'ın kendisi değil **sha256'sı** durur; iki admin gerekir. Biçim ve örnek: [API](#api-arayüz-servisi) bölümü.
+4. **Başlat.**
+
+   ```bash
+   cd deploy/compose
+   docker compose --env-file .env.prod -f docker-compose.prod.yaml up -d
+   ```
+
+   Sırayla Postgres, Temporal, `migrate` (çıkış kodu 0 ile biter), sonra worker'lar, API ve UI başlar. QRadar veya vLLM'e ulaşılamıyorsa ilgili servisler sağlıksız kalır ve yeniden başlar; bu beklenir.
+5. **Preflight.** Shadow'a geçmeden önce ön koşulları denetle; her `FAIL` çıkış kodunu 1 yapar (`WARN` yapmaz):
+
+   ```bash
+   docker compose --env-file .env.prod -f docker-compose.prod.yaml run --rm case-worker ais0c_worker preflight
+   ```
+
+   (`--skip-models` model çağrılarını atlar; `--json` JSON yazar. Konteynerin giriş noktası `python -m` olduğundan komut `ais0c_worker preflight` biçimindedir.)
+6. **Kill switch kapalı kalır.** Yeni veritabanında bayrak yoktur ve bu kapalı demektir: case workflow aynı çağrıları yapar, executor yazmaz, `notes_written` ve `notifications` satırları `disabled` olur. Kill switch'in açılması API'den iki admin ister (T-033); bu dosya onu açmaz.
+
+Durdurmak için `docker compose --env-file .env.prod -f docker-compose.prod.yaml down` (veriler `ais0c-prod_postgres-data` volume'unda kalır; `down -v` onu da siler).
+
 ## Notlar
 
 - Portlar yalnızca `127.0.0.1`'e açılır, çünkü Temporal'da kimlik doğrulama yoktur. Yığın uzak bir VM'deyse SSH port yönlendirmesi kullan.

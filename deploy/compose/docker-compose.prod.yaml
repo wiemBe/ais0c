@@ -1,0 +1,482 @@
+# Production shadow stack (T-077; docs/architecture.md §25, T-23). One Linux server, Docker
+# Compose, every platform service from an image (T-076). How to run it: deploy/compose/README.md,
+# section "Prod (shadow)".
+#
+#   docker compose --env-file .env.prod -f docker-compose.prod.yaml up -d
+#
+# Shadow writes and sends nothing: the kill switch is off in a new database and turning it on
+# needs two admins (T-033). No mechanism in this file opens writes.
+#
+# - Third-party images keep the exact tag and digest of docker-compose.dev.yaml. Our own images
+#   (platform, ui, gateway) are tagged ${AIS0C_VERSION}, never pulled and never built here: they
+#   come from the release tar with `docker load`.
+# - Only the UI's port 8443 is published; the Temporal UI is on 127.0.0.1 for operations.
+# - Secrets come from the environment (.env.prod, git-ignored; template: .env.prod.example) or
+#   from secret files under ${AIS0C_SECRETS_DIR}, made by make_secrets.py --directory.
+# - The case worker does not get the QRadar note token; only the executor and the gateway do.
+#
+# Checks: tests/deploy/test_prod_compose.py.
+
+name: ais0c-prod
+
+# Hardening of every service we run ourselves.
+x-hardened: &hardened
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  tmpfs: [/tmp]
+  restart: unless-stopped
+
+# The qradar-mcp fork (T-006), the same commit as in the dev file; loaded from the release tar.
+x-qradar-mcp: &qradar-mcp
+  <<: *hardened
+  image: qradar-mcp-fork:7dcf3ce72062978e74975c7bca4f77e21d383a68
+  pull_policy: never
+
+x-platform: &platform
+  <<: *hardened
+  image: ais0c-platform:${AIS0C_VERSION:?Set AIS0C_VERSION in .env.prod}
+  pull_policy: never
+
+# Settings every Python service reads. Fixed here on purpose: .env.prod cannot change them.
+x-platform-environment: &platform-environment
+  AIS0C_DATABASE_URL: postgresql+psycopg://ais0c:${AIS0C_DB_PASSWORD:?Set AIS0C_DB_PASSWORD in .env.prod}@postgres:5432/ais0c
+  TEMPORAL_ADDRESS: temporal:7233
+
+# What the three workers share.
+x-worker-environment: &worker-environment
+  <<: *platform-environment
+  AIS0C_GATEWAY_URL: http://mcp-gateway:8080
+
+# A worker has no port to ask: the process that serves the Temporal task queue is PID 1.
+x-worker-healthcheck: &worker-healthcheck
+  test:
+    - CMD
+    - python
+    - -c
+    - import sys; sys.exit(b"ais0c_worker" not in open("/proc/1/cmdline", "rb").read())
+  interval: 15s
+  timeout: 5s
+  retries: 6
+  start_period: 30s
+
+services:
+  postgres:
+    image: docker.io/pgvector/pgvector:0.8.7-pg18-trixie@sha256:9d9c930220cb9bf2f956d10a8f909cf9973d9672ca0278aef2c1e6facccad2e0
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env.prod}
+      # Read by postgres/init/10-databases.sh on the first start.
+      AIS0C_DB_PASSWORD: ${AIS0C_DB_PASSWORD:?Set AIS0C_DB_PASSWORD in .env.prod}
+      TEMPORAL_DB_PASSWORD: ${TEMPORAL_DB_PASSWORD:?Set TEMPORAL_DB_PASSWORD in .env.prod}
+    volumes:
+      # PostgreSQL 18 images keep PGDATA under /var/lib/postgresql.
+      - postgres-data:/var/lib/postgresql
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro,z
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "pg_isready", "--host=127.0.0.1", "--username=postgres", "--dbname=postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+
+  temporal-schema:
+    image: docker.io/temporalio/admin-tools:1.31.3@sha256:76a70ead160808b54acdbc98944dfc07990d9637dda999118a2d9ee1f58b9bc9
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      SQL_PLUGIN: postgres12
+      SQL_HOST: postgres
+      SQL_PORT: "5432"
+      SQL_USER: temporal
+      SQL_PASSWORD: ${TEMPORAL_DB_PASSWORD:?Set TEMPORAL_DB_PASSWORD in .env.prod}
+    volumes:
+      - ./temporal/setup-schema.sh:/scripts/setup-schema.sh:ro,z
+    entrypoint: ["/bin/sh", "/scripts/setup-schema.sh"]
+    restart: "no"
+
+  temporal:
+    image: docker.io/temporalio/server:1.31.3@sha256:b4a78d2186e558aa3502be08d576086c3a82fccdf6184cb4c819eb27bea7bd63
+    depends_on:
+      temporal-schema:
+        condition: service_completed_successfully
+    environment:
+      DB: postgres12
+      DB_PORT: "5432"
+      POSTGRES_SEEDS: postgres
+      POSTGRES_USER: temporal
+      POSTGRES_PWD: ${TEMPORAL_DB_PASSWORD:?Set TEMPORAL_DB_PASSWORD in .env.prod}
+      BIND_ON_IP: 0.0.0.0
+      DYNAMIC_CONFIG_FILE_PATH: /etc/temporal/config/dynamicconfig/development-sql.yaml
+    volumes:
+      - ./temporal/dynamicconfig:/etc/temporal/config/dynamicconfig:ro,z
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:7243/api/v1/cluster-info"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+
+  # Registers the default namespace the workers use; healthy once it exists.
+  temporal-admin-tools:
+    image: docker.io/temporalio/admin-tools:1.31.3@sha256:76a70ead160808b54acdbc98944dfc07990d9637dda999118a2d9ee1f58b9bc9
+    depends_on:
+      temporal:
+        condition: service_healthy
+    environment:
+      TEMPORAL_ADDRESS: temporal:7233
+    volumes:
+      - ./temporal/create-namespace.sh:/scripts/create-namespace.sh:ro,z
+    entrypoint: ["/bin/sh", "/scripts/create-namespace.sh"]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "temporal", "operator", "namespace", "describe", "--namespace", "default"]
+      interval: 5s
+      timeout: 10s
+      retries: 30
+      start_period: 30s
+
+  # Operations only: Temporal has no authentication, so the UI listens on the server's loopback.
+  temporal-ui:
+    image: docker.io/temporalio/ui:2.54.1@sha256:ff0943fe532b8e33c46cd28b29e81e0ce0b6f55b9ee50a38ef1b437cc4de3fa5
+    depends_on:
+      temporal-admin-tools:
+        condition: service_healthy
+    environment:
+      TEMPORAL_ADDRESS: temporal:7233
+    ports:
+      - "127.0.0.1:8233:8080"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/healthz"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+
+  otel-collector:
+    image: docker.io/otel/opentelemetry-collector-contrib:0.161.0@sha256:fd328de2552466ad78385e1b1289c3f2402b1c45f265b252aab1955b42845ac1
+    volumes:
+      - ./otel-collector/config.yaml:/etc/otelcol-contrib/config.yaml:ro,z
+      # The collector image has no shell and no HTTP client; the healthcheck runs a statically
+      # linked busybox from this pinned image.
+      - type: image
+        source: docker.io/library/busybox:1.37.0-musl@sha256:5cec3fc171c87218698e85a52af7087de727372aae264a787b8112901a5b0092
+        target: /probe
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "/probe/bin/busybox", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:13133/"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 5s
+
+  # Model gateway (§19). Prod routes the aliases to the on-prem vLLM servers; no port is
+  # published: only the workers on the compose network call it.
+  litellm:
+    image: ghcr.io/berriai/litellm:v1.103.2@sha256:f63fb81b831b170ec16851e23c36ac5bf52ef106b271406429524a2ed730bbfd
+    command: ["--config", "/etc/litellm/config.yaml", "--port", "4000"]
+    environment:
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:?Set LITELLM_MASTER_KEY in .env.prod}
+      # Each vLLM endpoint including its /v1 path; the key is needed only when vLLM has --api-key.
+      VLLM_DEEPSEEK_V4_FLASH_API_BASE: ${VLLM_DEEPSEEK_V4_FLASH_API_BASE:?Set VLLM_DEEPSEEK_V4_FLASH_API_BASE in .env.prod}
+      VLLM_DEEPSEEK_V4_FLASH_API_KEY: ${VLLM_DEEPSEEK_V4_FLASH_API_KEY:-}
+      VLLM_QWEN_122B_API_BASE: ${VLLM_QWEN_122B_API_BASE:?Set VLLM_QWEN_122B_API_BASE in .env.prod}
+      VLLM_QWEN_122B_API_KEY: ${VLLM_QWEN_122B_API_KEY:-}
+      # Use the model cost map bundled in the image instead of downloading it at startup.
+      LITELLM_LOCAL_MODEL_COST_MAP: "True"
+    volumes:
+      - ../../config/litellm/litellm.prod.yaml:/etc/litellm/config.yaml:ro,z
+    user: "65534:65534"
+    read_only: true
+    tmpfs:
+      - /tmp
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request; urllib.request.urlopen("http://127.0.0.1:4000/health/liveliness", timeout=3)
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  # The only way to QRadar (§13.4): agents and the executor call it with their profile's token.
+  mcp-gateway:
+    <<: *hardened
+    image: ais0c-mcp-gateway:${AIS0C_VERSION:?Set AIS0C_VERSION in .env.prod}
+    pull_policy: never
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      AIS0C_DATABASE_URL: postgresql+psycopg://ais0c:${AIS0C_DB_PASSWORD:?Set AIS0C_DB_PASSWORD in .env.prod}@postgres:5432/ais0c
+      AIS0C_GATEWAY_CONFIG_DIR: /etc/ais0c
+      AIS0C_GATEWAY_UPSTREAM_URL_QRADAR_MCP_READ: http://qradar-mcp-read.mcp:5000/mcp
+      AIS0C_GATEWAY_UPSTREAM_URL_QRADAR_MCP_NOTE: http://qradar-mcp-note.mcp:5000/mcp
+    # One token per gateway profile and the gateway's token towards each MCP instance. No
+    # QRadar token: those stay in the MCP instances.
+    secrets:
+      - gateway-token-qradar-triage-read
+      - gateway-token-qradar-investigate-read
+      - gateway-token-qradar-verify-read
+      - gateway-token-qradar-hunt-read
+      - gateway-token-qradar-inventory-read
+      - gateway-token-qradar-tuning-read
+      - gateway-token-qradar-note-write
+      - mcp-token-qradar-mcp-read
+      - mcp-token-qradar-mcp-note
+    volumes:
+      - ../../config/connectors:/etc/ais0c/connectors:ro,z
+      - ../../config/policies:/etc/ais0c/policies:ro,z
+    networks: [default, mcp]
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import sys, urllib.request; sys.exit(urllib.request.urlopen("http://127.0.0.1:8080/healthz", timeout=3).status != 200)
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+  # One fork instance per profile, each with its own QRadar token: read can only read, note can
+  # add notes. --host binds each to its name on the internal mcp network.
+  qradar-mcp-read:
+    <<: *qradar-mcp
+    command: ["--profile", "qradar-read", "--host", "qradar-mcp-read.mcp"]
+    environment:
+      QRADAR_CONSOLE_FQDN: ${QRADAR_CONSOLE_FQDN:?Set QRADAR_CONSOLE_FQDN in .env.prod}
+      QRADAR_VERIFY_SSL: ${QRADAR_VERIFY_SSL:-true}
+      QRADAR_AUTH_TOKEN_FILE: /run/secrets/qradar-token-read
+      MCP_AUTH_TOKEN_FILE: /run/secrets/mcp-token-qradar-mcp-read
+    secrets: [qradar-token-read, mcp-token-qradar-mcp-read]
+    networks:
+      mcp:
+        aliases: [qradar-mcp-read.mcp]
+      qradar-egress: {}
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import sys, urllib.request; sys.exit(urllib.request.urlopen("http://qradar-mcp-read.mcp:5000/healthz", timeout=3).status != 200)
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+
+  qradar-mcp-note:
+    <<: *qradar-mcp
+    command: ["--profile", "qradar-note", "--host", "qradar-mcp-note.mcp"]
+    environment:
+      QRADAR_CONSOLE_FQDN: ${QRADAR_CONSOLE_FQDN:?Set QRADAR_CONSOLE_FQDN in .env.prod}
+      QRADAR_VERIFY_SSL: ${QRADAR_VERIFY_SSL:-true}
+      QRADAR_AUTH_TOKEN_FILE: /run/secrets/qradar-token-note
+      MCP_AUTH_TOKEN_FILE: /run/secrets/mcp-token-qradar-mcp-note
+    secrets: [qradar-token-note, mcp-token-qradar-mcp-note]
+    networks:
+      mcp:
+        aliases: [qradar-mcp-note.mcp]
+      qradar-egress: {}
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import sys, urllib.request; sys.exit(urllib.request.urlopen("http://qradar-mcp-note.mcp:5000/healthz", timeout=3).status != 200)
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+
+  # One-shot job: brings the application database to the newest schema, then exits (T-078).
+  migrate:
+    <<: *platform
+    command: ["ais0c_worker", "migrate"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment: *platform-environment
+    restart: "no"
+
+  # The soc-case worker: offenses, cases and their agents. It holds the agent tokens, never the
+  # note token. `docker compose run --rm case-worker ais0c_worker preflight` checks the
+  # prerequisites; for that it also mounts the LiteLLM config and gets the vLLM endpoints, which
+  # the release check (H-7) reads.
+  case-worker:
+    <<: *platform
+    command: ["ais0c_worker"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      temporal-admin-tools:
+        condition: service_healthy
+      mcp-gateway:
+        condition: service_healthy
+    environment:
+      <<: *worker-environment
+      AIS0C_SKILLS_MODE: prod
+      AIS0C_MODEL_REGISTRY: config/models/registry.prod.yaml
+      LITELLM_BASE_URL: http://litellm:4000
+      LITELLM_API_KEY: ${LITELLM_MASTER_KEY:?Set LITELLM_MASTER_KEY in .env.prod}
+      AIS0C_CASE_URL_BASE: ${AIS0C_CASE_URL_BASE:?Set AIS0C_CASE_URL_BASE in .env.prod}
+      VLLM_DEEPSEEK_V4_FLASH_API_BASE: ${VLLM_DEEPSEEK_V4_FLASH_API_BASE:?Set VLLM_DEEPSEEK_V4_FLASH_API_BASE in .env.prod}
+      VLLM_DEEPSEEK_V4_FLASH_API_KEY: ${VLLM_DEEPSEEK_V4_FLASH_API_KEY:-}
+      VLLM_QWEN_122B_API_BASE: ${VLLM_QWEN_122B_API_BASE:?Set VLLM_QWEN_122B_API_BASE in .env.prod}
+      VLLM_QWEN_122B_API_KEY: ${VLLM_QWEN_122B_API_KEY:-}
+    secrets:
+      - gateway-token-qradar-triage-read
+      - gateway-token-qradar-investigate-read
+      - gateway-token-qradar-verify-read
+    volumes:
+      - ../../config/litellm/litellm.prod.yaml:/app/config/litellm/litellm.prod.yaml:ro,z
+      # Not in the ais0c-platform image (T-076); the worker reads them at start-up.
+      - ../../config/policies:/app/config/policies:ro,z
+      - ../../config/sigma:/app/config/sigma:ro,z
+    healthcheck: *worker-healthcheck
+
+  # The soc-batch worker: catalog sync and health alarms. It reads QRadar's inventory only.
+  batch-worker:
+    <<: *platform
+    command: ["ais0c_worker", "batch"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      temporal-admin-tools:
+        condition: service_healthy
+      mcp-gateway:
+        condition: service_healthy
+    environment:
+      <<: *worker-environment
+      AIS0C_SKILLS_MODE: prod
+      AIS0C_MODEL_REGISTRY: config/models/registry.prod.yaml
+      LITELLM_BASE_URL: http://litellm:4000
+      # Optional: without a syslog host, alarms go out by e-mail only.
+      AIS0C_ALARM_SYSLOG_HOST: ${AIS0C_ALARM_SYSLOG_HOST:-}
+      AIS0C_ALARM_SYSLOG_PORT: ${AIS0C_ALARM_SYSLOG_PORT:-}
+      AIS0C_ALARM_SYSLOG_PROTOCOL: ${AIS0C_ALARM_SYSLOG_PROTOCOL:-}
+    secrets:
+      - gateway-token-qradar-inventory-read
+    volumes:
+      # Not in the ais0c-platform image (T-076); the worker reads it at start-up.
+      - ../../config/telemetry:/app/config/telemetry:ro,z
+    healthcheck: *worker-healthcheck
+
+  # The soc-executor worker: the only process that writes the QRadar note and sends e-mail. With
+  # the kill switch closed (shadow) it writes and sends nothing.
+  executor-worker:
+    <<: *platform
+    command: ["ais0c_worker", "executor"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      temporal-admin-tools:
+        condition: service_healthy
+      mcp-gateway:
+        condition: service_healthy
+    environment:
+      <<: *worker-environment
+      AIS0C_SKILLS_MODE: prod
+      AIS0C_MODEL_REGISTRY: config/models/registry.prod.yaml
+      LITELLM_BASE_URL: http://litellm:4000
+      AIS0C_SMTP_HOST: ${AIS0C_SMTP_HOST:?Set AIS0C_SMTP_HOST in .env.prod}
+      AIS0C_SMTP_PORT: ${AIS0C_SMTP_PORT:-}
+      AIS0C_SMTP_TLS: ${AIS0C_SMTP_TLS:-}
+      AIS0C_SMTP_FROM: ${AIS0C_SMTP_FROM:?Set AIS0C_SMTP_FROM in .env.prod}
+    secrets:
+      - gateway-token-qradar-note-write
+    healthcheck: *worker-healthcheck
+
+  # The analyst API. Reachable only on the compose network, through the UI's nginx.
+  api:
+    <<: *platform
+    command: ["ais0c_api"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      temporal-admin-tools:
+        condition: service_healthy
+    environment:
+      <<: *platform-environment
+      AIS0C_API_HOST: 0.0.0.0
+      AIS0C_API_AUTH: ${AIS0C_API_AUTH:?Set AIS0C_API_AUTH in .env.prod}
+      AIS0C_API_DEV_USERS_FILE: /run/secrets/dev-users.json
+      AIS0C_QRADAR_OFFENSE_URL_TEMPLATE: ${AIS0C_QRADAR_OFFENSE_URL_TEMPLATE:-}
+    secrets: [dev-users.json]
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import sys, urllib.request; sys.exit(urllib.request.urlopen("http://127.0.0.1:8000/api/v1/health", timeout=3).status != 200)
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  # The only published port of the stack: TLS on 8443, the SPA and /api/ towards the API.
+  ui:
+    <<: *hardened
+    image: ais0c-ui:${AIS0C_VERSION:?Set AIS0C_VERSION in .env.prod}
+    pull_policy: never
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "${AIS0C_UI_BIND:-0.0.0.0}:8443:8443"
+    secrets: [ui-tls.crt, ui-tls.key]
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "--insecure", "--output", "/dev/null", "https://127.0.0.1:8443/"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+networks:
+  # The gateway's south side: the gateway and the MCP instances and nothing else. Internal:
+  # nothing on it has a route out.
+  mcp:
+    internal: true
+  # The MCP instances' way to QRadar; no other service is on it.
+  qradar-egress: {}
+
+# Secret files under ${AIS0C_SECRETS_DIR} in the layout of make_secrets.py. Each is mounted only
+# into the services that hold it.
+secrets:
+  gateway-token-qradar-triage-read:
+    file: ${AIS0C_SECRETS_DIR:?Set AIS0C_SECRETS_DIR in deploy/compose/.env.prod}/agents/gateway-token-qradar-triage-read
+  gateway-token-qradar-investigate-read:
+    file: ${AIS0C_SECRETS_DIR:?Set AIS0C_SECRETS_DIR in deploy/compose/.env.prod}/agents/gateway-token-qradar-investigate-read
+  gateway-token-qradar-verify-read:
+    file: ${AIS0C_SECRETS_DIR:?Set AIS0C_SECRETS_DIR in deploy/compose/.env.prod}/agents/gateway-token-qradar-verify-read
+  gateway-token-qradar-hunt-read:
+    file: ${AIS0C_SECRETS_DIR:?Set AIS0C_SECRETS_DIR in deploy/compose/.env.prod}/agents/gateway-token-qradar-hunt-read
+  gateway-token-qradar-inventory-read:
+    file: ${AIS0C_SECRETS_DIR:?Set AIS0C_SECRETS_DIR in deploy/compose/.env.prod}/agents/gateway-token-qradar-inventory-read
+  gateway-token-qradar-tuning-read:
+    file: ${AIS0C_SECRETS_DIR:?Set AIS0C_SECRETS_DIR in deploy/compose/.env.prod}/agents/gateway-token-qradar-tuning-read
+  gateway-token-qradar-note-write:
+    file: ${AIS0C_SECRETS_DIR:?Set AIS0C_SECRETS_DIR in deploy/compose/.env.prod}/executor/gateway-token-qradar-note-write
+  mcp-token-qradar-mcp-read:
+    file: ${AIS0C_SECRETS_DIR:?Set AIS0C_SECRETS_DIR in deploy/compose/.env.prod}/mcp/mcp-token-qradar-mcp-read
+  mcp-token-qradar-mcp-note:
+    file: ${AIS0C_SECRETS_DIR:?Set AIS0C_SECRETS_DIR in deploy/compose/.env.prod}/mcp/mcp-token-qradar-mcp-note
+  qradar-token-read:
+    file: ${AIS0C_SECRETS_DIR:?Set AIS0C_SECRETS_DIR in deploy/compose/.env.prod}/qradar/qradar-token-read
+  qradar-token-note:
+    file: ${AIS0C_SECRETS_DIR:?Set AIS0C_SECRETS_DIR in deploy/compose/.env.prod}/qradar/qradar-token-note
+  dev-users.json:
+    file: ${AIS0C_SECRETS_DIR:?Set AIS0C_SECRETS_DIR in deploy/compose/.env.prod}/api/dev-users.json
+  ui-tls.crt:
+    file: ${AIS0C_SECRETS_DIR:?Set AIS0C_SECRETS_DIR in deploy/compose/.env.prod}/ui/tls.crt
+  ui-tls.key:
+    file: ${AIS0C_SECRETS_DIR:?Set AIS0C_SECRETS_DIR in deploy/compose/.env.prod}/ui/tls.key
+
+volumes:
+  postgres-data:
