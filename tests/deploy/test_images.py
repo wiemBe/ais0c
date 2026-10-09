@@ -39,10 +39,14 @@ IMAGES_DIR = REPO_ROOT / "deploy/images"
 PLATFORM = IMAGES_DIR / "platform.Dockerfile"
 UI = IMAGES_DIR / "ui.Dockerfile"
 NGINX_CONF = IMAGES_DIR / "nginx/ui.conf"
-DOCKERFILES = [PLATFORM, UI]
+GATEWAY = REPO_ROOT / "services/mcp-gateway/Dockerfile"
+LITELLM = IMAGES_DIR / "litellm.Dockerfile"
+DOCKERFILES = [PLATFORM, UI, GATEWAY, LITELLM]
 DOCKERIGNORES = [
     IMAGES_DIR / "platform.Dockerfile.dockerignore",
     IMAGES_DIR / "ui.Dockerfile.dockerignore",
+    REPO_ROOT / "services/mcp-gateway/Dockerfile.dockerignore",
+    IMAGES_DIR / "litellm.Dockerfile.dockerignore",
 ]
 
 
@@ -228,7 +232,15 @@ def test_platform_image_has_no_litellm_config() -> None:
     assert not in_context(ignore_patterns(DOCKERIGNORES[0]), "config/litellm/config.yaml")
 
 
-APPROVED = ("config/agents", "config/models", "prompts", "skills")
+APPROVED = (
+    "config/agents",
+    "config/models",
+    "config/policies",
+    "config/sigma",
+    "config/telemetry",
+    "prompts",
+    "skills",
+)
 
 
 # --- 4. content --------------------------------------------------------------------------------
@@ -238,7 +250,7 @@ def test_platform_image_carries_the_approved_content() -> None:
     rows = final_stage(PLATFORM)
 
     copies = {tuple(row[1:]) for row in rows if row[0].upper() == "COPY"}
-    # Exactly the venv and the four approved trees; nothing else enters the final stage.
+    # Exactly the venv and the approved trees; nothing else enters the final stage.
     assert copies == {
         ("--from=build", "/opt/venv", "/opt/venv"),
         *{(source, f"/app/{source}") for source in APPROVED},
@@ -250,6 +262,40 @@ def test_platform_image_carries_the_approved_content() -> None:
     assert [row[1] for row in rows if row[0].upper() == "WORKDIR"] == ["/app"]
     assert [row[1:] for row in rows if row[0].upper() == "ENTRYPOINT"] == [['["python",', '"-m"]']]
     assert not [row for row in rows if row[0].upper() == "HEALTHCHECK"]
+
+
+def copies_of(dockerfile: Path) -> set[tuple[str, ...]]:
+    return {tuple(row[1:]) for row in final_stage(dockerfile) if row[0].upper() == "COPY"}
+
+
+def test_gateway_image_carries_its_connectors_and_policies() -> None:
+    patterns = ignore_patterns(DOCKERIGNORES[2])
+
+    assert copies_of(GATEWAY) == {
+        ("--from=build", "/opt/venv", "/opt/venv"),
+        ("config/connectors", "/etc/ais0c/connectors"),
+        ("config/policies", "/etc/ais0c/policies"),
+    }
+    for path in ("config/connectors/qradar.yaml", "config/policies/qradar.yaml"):
+        assert in_context(patterns, path), path
+    assert not in_context(patterns, "config/agents/triage.yaml")
+    assert not in_context(patterns, "config/connectors/.env")
+
+
+def test_litellm_image_adds_only_the_prod_config_to_the_dev_base_image() -> None:
+    dev = (REPO_ROOT / "deploy/compose/docker-compose.dev.yaml").read_text("utf-8")
+    patterns = ignore_patterns(DOCKERIGNORES[3])
+    rows = final_stage(LITELLM)
+
+    assert dockerfile_images(LITELLM.read_text("utf-8")) == [rows[0][1]]
+    assert f"image: {rows[0][1]}" in dev
+    assert copies_of(LITELLM) == {
+        ("config/litellm/litellm.prod.yaml", "/etc/litellm/litellm.prod.yaml")
+    }
+    assert {row[0].upper() for row in rows} <= {"FROM", "LABEL", "COPY"}
+    assert in_context(patterns, "config/litellm/litellm.prod.yaml")
+    assert not in_context(patterns, "config/litellm/litellm.dev.yaml")
+    assert not in_context(patterns, "config/litellm/.env")
 
 
 # --- 5. nginx ----------------------------------------------------------------------------------
@@ -311,9 +357,19 @@ def docker(*arguments: str, timeout: int = 120) -> subprocess.CompletedProcess[s
 def built_images() -> Iterator[dict[str, str]]:
     if shutil.which("docker") is None:
         pytest.skip("docker is not installed")
-    tags = {"platform": "ais0c-platform:test-t076", "ui": "ais0c-ui:test-t076"}
+    tags = {
+        "platform": "ais0c-platform:test-t076",
+        "ui": "ais0c-ui:test-t076",
+        "gateway": "ais0c-mcp-gateway:test-t076",
+        "litellm": "ais0c-litellm:test-t076",
+    }
     try:
-        for dockerfile, tag in ((PLATFORM, tags["platform"]), (UI, tags["ui"])):
+        for dockerfile, tag in (
+            (PLATFORM, tags["platform"]),
+            (UI, tags["ui"]),
+            (GATEWAY, tags["gateway"]),
+            (LITELLM, tags["litellm"]),
+        ):
             built = docker("build", "-f", str(dockerfile), "-t", tag, str(REPO_ROOT), timeout=1500)
             assert built.returncode == 0, built.stderr[-2000:]
         yield tags
@@ -336,3 +392,16 @@ def test_ui_image_builds(built_images: dict[str, str]) -> None:
     )
 
     assert result.returncode == 0, result.stderr
+
+
+def test_release_content_is_inside_the_built_images(built_images: dict[str, str]) -> None:
+    for image, path in (
+        ("platform", "/app/config/policies/qradar.yaml"),
+        ("platform", "/app/config/sigma/qradar-pipeline.yaml"),
+        ("platform", "/app/config/telemetry/log-source-classes.yaml"),
+        ("gateway", "/etc/ais0c/connectors/qradar.yaml"),
+        ("gateway", "/etc/ais0c/policies/qradar.yaml"),
+        ("litellm", "/etc/litellm/litellm.prod.yaml"),
+    ):
+        result = docker("run", "--rm", "--entrypoint", "ls", built_images[image], path)
+        assert result.returncode == 0, f"{image}: {path}: {result.stderr}"

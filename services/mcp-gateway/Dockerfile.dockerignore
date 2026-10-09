@@ -3,7 +3,7 @@
 #
 # Only what `uv sync --package ais0c-mcp-gateway` needs gets in: uv reads every workspace
 # member's pyproject.toml to check uv.lock, and builds the gateway and the workspace packages it
-# depends on. Docs, tests, configuration, deploy files and local secrets stay out.
+# depends on, and the connectors and policies the image carries. Docs, tests, other configuration, deploy files and local secrets stay out.
 *
 !.python-version
 !pyproject.toml
@@ -15,5 +15,9 @@
 !packages/policy/src
 !packages/storage/src
 !services/mcp-gateway/src
+!config/connectors
+!config/policies
 **/__pycache__
 **/*.pyc
+**/.env
+**/.env.*

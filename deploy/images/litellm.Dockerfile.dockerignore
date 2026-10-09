@@ -1,0 +1,6 @@
+# Build context of deploy/images/litellm.Dockerfile, which is the repository root. BuildKit reads
+# this file instead of a .dockerignore at the root. Only the prod LiteLLM configuration gets in.
+*
+!config/litellm/litellm.prod.yaml
+**/.env
+**/.env.*

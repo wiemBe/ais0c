@@ -360,14 +360,16 @@ Temporal server ve admin-tools aynı sürümde tutulur. LiteLLM imajları cosign
 
 ## Prod (shadow)
 
-[`docker-compose.prod.yaml`](docker-compose.prod.yaml) prod shadow'u tek bir Linux sunucuda çalıştırır ([T-077](../../docs/impl/tasks/T-077-prod-compose.md)). Bütün platform servisleri imajdan çalışır ([deploy/images](../images/README.md)); `migrate` veritabanını bir kez son sürüme taşıyıp çıkar, worker'lar ve API onu bekler. Dev dosyasından bağımsızdır, `profiles` yoktur, Mailpit yoktur. Shadow hiçbir şey yazmaz ve göndermez (T-23): kill switch yeni veritabanında kapalıdır ve açmak iki admin ister (T-033). Bu dosyada yazmayı açan hiçbir ayar yoktur.
+[`docker-compose.prod.yaml`](docker-compose.prod.yaml) prod shadow'u tek bir Linux sunucuda çalıştırır ([T-077](../../docs/impl/tasks/T-077-prod-compose.md)). Bütün platform servisleri imajdan çalışır ([deploy/images](../images/README.md)); `migrate` veritabanını bir kez son sürüme taşıyıp çıkar, worker'lar ve API onu bekler; üç worker ayrıca `preflight`'ın geçmesini bekler. Release'in içeriği (politikalar, telemetri sınıfları, LiteLLM yapılandırması, connector'lar) imajlardadır; depodan bind mount yoktur (yalnızca `deploy/compose/` yanındaki Postgres, Temporal ve collector yardımcı dosyaları bağlanır). Dev dosyasından bağımsızdır, `profiles` yoktur, Mailpit yoktur. Shadow hiçbir şey yazmaz ve göndermez (T-23): kill switch yeni veritabanında kapalıdır ve açmak iki admin ister (T-033). Bu dosyada yazmayı açan hiçbir ayar yoktur.
 
 | Servis | İmaj | Not |
 |---|---|---|
-| `postgres`, `temporal-schema`, `temporal`, `temporal-admin-tools`, `temporal-ui`, `otel-collector`, `litellm` | Dev'dekilerle aynı (etiket + digest) | LiteLLM `config/litellm/litellm.prod.yaml`'ı yükler; dışarı port açılmaz. `temporal-admin-tools` `default` namespace'ini kurar |
+| `postgres`, `temporal-schema`, `temporal`, `temporal-admin-tools`, `temporal-ui`, `otel-collector` | Dev'dekilerle aynı (etiket + digest) | `temporal-admin-tools` `default` namespace'ini kurar |
+| `litellm` | `ais0c-litellm:${AIS0C_VERSION}` | Dev'in LiteLLM imajı artı `config/litellm/litellm.prod.yaml`; dışarı port açılmaz |
 | `mcp-gateway` | `ais0c-mcp-gateway:${AIS0C_VERSION}` | Yalnızca iç ağda |
 | `qradar-mcp-read`, `qradar-mcp-note` | Dev'deki fork imajı (aynı commit etiketi) | `mcp` ağı `internal`; `qradar-egress` normal bir bridge'dir |
 | `migrate` | `ais0c-platform:${AIS0C_VERSION}` | `ais0c_worker migrate`, `restart: "no"` |
+| `preflight` | aynı | `ais0c_worker preflight`, `restart: "no"`; worker'ların kapısı (aşağıda) |
 | `case-worker`, `batch-worker`, `executor-worker` | aynı | Komutlar: `ais0c_worker`, `ais0c_worker batch`, `ais0c_worker executor` |
 | `api` | aynı | `ais0c_api`, yalnızca iç ağda |
 | `ui` | `ais0c-ui:${AIS0C_VERSION}` | Dışarı açılan tek port: `8443` (TLS) |
@@ -377,12 +379,12 @@ Kendi imajlarımız hiçbir zaman indirilmez ve compose'ta `build:` yoktur (`pul
 Ağ ve ayrım:
 
 - Dışarı yalnızca `ui`'nin `8443`'ü açılır (`AIS0C_UI_BIND` ile belirli bir arayüze bağlanabilir). `temporal-ui` yalnızca sunucunun `127.0.0.1:8233` adresindedir; Temporal'da kimlik doğrulama yoktur.
-- Case worker not token'ını (`gateway-token-qradar-note-write`) almaz; yalnızca triage, investigate ve verify ajan token'larını alır. Executor yalnızca not token'ını alır. Batch worker yalnızca envanter token'ını alır.
-- `case-worker` ayrıca `config/litellm/litellm.prod.yaml` dosyasını ve `VLLM_*` adreslerini alır: `preflight` model sürümünü (H-7) bu dosya ve adreslerle doğrular. İmajda olmayan `config/policies`, `config/sigma` (case worker) ve `config/telemetry` (batch worker) salt okunur bind mount olarak bağlanır; bu yüzden repo `deploy/compose/`'un iki üst dizininde sunucuda durur.
+- Case worker not token'ını (`gateway-token-qradar-note-write`) almaz; yalnızca triage, investigate ve verify ajan token'larını alır. Executor yalnızca not token'ını (ve relay parolasını) alır. Batch worker yalnızca envanter token'ını alır.
+- `preflight` tek seferlik bir servistir ve `VLLM_*` adreslerini yalnızca o (ve LiteLLM'in kendisi) alır; model sürümü denetimi (H-7) için LiteLLM yapılandırmasını `ais0c-litellm` imajından salt okunur bir image volume olarak okur. Worker'larda `VLLM_*` yoktur.
 
 ### Kurulum sırası
 
-1. **İmajlar.** Release tar'ından yükle: `docker load -i ais0c-<sürüm>.tar`. Yüklenen imajlar `ais0c-platform`, `ais0c-ui`, `ais0c-mcp-gateway` ve fork imajı `qradar-mcp-fork:<commit>`'tir (etiketi `docker-compose.prod.yaml` ve `config/connectors/qradar.yaml` ile aynıdır).
+1. **İmajlar.** Release tar'ından yükle: `docker load -i ais0c-<sürüm>.tar`. Yüklenen imajlar `ais0c-platform`, `ais0c-ui`, `ais0c-mcp-gateway`, `ais0c-litellm` ve fork imajı `qradar-mcp-fork:<commit>`'tir (etiketi `docker-compose.prod.yaml` ve `config/connectors/qradar.yaml` ile aynıdır).
 2. **`.env.prod`.** `cp .env.prod.example .env.prod`, bütün değerleri doldur (sırlar için `openssl rand -hex 24`). Dosya git dışıdır.
 3. **Sır dizini.** Repo dışında, yalnızca bu sunucudaki bir dizin seç ve `.env.prod`'daki `AIS0C_SECRETS_DIR`'e yaz. Gateway ve MCP token'larını üret; QRadar token'ları QRadar'dan gelir (okuma token'ı yalnızca okuyabilmeli, not token'ı not ekleyebilmelidir):
 
@@ -394,6 +396,7 @@ Ağ ve ayrım:
    Betik `agents/`, `executor/`, `mcp/` ve `qradar/` alt dizinlerini yazar. Ek olarak şunlar elle konur (dizin `0700`, dosyalar konteynerlerin okuyabilmesi için `0644`):
 
    - `ui/tls.crt` ve `ui/tls.key`: UI'nin sertifikası (gerekirse zincirle) ve özel anahtarı.
+   - `executor/smtp-password`: relay girişinin parolası. Relay giriş istemiyorsa boş bir dosya yeterlidir ve `AIS0C_SMTP_USERNAME` boş kalır; kullanıcı adı doluysa executor bu dosyayı okur.
    - `api/dev-users.json`: API'nin bugün yalnızca `dev` kimlik doğrulamasıyla çalıştığı (`AIS0C_API_AUTH=dev`; OIDC T-035'tir) için kullanıcı dosyası. Dosyada token'ın kendisi değil **sha256'sı** durur; iki admin gerekir. Biçim ve örnek: [API](#api-arayüz-servisi) bölümü.
 4. **Başlat.**
 
@@ -402,14 +405,14 @@ Ağ ve ayrım:
    docker compose --env-file .env.prod -f docker-compose.prod.yaml up -d
    ```
 
-   Sırayla Postgres, Temporal, `migrate` (çıkış kodu 0 ile biter), sonra worker'lar, API ve UI başlar. QRadar veya vLLM'e ulaşılamıyorsa ilgili servisler sağlıksız kalır ve yeniden başlar; bu beklenir.
-5. **Preflight.** Shadow'a geçmeden önce ön koşulları denetle; her `FAIL` çıkış kodunu 1 yapar (`WARN` yapmaz):
+   Sırayla Postgres, Temporal, `migrate` (çıkış kodu 0 ile biter), sonra `preflight` (geçerse worker'lar başlar; geçmezse `up -d` "dependency failed to start" ile biter ve worker'lar başlamaz), API ve UI başlar. QRadar veya vLLM'e ulaşılamıyorsa ilgili servisler sağlıksız kalır ve yeniden başlar; bu beklenir.
+5. **Preflight kapısı.** `preflight` servisi `migrate` bittikten, Temporal, gateway ve LiteLLM sağlıklı olduktan sonra çalışır ve sekiz ön koşulu denetler (veritabanı, kill switch, skills modu, skill'ler, model sürümü H-7, gateway, Temporal, modeller); her `FAIL` çıkış kodunu 1 yapar (`WARN` yapmaz). `case-worker`, `batch-worker` ve `executor-worker` `service_completed_successfully` ile ona bağlıdır: `up -d` yazan servisleri yalnızca preflight geçtikten sonra başlatır. Preflight başarısızsa worker'lar hiç başlamaz ve neden şurada görünür:
 
    ```bash
-   docker compose --env-file .env.prod -f docker-compose.prod.yaml run --rm case-worker ais0c_worker preflight
+   docker compose --env-file .env.prod -f docker-compose.prod.yaml logs preflight
    ```
 
-   (`--skip-models` model çağrılarını atlar; `--json` JSON yazar. Konteynerin giriş noktası `python -m` olduğundan komut `ais0c_worker preflight` biçimindedir.)
+   Nedeni giderip `up -d`'yi yeniden çalıştır. API ve UI preflight'ı beklemez; yöneticiler bayrağı hep görebilir. Elle yeniden koşmak için: `docker compose --env-file .env.prod -f docker-compose.prod.yaml run --rm preflight` (`--json` için komutun sonuna `ais0c_worker preflight --json` yaz).
 6. **Kill switch kapalı kalır.** Yeni veritabanında bayrak yoktur ve bu kapalı demektir: case workflow aynı çağrıları yapar, executor yazmaz, `notes_written` ve `notifications` satırları `disabled` olur. Kill switch'in açılması API'den iki admin ister (T-033); bu dosya onu açmaz.
 
 Durdurmak için `docker compose --env-file .env.prod -f docker-compose.prod.yaml down` (veriler `ais0c-prod_postgres-data` volume'unda kalır; `down -v` onu da siler).
@@ -420,4 +423,4 @@ Durdurmak için `docker compose --env-file .env.prod -f docker-compose.prod.yaml
 - Bind mount'lar salt okunurdur ve SELinux için `z` etiketi taşır (Fedora, RHEL).
 - LiteLLM root olmayan bir kullanıcıyla ve salt okunur dosya sistemiyle çalışır. Açılışta model maliyet tablosunu indirmez (`LITELLM_LOCAL_MODEL_COST_MAP`).
 - Collector'ın imajında kabuk ve HTTP istemcisi yoktur. Healthcheck, sabitlenmiş busybox imajını salt okunur bir image volume olarak bağlar. Bunun için Docker Engine 29 ve Docker Compose 2.35 veya üzeri gerekir (Engine 29.7.2 ve Compose 5.5.1 ile denendi).
-- `litellm.prod.yaml` bu yığında kullanılmaz. LiteLLM, `api_base`'i boş kalan bir `hosted_vllm` modelinin isteğini public OpenAI API'sine gönderir; prod konfigürasyonu bunu `.invalid` bir adrese sabitleyerek engeller. Prod dağıtımında yine de her `VLLM_*_API_BASE` değişkeni zorunlu tutulmalıdır.
+- `litellm.prod.yaml` dev yığınında kullanılmaz; prod yığınında `ais0c-litellm` imajına gömülüdür (`deploy/images/litellm.Dockerfile`). LiteLLM, `api_base`'i boş kalan bir `hosted_vllm` modelinin isteğini public OpenAI API'sine gönderir; prod konfigürasyonu bunu `.invalid` bir adrese sabitleyerek engeller. Prod dağıtımında yine de her `VLLM_*_API_BASE` değişkeni zorunlu tutulmalıdır.

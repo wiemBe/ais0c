@@ -112,9 +112,12 @@ def test_the_image_runs_only_the_gateway_without_root() -> None:
     users = [line.split()[1] for line in final if line.startswith("USER ")]
     assert users == ["10001:10001"]
     assert any(line.startswith("HEALTHCHECK ") and "/healthz" in line for line in final)
-    # Only the built environment reaches the final image: no source, config or secret.
+    # Only the built environment and the release's connectors and policies (T-077) reach the
+    # final image: no source and no secret.
     assert [line for line in final if line.startswith(("COPY ", "ADD "))] == [
-        "COPY --from=build /opt/venv /opt/venv"
+        "COPY --from=build /opt/venv /opt/venv",
+        "COPY config/connectors /etc/ais0c/connectors",
+        "COPY config/policies /etc/ais0c/policies",
     ]
 
 
@@ -131,7 +134,9 @@ def test_the_build_context_is_only_the_workspace_and_the_gateways_packages() -> 
         "services/mcp-gateway/src",
     ]
     assert all(
-        path.endswith(("/src", "pyproject.toml", "uv.lock", ".python-version")) for path in included
+        path.endswith(("/src", "pyproject.toml", "uv.lock", ".python-version"))
+        or path in {"config/connectors", "config/policies"}
+        for path in included
     )
 
 

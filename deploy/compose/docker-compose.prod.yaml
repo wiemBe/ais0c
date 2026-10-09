@@ -14,6 +14,11 @@
 # - Secrets come from the environment (.env.prod, git-ignored; template: .env.prod.example) or
 #   from secret files under ${AIS0C_SECRETS_DIR}, made by make_secrets.py --directory.
 # - The case worker does not get the QRadar note token; only the executor and the gateway do.
+# - The stack bind-mounts nothing from the repository except the Postgres and Temporal helper
+#   scripts and the collector config: the release (policies, telemetry, LiteLLM config...) is
+#   inside the images.
+# - The three workers start only after the one-shot `preflight` has passed. A failed preflight
+#   shows in `docker compose logs preflight`.
 #
 # Checks: tests/deploy/test_prod_compose.py.
 
@@ -173,11 +178,13 @@ services:
       retries: 12
       start_period: 5s
 
-  # Model gateway (§19). Prod routes the aliases to the on-prem vLLM servers; no port is
+  # Model gateway (§19). Prod routes the aliases to the on-prem vLLM servers. The image bakes
+  # in config/litellm/litellm.prod.yaml (deploy/images/litellm.Dockerfile); no port is
   # published: only the workers on the compose network call it.
   litellm:
-    image: ghcr.io/berriai/litellm:v1.103.2@sha256:f63fb81b831b170ec16851e23c36ac5bf52ef106b271406429524a2ed730bbfd
-    command: ["--config", "/etc/litellm/config.yaml", "--port", "4000"]
+    image: ais0c-litellm:${AIS0C_VERSION:?Set AIS0C_VERSION in .env.prod}
+    pull_policy: never
+    command: ["--config", "/etc/litellm/litellm.prod.yaml", "--port", "4000"]
     environment:
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:?Set LITELLM_MASTER_KEY in .env.prod}
       # Each vLLM endpoint including its /v1 path; the key is needed only when vLLM has --api-key.
@@ -187,10 +194,10 @@ services:
       VLLM_QWEN_122B_API_KEY: ${VLLM_QWEN_122B_API_KEY:-}
       # Use the model cost map bundled in the image instead of downloading it at startup.
       LITELLM_LOCAL_MODEL_COST_MAP: "True"
-    volumes:
-      - ../../config/litellm/litellm.prod.yaml:/etc/litellm/config.yaml:ro,z
     user: "65534:65534"
     read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
     tmpfs:
       - /tmp
     restart: unless-stopped
@@ -215,6 +222,7 @@ services:
         condition: service_healthy
     environment:
       AIS0C_DATABASE_URL: postgresql+psycopg://ais0c:${AIS0C_DB_PASSWORD:?Set AIS0C_DB_PASSWORD in .env.prod}@postgres:5432/ais0c
+      # connectors/ and policies/ are inside the image.
       AIS0C_GATEWAY_CONFIG_DIR: /etc/ais0c
       AIS0C_GATEWAY_UPSTREAM_URL_QRADAR_MCP_READ: http://qradar-mcp-read.mcp:5000/mcp
       AIS0C_GATEWAY_UPSTREAM_URL_QRADAR_MCP_NOTE: http://qradar-mcp-note.mcp:5000/mcp
@@ -230,9 +238,6 @@ services:
       - gateway-token-qradar-note-write
       - mcp-token-qradar-mcp-read
       - mcp-token-qradar-mcp-note
-    volumes:
-      - ../../config/connectors:/etc/ais0c/connectors:ro,z
-      - ../../config/policies:/etc/ais0c/policies:ro,z
     networks: [default, mcp]
     healthcheck:
       test:
@@ -305,15 +310,56 @@ services:
     environment: *platform-environment
     restart: "no"
 
+  # One-shot gate (T-078): checks the prerequisites of the shadow and exits. The three workers
+  # wait for it, so a failed check (database, kill switch, skills, model release H-7, gateway,
+  # Temporal, models) keeps them from starting; see `docker compose logs preflight`. It alone
+  # gets the vLLM endpoints and the LiteLLM config (read from the ais0c-litellm image), which
+  # the release check needs.
+  preflight:
+    <<: *platform
+    command: ["ais0c_worker", "preflight"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      temporal-admin-tools:
+        condition: service_healthy
+      mcp-gateway:
+        condition: service_healthy
+      litellm:
+        condition: service_healthy
+    environment:
+      <<: *worker-environment
+      AIS0C_SKILLS_MODE: prod
+      AIS0C_MODEL_REGISTRY: config/models/registry.prod.yaml
+      LITELLM_BASE_URL: http://litellm:4000
+      LITELLM_API_KEY: ${LITELLM_MASTER_KEY:?Set LITELLM_MASTER_KEY in .env.prod}
+      VLLM_DEEPSEEK_V4_FLASH_API_BASE: ${VLLM_DEEPSEEK_V4_FLASH_API_BASE:?Set VLLM_DEEPSEEK_V4_FLASH_API_BASE in .env.prod}
+      VLLM_DEEPSEEK_V4_FLASH_API_KEY: ${VLLM_DEEPSEEK_V4_FLASH_API_KEY:-}
+      VLLM_QWEN_122B_API_BASE: ${VLLM_QWEN_122B_API_BASE:?Set VLLM_QWEN_122B_API_BASE in .env.prod}
+      VLLM_QWEN_122B_API_KEY: ${VLLM_QWEN_122B_API_KEY:-}
+    secrets:
+      - gateway-token-qradar-triage-read
+      - gateway-token-qradar-investigate-read
+      - gateway-token-qradar-verify-read
+    volumes:
+      # The LiteLLM config the proxy runs, read from its image: /etc/litellm holds only
+      # litellm.prod.yaml. Not a bind mount from the repository.
+      - type: image
+        image:
+          subpath: etc/litellm
+        source: ais0c-litellm:${AIS0C_VERSION:?Set AIS0C_VERSION in .env.prod}
+        target: /app/config/litellm
+    restart: "no"
+
   # The soc-case worker: offenses, cases and their agents. It holds the agent tokens, never the
-  # note token. `docker compose run --rm case-worker ais0c_worker preflight` checks the
-  # prerequisites; for that it also mounts the LiteLLM config and gets the vLLM endpoints, which
-  # the release check (H-7) reads.
+  # note token, and no vLLM credential.
   case-worker:
     <<: *platform
     command: ["ais0c_worker"]
     depends_on:
       migrate:
+        condition: service_completed_successfully
+      preflight:
         condition: service_completed_successfully
       temporal-admin-tools:
         condition: service_healthy
@@ -326,19 +372,10 @@ services:
       LITELLM_BASE_URL: http://litellm:4000
       LITELLM_API_KEY: ${LITELLM_MASTER_KEY:?Set LITELLM_MASTER_KEY in .env.prod}
       AIS0C_CASE_URL_BASE: ${AIS0C_CASE_URL_BASE:?Set AIS0C_CASE_URL_BASE in .env.prod}
-      VLLM_DEEPSEEK_V4_FLASH_API_BASE: ${VLLM_DEEPSEEK_V4_FLASH_API_BASE:?Set VLLM_DEEPSEEK_V4_FLASH_API_BASE in .env.prod}
-      VLLM_DEEPSEEK_V4_FLASH_API_KEY: ${VLLM_DEEPSEEK_V4_FLASH_API_KEY:-}
-      VLLM_QWEN_122B_API_BASE: ${VLLM_QWEN_122B_API_BASE:?Set VLLM_QWEN_122B_API_BASE in .env.prod}
-      VLLM_QWEN_122B_API_KEY: ${VLLM_QWEN_122B_API_KEY:-}
     secrets:
       - gateway-token-qradar-triage-read
       - gateway-token-qradar-investigate-read
       - gateway-token-qradar-verify-read
-    volumes:
-      - ../../config/litellm/litellm.prod.yaml:/app/config/litellm/litellm.prod.yaml:ro,z
-      # Not in the ais0c-platform image (T-076); the worker reads them at start-up.
-      - ../../config/policies:/app/config/policies:ro,z
-      - ../../config/sigma:/app/config/sigma:ro,z
     healthcheck: *worker-healthcheck
 
   # The soc-batch worker: catalog sync and health alarms. It reads QRadar's inventory only.
@@ -347,6 +384,8 @@ services:
     command: ["ais0c_worker", "batch"]
     depends_on:
       migrate:
+        condition: service_completed_successfully
+      preflight:
         condition: service_completed_successfully
       temporal-admin-tools:
         condition: service_healthy
@@ -363,9 +402,6 @@ services:
       AIS0C_ALARM_SYSLOG_PROTOCOL: ${AIS0C_ALARM_SYSLOG_PROTOCOL:-}
     secrets:
       - gateway-token-qradar-inventory-read
-    volumes:
-      # Not in the ais0c-platform image (T-076); the worker reads it at start-up.
-      - ../../config/telemetry:/app/config/telemetry:ro,z
     healthcheck: *worker-healthcheck
 
   # The soc-executor worker: the only process that writes the QRadar note and sends e-mail. With
@@ -375,6 +411,8 @@ services:
     command: ["ais0c_worker", "executor"]
     depends_on:
       migrate:
+        condition: service_completed_successfully
+      preflight:
         condition: service_completed_successfully
       temporal-admin-tools:
         condition: service_healthy
@@ -389,8 +427,11 @@ services:
       AIS0C_SMTP_PORT: ${AIS0C_SMTP_PORT:-}
       AIS0C_SMTP_TLS: ${AIS0C_SMTP_TLS:-}
       AIS0C_SMTP_FROM: ${AIS0C_SMTP_FROM:?Set AIS0C_SMTP_FROM in .env.prod}
+      # Empty: the relay takes no login and smtp-password is not read.
+      AIS0C_SMTP_USERNAME: ${AIS0C_SMTP_USERNAME:-}
     secrets:
       - gateway-token-qradar-note-write
+      - smtp-password
     healthcheck: *worker-healthcheck
 
   # The analyst API. Reachable only on the compose network, through the UI's nginx.
@@ -471,6 +512,8 @@ secrets:
     file: ${AIS0C_SECRETS_DIR:?Set AIS0C_SECRETS_DIR in deploy/compose/.env.prod}/qradar/qradar-token-read
   qradar-token-note:
     file: ${AIS0C_SECRETS_DIR:?Set AIS0C_SECRETS_DIR in deploy/compose/.env.prod}/qradar/qradar-token-note
+  smtp-password:
+    file: ${AIS0C_SECRETS_DIR:?Set AIS0C_SECRETS_DIR in deploy/compose/.env.prod}/executor/smtp-password
   dev-users.json:
     file: ${AIS0C_SECRETS_DIR:?Set AIS0C_SECRETS_DIR in deploy/compose/.env.prod}/api/dev-users.json
   ui-tls.crt:

@@ -9,9 +9,10 @@
 # sources those four packages need. Base images are pinned by tag and digest; the dev stack's
 # static test checks every FROM line (tests/deploy/test_compose_file.py).
 #
-# The image holds no configuration and no secret. At run time the gateway reads
-# AIS0C_GATEWAY_CONFIG_DIR (connectors/ and policies/), the tokens in /run/secrets and the
-# rest of its environment (ais0c_mcp_gateway/settings.py).
+# The image holds the release's connectors/ and policies/ under /etc/ais0c (T-077), and no
+# secret. At run time the gateway reads AIS0C_GATEWAY_CONFIG_DIR (/etc/ais0c; the dev stack
+# mounts the checkout's files over it), the tokens in /run/secrets and the rest of its
+# environment (ais0c_mcp_gateway/settings.py).
 
 FROM ghcr.io/astral-sh/uv:0.12.22@sha256:f513a91fc62fe7c17567eee97230dd198e43edb8a9fbecca843714a4358fe1bc AS uv
 
@@ -41,6 +42,9 @@ ENV PATH=/opt/venv/bin:$PATH \
 COPY --from=build /opt/venv /opt/venv
 RUN groupadd --gid 10001 gateway \
     && useradd --uid 10001 --gid 10001 --no-create-home --shell /usr/sbin/nologin gateway
+
+COPY config/connectors /etc/ais0c/connectors
+COPY config/policies /etc/ais0c/policies
 
 USER 10001:10001
 EXPOSE 8080

@@ -38,10 +38,13 @@ PROD_EXAMPLE = COMPOSE_DIR / ".env.prod.example"
 DEV_FILE = COMPOSE_DIR / "docker-compose.dev.yaml"
 OWN_TAG = "${AIS0C_VERSION:?"
 WORKERS = ("case-worker", "batch-worker", "executor-worker")
+GATE = "preflight"
 MIGRATING = (*WORKERS, "api")
 # The services we build and run ourselves (T-076 images, the qradar-mcp fork, the gateway).
 OWN_SERVICES = (
     "mcp-gateway",
+    "litellm",
+    "preflight",
     "qradar-mcp-read",
     "qradar-mcp-note",
     "migrate",
@@ -315,7 +318,11 @@ def test_note_token_in_the_case_worker_is_reported() -> None:
 def test_executor_gets_only_the_note_token() -> None:
     compose = load_prod()
 
-    assert worker_secret_names(compose, "executor-worker") == {"gateway-token-qradar-note-write"}
+    # The note token, and the relay password (read only when AIS0C_SMTP_USERNAME is set).
+    assert worker_secret_names(compose, "executor-worker") == {
+        "gateway-token-qradar-note-write",
+        "smtp-password",
+    }
     for name in ("batch-worker", "api", "ui", "migrate"):
         assert "gateway-token-qradar-note-write" not in worker_secret_names(compose, name)
     assert worker_secret_names(compose, "batch-worker") == {"gateway-token-qradar-inventory-read"}
@@ -378,6 +385,16 @@ def test_every_long_running_prod_service_has_a_healthcheck() -> None:
 
 def hardening_problems(compose: dict[str, Any]) -> list[str]:
     problems: list[str] = []
+    for name, service in compose["services"].items():
+        if service.get("privileged"):
+            problems.append(f"{name}: privileged")
+        for key in ("network_mode", "pid", "ipc", "userns_mode"):
+            if service.get(key) == "host":
+                problems.append(f"{name}: {key} is host")
+        for volume in service.get("volumes") or []:
+            text = volume if isinstance(volume, str) else str(volume.get("source", ""))
+            if "docker.sock" in text:
+                problems.append(f"{name}: mounts the Docker socket")
     for name in OWN_SERVICES:
         service = compose["services"][name]
         if service.get("read_only") is not True:
@@ -386,9 +403,9 @@ def hardening_problems(compose: dict[str, Any]) -> list[str]:
             problems.append(f"{name}: cap_drop is not [ALL]")
         if "no-new-privileges:true" not in (service.get("security_opt") or []):
             problems.append(f"{name}: no no-new-privileges")
-        if "tmpfs" in service and "/tmp" not in service["tmpfs"]:  # noqa: S108
+        if "/tmp" not in (service.get("tmpfs") or []):  # noqa: S108
             problems.append(f"{name}: tmpfs lacks /tmp")
-        if name != "migrate" and service.get("restart") != "unless-stopped":
+        if name not in {"migrate", GATE} and service.get("restart") != "unless-stopped":
             problems.append(f"{name}: restart is not unless-stopped")
     return problems
 
@@ -403,11 +420,123 @@ def test_a_service_without_hardening_is_reported() -> None:
     del compose["services"]["ui"]["cap_drop"]
     compose["services"]["migrate"]["security_opt"] = []
 
+    del compose["services"]["case-worker"]["tmpfs"]
     assert sorted(hardening_problems(compose)) == [
         "api: not read_only",
+        "case-worker: tmpfs lacks /tmp",
         "migrate: no no-new-privileges",
         "ui: cap_drop is not [ALL]",
     ]
+
+
+@pytest.mark.parametrize(
+    ("change", "expected"),
+    [
+        ({"privileged": True}, "api: privileged"),
+        ({"network_mode": "host"}, "api: network_mode is host"),
+        ({"pid": "host"}, "api: pid is host"),
+        (
+            {"volumes": ["/var/run/docker.sock:/var/run/docker.sock"]},
+            "api: mounts the Docker socket",
+        ),
+        ({"tmpfs": []}, "api: tmpfs lacks /tmp"),
+    ],
+    ids=["privileged", "host-network", "host-pid", "docker-socket", "no-tmpfs"],
+)
+def test_a_dangerous_or_unhardened_service_setting_is_reported(
+    change: dict[str, Any], expected: str
+) -> None:
+    compose = copy.deepcopy(load_prod())
+    compose["services"]["api"].update(change)
+
+    assert expected in hardening_problems(compose)
+
+
+# --- preflight gate and credentials -------------------------------------------------------
+
+
+def gate_problems(compose: dict[str, Any]) -> list[str]:
+    problems = [
+        f"{name} does not wait for preflight"
+        for name in WORKERS
+        if (compose["services"][name].get("depends_on") or {}).get(GATE, {}).get("condition")
+        != "service_completed_successfully"
+    ]
+    gate = compose["services"][GATE]
+    if gate.get("restart") != "no":
+        problems.append("preflight restarts")
+    if gate.get("command") != ["ais0c_worker", "preflight"]:
+        problems.append("preflight runs another command")
+    depends = gate.get("depends_on") or {}
+    expected = {
+        "migrate": "service_completed_successfully",
+        "temporal-admin-tools": "service_healthy",
+        "mcp-gateway": "service_healthy",
+        "litellm": "service_healthy",
+    }
+    problems.extend(
+        f"preflight does not wait for {dependency}"
+        for dependency, condition in expected.items()
+        if depends.get(dependency, {}).get("condition") != condition
+    )
+    return problems
+
+
+def test_writers_wait_for_preflight() -> None:
+    compose = load_prod()
+
+    assert gate_problems(compose) == []
+    assert GATE in one_shot_jobs(compose)
+    # The API and the UI start without it: admins must be able to see the flag.
+    assert GATE not in (compose["services"]["api"].get("depends_on") or {})
+    assert GATE not in (compose["services"]["ui"].get("depends_on") or {})
+    # Nothing but the three workers is held back by it.
+    waiting = {
+        name
+        for name, service in compose["services"].items()
+        if GATE in (service.get("depends_on") or {})
+    }
+    assert waiting == set(WORKERS)
+
+
+def test_a_worker_that_skips_preflight_is_reported() -> None:
+    compose = copy.deepcopy(load_prod())
+    del compose["services"]["executor-worker"]["depends_on"][GATE]
+    compose["services"][GATE]["restart"] = "unless-stopped"
+    compose["services"][GATE]["depends_on"].pop("litellm")
+
+    assert gate_problems(compose) == [
+        "executor-worker does not wait for preflight",
+        "preflight restarts",
+        "preflight does not wait for litellm",
+    ]
+
+
+def vllm_holders(compose: dict[str, Any]) -> set[str]:
+    return {
+        name
+        for name, service in compose["services"].items()
+        if any(key.startswith("VLLM_") for key in environment(service))
+    }
+
+
+def test_only_preflight_and_litellm_get_vllm_credentials() -> None:
+    compose = load_prod()
+
+    assert vllm_holders(compose) == {GATE, "litellm"}
+    # The preflight reads the LiteLLM config from the litellm image, not from the repository.
+    volumes = compose["services"][GATE]["volumes"]
+    assert [(v["type"], v["target"]) for v in volumes] == [("image", "/app/config/litellm")]
+    assert volumes[0]["source"].startswith("ais0c-litellm:" + OWN_TAG)
+    for name in WORKERS:
+        assert "volumes" not in compose["services"][name]
+
+
+def test_a_worker_with_vllm_credentials_is_reported() -> None:
+    compose = copy.deepcopy(load_prod())
+    compose["services"]["case-worker"]["environment"]["VLLM_QWEN_122B_API_KEY"] = "${X:-}"
+
+    assert vllm_holders(compose) == {GATE, "litellm", "case-worker"}
 
 
 # --- shadow and isolation -----------------------------------------------------------------
@@ -438,31 +567,126 @@ def test_nothing_opens_writes_in_prod() -> None:
         assert not [key for key in environment(service) if "WRITE" in key], name
 
 
-def test_the_internal_network_has_no_route_out_and_the_egress_net_is_a_bridge() -> None:
-    networks = load_prod()["networks"]
-
-    assert networks["mcp"] == {"internal": True}
-    assert networks["qradar-egress"] in ({}, None)
-    for name in ("qradar-mcp-read", "qradar-mcp-note"):
-        assert set(load_prod()["services"][name]["networks"]) == {"mcp", "qradar-egress"}
-
-
-def test_bind_mounts_are_read_only_and_exist() -> None:
-    mounts = bind_mounts(load_prod())
-
-    assert mounts
-    for name, source, target, options in mounts:
-        assert (COMPOSE_DIR / resolve_default(source)).exists(), f"{name}: {source} is missing"
-        assert "ro" in options, f"{name}: {target} is writable"
-        assert "z" in options, f"{name}: {target} needs the SELinux label z"
+def network_members(compose: dict[str, Any]) -> dict[str, set[str]]:
+    members: dict[str, set[str]] = {}
+    for name, service in compose["services"].items():
+        networks = service.get("networks")
+        # A service without `networks` is on the default network only.
+        for network in networks if networks is not None else ["default"]:
+            members.setdefault(network, set()).add(name)
+    return members
 
 
-def test_litellm_mounts_the_prod_config_and_publishes_no_port() -> None:
+def network_problems(compose: dict[str, Any]) -> list[str]:
+    expected = {
+        "mcp": {"mcp-gateway", "qradar-mcp-read", "qradar-mcp-note"},
+        "qradar-egress": {"qradar-mcp-read", "qradar-mcp-note"},
+    }
+    members = network_members(compose)
+    problems = [
+        f"{network}: members are {sorted(members.get(network, set()))}, not {sorted(allowed)}"
+        for network, allowed in expected.items()
+        if members.get(network, set()) != allowed
+    ]
+    if compose["networks"].get("mcp") != {"internal": True}:
+        problems.append("mcp is not internal")
+    unknown = set(members) - {"default", *expected}
+    problems.extend(f"unknown network {network}" for network in sorted(unknown))
+    return problems
+
+
+def test_the_mcp_and_egress_networks_have_exactly_their_members() -> None:
+    compose = load_prod()
+
+    assert network_problems(compose) == []
+    assert compose["networks"]["qradar-egress"] in ({}, None)
+    assert "network_mode" not in str(compose["services"])
+
+
+@pytest.mark.parametrize(
+    ("service", "network"),
+    [
+        ("case-worker", "mcp"),
+        ("api", "qradar-egress"),
+        ("mcp-gateway", "qradar-egress"),
+        ("litellm", "mcp"),
+    ],
+)
+def test_a_service_on_a_restricted_network_is_reported(service: str, network: str) -> None:
+    compose = copy.deepcopy(load_prod())
+    service_networks = compose["services"][service].get("networks") or ["default"]
+    compose["services"][service]["networks"] = [*service_networks, network]
+
+    assert network_problems(compose) != []
+
+
+def test_a_missing_member_and_an_open_mcp_network_are_reported() -> None:
+    compose = copy.deepcopy(load_prod())
+    compose["services"]["qradar-mcp-note"]["networks"] = ["mcp"]
+    compose["networks"]["mcp"] = {}
+
+    assert len(network_problems(compose)) == 2
+
+
+# Helper files that sit next to the compose file and configure third-party images. The release
+# itself (policies, telemetry, LiteLLM config...) is inside our images.
+SIBLING_MOUNTS = {
+    "./postgres/init",
+    "./temporal/setup-schema.sh",
+    "./temporal/dynamicconfig",
+    "./temporal/create-namespace.sh",
+    "./otel-collector/config.yaml",
+}
+
+
+def repository_mount_problems(compose: dict[str, Any]) -> list[str]:
+    """Bind mounts that are writable, lack the SELinux label, reach outside deploy/compose or are
+    not one of the helper files; and any volume of the Docker socket or of a host path."""
+    problems: list[str] = []
+    for name, source, target, options in bind_mounts(compose):
+        if source not in SIBLING_MOUNTS:
+            problems.append(f"{name}: bind mount {source} is not a sibling helper file")
+        if "ro" not in options or "z" not in options:
+            problems.append(f"{name}: {target} needs ro and z")
+        if not (COMPOSE_DIR / resolve_default(source)).exists():
+            problems.append(f"{name}: {source} is missing")
+    return problems
+
+
+def test_prod_has_no_repository_bind_mounts() -> None:
+    compose = load_prod()
+
+    assert bind_mounts(compose)
+    assert repository_mount_problems(compose) == []
+    for name in (*OWN_SERVICES, "litellm", GATE):
+        volumes = compose["services"][name].get("volumes") or []
+        assert not [v for v in volumes if isinstance(v, str)], name
+    assert "config/" not in "".join(m[1] for m in bind_mounts(compose))
+
+
+@pytest.mark.parametrize(
+    ("service", "volume"),
+    [
+        ("case-worker", "../../config/policies:/app/config/policies:ro,z"),
+        ("mcp-gateway", "../../config/connectors:/etc/ais0c/connectors:ro,z"),
+        ("litellm", "../../config/litellm/litellm.prod.yaml:/etc/litellm/config.yaml:ro,z"),
+        ("postgres", "./postgres/init:/docker-entrypoint-initdb.d"),
+    ],
+    ids=["policies", "connectors", "litellm-config", "writable"],
+)
+def test_a_repository_bind_mount_is_reported(service: str, volume: str) -> None:
+    compose = copy.deepcopy(load_prod())
+    compose["services"][service].setdefault("volumes", []).append(volume)
+
+    assert repository_mount_problems(compose) != []
+
+
+def test_litellm_runs_the_baked_in_prod_config_and_publishes_no_port() -> None:
     litellm = load_prod()["services"]["litellm"]
 
-    assert litellm["volumes"] == [
-        "../../config/litellm/litellm.prod.yaml:/etc/litellm/config.yaml:ro,z"
-    ]
+    assert litellm["image"].startswith("ais0c-litellm:" + OWN_TAG)
+    assert litellm["command"][:2] == ["--config", "/etc/litellm/litellm.prod.yaml"]
+    assert "volumes" not in litellm
     assert "ports" not in litellm
 
 

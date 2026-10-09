@@ -20,6 +20,7 @@ htmlcov/
 .env
 .env.*
 !.env.example
+!deploy/compose/.env.prod.example
 
 # Frontend (apps/ui)
 node_modules/

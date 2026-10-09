@@ -1,11 +1,12 @@
 # Platform imajları
 
-İki imaj vardır; ikisi de repo kökünden build edilir (T-076). Gateway imajı ayrıdır
-(`services/mcp-gateway/Dockerfile`).
+Dört imaj vardır; hepsi repo kökünden build edilir (T-076, T-077). Gateway ve LiteLLM imajları ayrı Dockerfile'lardır.
 
 ```bash
 docker build -f deploy/images/platform.Dockerfile -t ais0c-platform:dev .
 docker build -f deploy/images/ui.Dockerfile -t ais0c-ui:dev .
+docker build -f services/mcp-gateway/Dockerfile -t ais0c-mcp-gateway:dev .
+docker build -f deploy/images/litellm.Dockerfile -t ais0c-litellm:dev .
 ```
 
 Taban imajlar etiket ve digest ile sabitlenmiştir; `tests/deploy/test_images.py` her `FROM` satırını denetler.
@@ -20,10 +21,12 @@ Bütün Python servisleri için tek imaj (uid/gid 10001, `ENTRYPOINT ["python", 
 | Batch worker | `["ais0c_worker", "batch"]` |
 | Executor worker | `["ais0c_worker", "executor"]` |
 | Analist API | `["ais0c_api"]` |
+| Migrate (tek seferlik) | `["ais0c_worker", "migrate"]` |
+| Preflight (tek seferlik) | `["ais0c_worker", "preflight"]` |
 
-İçindekiler: `/opt/venv` (`uv.lock`'taki sürümler, dev grupları yok), `/app/config/agents`, `/app/config/models`, `/app/prompts`, `/app/skills`. `AIS0C_WORKER_ROOT=/app`. Bir imaj bir release'tir; içerik değişikliği yeni imajdır.
+İçindekiler: `/opt/venv` (`uv.lock`'taki sürümler, dev grupları yok), `/app/config/agents`, `/app/config/models`, `/app/config/policies`, `/app/config/sigma`, `/app/config/telemetry`, `/app/prompts`, `/app/skills`. `AIS0C_WORKER_ROOT=/app`. Bir imaj bir release'tir; içerik değişikliği yeni imajdır.
 
-İçinde olmayanlar: sır, `.env`, `deploy/compose/secrets/`, `config/litellm/` (LiteLLM ayrı servistir), testler, dokümanlar. Ortam değişkenleri, `/run/secrets` altındaki token'lar ve `HEALTHCHECK` çalışma anında compose'tan gelir.
+İçinde olmayanlar: sır, `.env`, `deploy/compose/secrets/`, `config/litellm/` (LiteLLM ayrı imajdır), testler, dokümanlar. Ortam değişkenleri, `/run/secrets` altındaki token'lar ve `HEALTHCHECK` çalışma anında compose'tan gelir.
 
 ## `ais0c-ui`
 
@@ -35,3 +38,11 @@ TLS dosyaları imajda değildir, çalışma anında bağlanır:
 - `/run/secrets/ui-tls.key` (özel anahtar)
 
 Yanıtlara `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy` ve `Content-Security-Policy: default-src 'self'` başlıkları eklenir.
+
+## `ais0c-mcp-gateway`
+
+`services/mcp-gateway/Dockerfile` (uid 10001). Release'in `config/connectors` ve `config/policies` dizinlerini `/etc/ais0c/connectors` ve `/etc/ais0c/policies` altına taşır (`AIS0C_GATEWAY_CONFIG_DIR=/etc/ais0c`). Dev compose aynı yollara checkout'taki dosyaları bağlayarak bunların üzerine yazar. Sır yoktur.
+
+## `ais0c-litellm`
+
+`deploy/images/litellm.Dockerfile`: dev compose'taki LiteLLM imajı (aynı etiket ve digest) artı `config/litellm/litellm.prod.yaml` (`/etc/litellm/litellm.prod.yaml`). Başka değişiklik yoktur. Dosya vLLM adreslerini ve anahtarlarını `os.environ/VLLM_*` olarak adlandırır; imajda adres ya da anahtar yoktur. Prod compose bu dosyayı `preflight` servisine de imajdan salt okunur image volume olarak verir.

@@ -17,6 +17,9 @@
 !services/api/src
 !config/agents
 !config/models
+!config/policies
+!config/sigma
+!config/telemetry
 !prompts
 !skills
 **/__pycache__

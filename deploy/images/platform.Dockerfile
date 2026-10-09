@@ -50,6 +50,9 @@ RUN groupadd --gid 10001 ais0c \
 WORKDIR /app
 COPY config/agents /app/config/agents
 COPY config/models /app/config/models
+COPY config/policies /app/config/policies
+COPY config/sigma /app/config/sigma
+COPY config/telemetry /app/config/telemetry
 COPY prompts /app/prompts
 COPY skills /app/skills
 
