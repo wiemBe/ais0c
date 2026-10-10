@@ -384,14 +384,26 @@ Ağ ve ayrım:
 
 ### Kurulum sırası
 
-1. **İmajlar.** Release tar'ından yükle: `docker load -i ais0c-<sürüm>.tar`. Yüklenen imajlar `ais0c-platform`, `ais0c-ui`, `ais0c-mcp-gateway`, `ais0c-litellm` ve fork imajı `qradar-mcp-fork:<commit>`'tir (etiketi `docker-compose.prod.yaml` ve `config/connectors/qradar.yaml` ile aynıdır).
+1. **Paket.** Release paketinin dizininde (`deploy/release/build_release.py`'nin çıktısı, [deploy/images](../images/README.md#release-paketi)):
+
+   ```bash
+   sha256sum -c SHA256SUMS
+   docker load -i ais0c-images-<sürüm>.tar.gz
+   tar -xzf ais0c-files-<sürüm>.tar.gz          # dizin ais0c-<sürüm>/
+   sed -n '/^## İmajlar/,/^## Dosyalar/p' RELEASE.md | grep -o '^| `[^`]*`' | tr -d '|` ' \
+     | xargs -n1 docker image inspect --format '{{.Id}}' >/dev/null && echo images ok
+   ```
+
+   Yüklenen imajlar `ais0c-platform`, `ais0c-ui`, `ais0c-mcp-gateway`, `ais0c-litellm`, fork imajı `qradar-mcp-fork:<commit>` ve üçüncü parti imajlardır. Son komut `images ok` yazmazsa bir `etiket@digest` imajı bulunamıyordur: Docker'ın containerd imaj deposu kapalıdır (Notlar). Sonraki adımlar `ais0c-<sürüm>/deploy/compose/` dizininde yapılır.
 2. **`.env.prod`.** `cp .env.prod.example .env.prod`, bütün değerleri doldur (sırlar için `openssl rand -hex 24`). Dosya git dışıdır.
 3. **Sır dizini.** Repo dışında, yalnızca bu sunucudaki bir dizin seç ve `.env.prod`'daki `AIS0C_SECRETS_DIR`'e yaz. Gateway ve MCP token'larını üret; QRadar token'ları QRadar'dan gelir (okuma token'ı yalnızca okuyabilmeli, not token'ı not ekleyebilmelidir):
 
    ```bash
    AIS0C_QRADAR_READ_TOKEN=... AIS0C_QRADAR_NOTE_TOKEN=... \
-     uv run python deploy/compose/make_secrets.py --directory "$AIS0C_SECRETS_DIR"
+     python3 make_secrets.py --directory "$AIS0C_SECRETS_DIR"
    ```
+
+   Betik `python3` ve PyYAML ister (RHEL'de `python3-pyyaml`) ve profilleri paketteki `config/connectors/qradar.yaml`'dan okur.
 
    Betik `agents/`, `executor/`, `mcp/` ve `qradar/` alt dizinlerini yazar. Ek olarak şunlar elle konur (dizin `0700`, dosyalar konteynerlerin okuyabilmesi için `0644`):
 
@@ -401,9 +413,10 @@ Ağ ve ayrım:
 4. **Başlat.**
 
    ```bash
-   cd deploy/compose
-   docker compose --env-file .env.prod -f docker-compose.prod.yaml up -d
+   docker compose --env-file .env.prod -f docker-compose.prod.yaml up -d --pull never
    ```
+
+   `--pull never`: sunucu internete çıkmaz; eksik bir imaj indirilmeye çalışılmaz, hata verir.
 
    Sırayla Postgres, Temporal, `migrate` (çıkış kodu 0 ile biter), sonra `preflight` (geçerse worker'lar başlar; geçmezse `up -d` "dependency failed to start" ile biter ve worker'lar başlamaz), API ve UI başlar. QRadar veya vLLM'e ulaşılamıyorsa ilgili servisler sağlıksız kalır ve yeniden başlar; bu beklenir.
 5. **Preflight kapısı.** `preflight` servisi `migrate` bittikten, Temporal, gateway ve LiteLLM sağlıklı olduktan sonra çalışır ve sekiz ön koşulu denetler (veritabanı, kill switch, skills modu, skill'ler, model sürümü H-7, gateway, Temporal, modeller); her `FAIL` çıkış kodunu 1 yapar (`WARN` yapmaz). `case-worker`, `batch-worker` ve `executor-worker` `service_completed_successfully` ile ona bağlıdır: `up -d` yazan servisleri yalnızca preflight geçtikten sonra başlatır. Preflight başarısızsa worker'lar hiç başlamaz ve neden şurada görünür:
@@ -422,5 +435,5 @@ Durdurmak için `docker compose --env-file .env.prod -f docker-compose.prod.yaml
 - Portlar yalnızca `127.0.0.1`'e açılır, çünkü Temporal'da kimlik doğrulama yoktur. Yığın uzak bir VM'deyse SSH port yönlendirmesi kullan.
 - Bind mount'lar salt okunurdur ve SELinux için `z` etiketi taşır (Fedora, RHEL).
 - LiteLLM root olmayan bir kullanıcıyla ve salt okunur dosya sistemiyle çalışır. Açılışta model maliyet tablosunu indirmez (`LITELLM_LOCAL_MODEL_COST_MAP`).
-- Collector'ın imajında kabuk ve HTTP istemcisi yoktur. Healthcheck, sabitlenmiş busybox imajını salt okunur bir image volume olarak bağlar. Bunun için Docker Engine 29 ve Docker Compose 2.35 veya üzeri gerekir (Engine 29.7.2 ve Compose 5.5.1 ile denendi).
+- Collector'ın imajında kabuk ve HTTP istemcisi yoktur. Healthcheck, sabitlenmiş busybox imajını salt okunur bir image volume olarak bağlar. Bunun için Docker Engine 28.0 ve Docker Compose 2.35.0 veya üzeri gerekir (Engine 29.7.2 ve Compose 5.5.1 ile denendi). Docker'ın containerd imaj deposu açık olmalıdır (`docker info` → `driver-type io.containerd.snapshotter.v1`; yeni Docker 29 kurulumlarında varsayılan, yükseltilmiş kurulumda `/etc/docker/daemon.json`'da `"features": {"containerd-snapshotter": true}`): klasik depo `docker load`'dan sonra `etiket@digest` imajlarını bulamaz.
 - `litellm.prod.yaml` dev yığınında kullanılmaz; prod yığınında `ais0c-litellm` imajına gömülüdür (`deploy/images/litellm.Dockerfile`). LiteLLM, `api_base`'i boş kalan bir `hosted_vllm` modelinin isteğini public OpenAI API'sine gönderir; prod konfigürasyonu bunu `.invalid` bir adrese sabitleyerek engeller. Prod dağıtımında yine de her `VLLM_*_API_BASE` değişkeni zorunlu tutulmalıdır.
