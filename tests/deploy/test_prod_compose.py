@@ -534,7 +534,7 @@ def test_only_preflight_and_litellm_get_vllm_credentials() -> None:
 
 def test_a_worker_with_vllm_credentials_is_reported() -> None:
     compose = copy.deepcopy(load_prod())
-    compose["services"]["case-worker"]["environment"]["VLLM_QWEN_122B_API_KEY"] = "${X:-}"
+    compose["services"]["case-worker"]["environment"]["VLLM_TEST_API_KEY"] = "${X:-}"
 
     assert vllm_holders(compose) == {GATE, "litellm", "case-worker"}
 
@@ -708,6 +708,11 @@ def test_env_example_lists_every_variable() -> None:
     assert used == set(prod_example())
 
 
+def test_prod_compose_mentions_no_qwen_variable() -> None:
+    assert "VLLM_QWEN" not in PROD_FILE.read_text(encoding="utf-8")
+    assert "VLLM_QWEN" not in PROD_EXAMPLE.read_text(encoding="utf-8")
+
+
 def test_a_variable_missing_from_the_example_is_reported() -> None:
     used = {match["name"] for match in INTERPOLATION.finditer("a: ${NEW_ONE:?x}")}
 
@@ -790,7 +795,6 @@ def fake_values() -> dict[str, str]:
 def test_prod_compose_config_is_valid() -> None:
     env = fake_values() | {
         "QRADAR_CONSOLE_FQDN": "qradar.example.com",
-        "VLLM_QWEN_122B_API_BASE": "http://192.0.2.10:8000/v1",
         "VLLM_DEEPSEEK_V4_FLASH_API_BASE": "http://198.51.100.20:8000/v1",
         "AIS0C_ALARM_SYSLOG_HOST": "203.0.113.5",
     }
@@ -815,7 +819,6 @@ def test_prod_compose_config_is_valid() -> None:
         "AIS0C_API_AUTH",
         "AIS0C_SMTP_HOST",
         "AIS0C_SMTP_FROM",
-        "VLLM_QWEN_122B_API_BASE",
         "VLLM_DEEPSEEK_V4_FLASH_API_BASE",
     ],
 )

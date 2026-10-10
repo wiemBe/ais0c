@@ -1,5 +1,7 @@
 # Model capability registry for prod (docs/architecture.md §8.4). One entry per model alias;
 # the dev counterpart is registry.dev.yaml.
+# All aliases currently describe DeepSeek V4 Flash (D-45). They remain separate so a future
+# second model can be assigned without changing application code.
 #
 # - target: the model behind the alias in config/litellm/litellm.prod.yaml.
 # - prod_equivalent: the same as target in prod.
@@ -80,16 +82,16 @@ soc-reasoning:
   inference_params: {}
 
 soc-verifier:
-  target: hosted_vllm/Qwen/Qwen3.5-122B-A10B
-  prod_equivalent: hosted_vllm/Qwen/Qwen3.5-122B-A10B
+  target: hosted_vllm/deepseek-ai/DeepSeek-V4-Flash
+  prod_equivalent: hosted_vllm/deepseek-ai/DeepSeek-V4-Flash
   capabilities: [tool_calling, structured_output]
   parallel_tool_calls: false
   forced_tool_choice: true
-  context_window: 262144
-  tool_parser: qwen3_coder
-  reasoning_parser: qwen3
+  context_window: 1048576
+  tool_parser: deepseek_v4
+  reasoning_parser: deepseek_v4
   turkish_quality: null
-  artifact: Qwen/Qwen3.5-122B-A10B
+  artifact: deepseek-ai/DeepSeek-V4-Flash
   artifact_hash: null  # not read yet: only the prod server's model files give it
   quantization: null  # not read yet: vLLM's API does not report it; read on the prod server
   tokenizer: null  # not read yet: vLLM's API does not report it; read on the prod server
@@ -97,16 +99,16 @@ soc-verifier:
   inference_params: {}
 
 soc-report:
-  target: hosted_vllm/Qwen/Qwen3.5-122B-A10B
-  prod_equivalent: hosted_vllm/Qwen/Qwen3.5-122B-A10B
+  target: hosted_vllm/deepseek-ai/DeepSeek-V4-Flash
+  prod_equivalent: hosted_vllm/deepseek-ai/DeepSeek-V4-Flash
   capabilities: [tool_calling, structured_output]
   parallel_tool_calls: false
   forced_tool_choice: true
-  context_window: 262144
-  tool_parser: qwen3_coder
-  reasoning_parser: qwen3
+  context_window: 1048576
+  tool_parser: deepseek_v4
+  reasoning_parser: deepseek_v4
   turkish_quality: null
-  artifact: Qwen/Qwen3.5-122B-A10B
+  artifact: deepseek-ai/DeepSeek-V4-Flash
   artifact_hash: null  # not read yet: only the prod server's model files give it
   quantization: null  # not read yet: vLLM's API does not report it; read on the prod server
   tokenizer: null  # not read yet: vLLM's API does not report it; read on the prod server

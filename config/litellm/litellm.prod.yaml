@@ -1,9 +1,9 @@
 # LiteLLM proxy configuration for prod (docs/architecture.md §4, §19, §25).
 #
-# Only the existing on-prem vLLM servers are defined here; this file has no cloud provider and
-# no cloud key (D-11). The aliases go to the same models as in litellm.dev.yaml. The mapping is
-# a starting point that harness results may change (D-21); the fixed rule is that
-# soc-reasoning and soc-verifier go to different models.
+# Only the existing on-prem vLLM model is defined here; this file has no cloud provider and no
+# cloud key (D-11). All aliases use DeepSeek V4 Flash (D-45), matching litellm.dev.yaml. The
+# aliases remain separate so a future second model can be assigned without changing application
+# code.
 #
 # - Each endpoint comes from the environment of the prod deployment, including the /v1 path,
 #   for example http://<vllm-host>:8000/v1. The *_API_KEY variables are needed only when
@@ -14,7 +14,7 @@
 # Checks: tests/deploy/test_litellm_config.py and tests/deploy/test_model_registry.py.
 
 model_list:
-  # Triage. Same model as soc-reasoning; soc-verifier checks both, so it uses the other model.
+  # Triage.
   - model_name: soc-fast
     litellm_params:
       model: hosted_vllm/deepseek-ai/DeepSeek-V4-Flash
@@ -28,19 +28,19 @@ model_list:
       api_base: os.environ/VLLM_DEEPSEEK_V4_FLASH_API_BASE
       api_key: os.environ/VLLM_DEEPSEEK_V4_FLASH_API_KEY
 
-  # Independent verification: a different model family from soc-reasoning (§19).
+  # Independent verification. D-45 accepts the same model as soc-reasoning in shadow mode.
   - model_name: soc-verifier
     litellm_params:
-      model: hosted_vllm/Qwen/Qwen3.5-122B-A10B
-      api_base: os.environ/VLLM_QWEN_122B_API_BASE
-      api_key: os.environ/VLLM_QWEN_122B_API_KEY
+      model: hosted_vllm/deepseek-ai/DeepSeek-V4-Flash
+      api_base: os.environ/VLLM_DEEPSEEK_V4_FLASH_API_BASE
+      api_key: os.environ/VLLM_DEEPSEEK_V4_FLASH_API_KEY
 
   # Turkish report. Chosen by the harness Turkish suite (D-07); not measured yet.
   - model_name: soc-report
     litellm_params:
-      model: hosted_vllm/Qwen/Qwen3.5-122B-A10B
-      api_base: os.environ/VLLM_QWEN_122B_API_BASE
-      api_key: os.environ/VLLM_QWEN_122B_API_KEY
+      model: hosted_vllm/deepseek-ai/DeepSeek-V4-Flash
+      api_base: os.environ/VLLM_DEEPSEEK_V4_FLASH_API_BASE
+      api_key: os.environ/VLLM_DEEPSEEK_V4_FLASH_API_KEY
 
 general_settings:
   # Clients (agents) send this key as a bearer token.

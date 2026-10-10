@@ -44,7 +44,7 @@ soc-reasoning:
 
 soc-verifier:
   target: openai/space-bunny-free
-  prod_equivalent: hosted_vllm/Qwen/Qwen3.5-122B-A10B
+  prod_equivalent: hosted_vllm/deepseek-ai/DeepSeek-V4-Flash
   capabilities: [tool_calling, structured_output]
   parallel_tool_calls: null  # accepted but not honoured (false still returned two calls, 2026-10-09)
   forced_tool_choice: true
@@ -61,7 +61,7 @@ soc-verifier:
 
 soc-report:
   target: openai/space-bunny-free
-  prod_equivalent: hosted_vllm/Qwen/Qwen3.5-122B-A10B
+  prod_equivalent: hosted_vllm/deepseek-ai/DeepSeek-V4-Flash
   capabilities: [tool_calling, structured_output]
   parallel_tool_calls: null  # accepted but not honoured (false still returned two calls, 2026-10-09)
   forced_tool_choice: true

@@ -79,8 +79,7 @@ def test_the_model_is_the_alias_through_litellm_with_the_entry_settings() -> Non
 
 def test_an_entry_without_forced_tool_choice_sends_auto() -> None:
     registry = load_model_registry(REGISTRY)
-    verifier = registry["soc-verifier"]
-    assert verifier.forced_tool_choice is False
+    verifier = registry["soc-verifier"].model_copy(update={"forced_tool_choice": False})
     config = dataclasses.replace(triage_config(), registry_entry=verifier)
 
     model = litellm_model(config, ENV)

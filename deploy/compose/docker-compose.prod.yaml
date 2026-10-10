@@ -190,8 +190,6 @@ services:
       # Each vLLM endpoint including its /v1 path; the key is needed only when vLLM has --api-key.
       VLLM_DEEPSEEK_V4_FLASH_API_BASE: ${VLLM_DEEPSEEK_V4_FLASH_API_BASE:?Set VLLM_DEEPSEEK_V4_FLASH_API_BASE in .env.prod}
       VLLM_DEEPSEEK_V4_FLASH_API_KEY: ${VLLM_DEEPSEEK_V4_FLASH_API_KEY:-}
-      VLLM_QWEN_122B_API_BASE: ${VLLM_QWEN_122B_API_BASE:?Set VLLM_QWEN_122B_API_BASE in .env.prod}
-      VLLM_QWEN_122B_API_KEY: ${VLLM_QWEN_122B_API_KEY:-}
       # Use the model cost map bundled in the image instead of downloading it at startup.
       LITELLM_LOCAL_MODEL_COST_MAP: "True"
     user: "65534:65534"
@@ -335,8 +333,6 @@ services:
       LITELLM_API_KEY: ${LITELLM_MASTER_KEY:?Set LITELLM_MASTER_KEY in .env.prod}
       VLLM_DEEPSEEK_V4_FLASH_API_BASE: ${VLLM_DEEPSEEK_V4_FLASH_API_BASE:?Set VLLM_DEEPSEEK_V4_FLASH_API_BASE in .env.prod}
       VLLM_DEEPSEEK_V4_FLASH_API_KEY: ${VLLM_DEEPSEEK_V4_FLASH_API_KEY:-}
-      VLLM_QWEN_122B_API_BASE: ${VLLM_QWEN_122B_API_BASE:?Set VLLM_QWEN_122B_API_BASE in .env.prod}
-      VLLM_QWEN_122B_API_KEY: ${VLLM_QWEN_122B_API_KEY:-}
     secrets:
       - gateway-token-qradar-triage-read
       - gateway-token-qradar-investigate-read

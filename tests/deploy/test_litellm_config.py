@@ -2,9 +2,8 @@
 
 Code calls models only by alias (T-03): litellm.dev.yaml sends the aliases to OpenRouter,
 litellm.prod.yaml to the on-prem vLLM servers. These tests keep cloud providers out of the prod
-file (D-11), keep soc-reasoning and soc-verifier on different models (D-21) and keep keys out
-of both files. Each rule also runs against a broken configuration to show that it catches the
-violation.
+file (D-11), keep all prod aliases on DeepSeek V4 Flash (D-45) and keep keys out of both files.
+Each rule also runs against a broken configuration to show that it catches the violation.
 """
 
 import copy
@@ -19,8 +18,6 @@ import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 ENVIRONMENTS = ["dev", "dev-free", "prod"]
-# dev-free sends all aliases to one model on purpose (T-104), so D-21 does not apply to it.
-DISTINCT_MODEL_ENVIRONMENTS = ["dev", "prod"]
 # soc-embed is not needed in phase 0 (T-003).
 ALIASES = {"soc-fast", "soc-reasoning", "soc-verifier", "soc-report"}
 ON_PREM_PREFIX = "hosted_vllm/"
@@ -28,27 +25,11 @@ ENV_REFERENCE = re.compile(r"os\.environ/(?P<name>[A-Z][A-Z0-9_]*)")
 # Environment variables the prod file may read: vLLM endpoints and keys, and LiteLLM's own key.
 PROD_ENV_NAME = re.compile(r"VLLM_[A-Z0-9_]+_(API_BASE|API_KEY)|LITELLM_MASTER_KEY")
 SECRET_SETTING = re.compile(r"(^|_)(key|secret|password|token)$")
-# LiteLLM settings that can send a request for one alias to another alias's models.
-ROUTING_SETTINGS = [
-    "fallbacks",
-    "context_window_fallbacks",
-    "content_policy_fallbacks",
-    "default_fallbacks",
-    "model_group_alias",
-]
 
 
 def load_config(environment: str) -> dict[str, Any]:
     path = REPO_ROOT / f"config/litellm/litellm.{environment}.yaml"
     return yaml.safe_load(path.read_text(encoding="utf-8"))
-
-
-def models_by_alias(config: dict[str, Any]) -> dict[str, set[str]]:
-    """Map each alias to the models of its deployments."""
-    models: dict[str, set[str]] = {}
-    for entry in config["model_list"]:
-        models.setdefault(entry["model_name"], set()).add(entry["litellm_params"]["model"])
-    return models
 
 
 def on_prem_violations(config: dict[str, Any]) -> list[str]:
@@ -72,21 +53,6 @@ def foreign_env_names(config: dict[str, Any]) -> set[str]:
     """Return the environment variables a prod configuration reads that are not vLLM's or LiteLLM's."""
     names = {match["name"] for match in ENV_REFERENCE.finditer(yaml.safe_dump(config))}
     return {name for name in names if not PROD_ENV_NAME.fullmatch(name)}
-
-
-def shared_models(config: dict[str, Any], first: str, second: str) -> set[str]:
-    by_alias = models_by_alias(config)
-    return by_alias.get(first, set()) & by_alias.get(second, set())
-
-
-def routing_indirections(config: dict[str, Any]) -> list[str]:
-    """Return the settings that could route one alias to another alias's models."""
-    return [
-        f"{section}.{setting}"
-        for section in ("litellm_settings", "router_settings")
-        for setting in ROUTING_SETTINGS
-        if (config.get(section) or {}).get(setting)
-    ]
 
 
 def literal_secrets(node: object, path: str = "") -> list[str]:
@@ -129,31 +95,17 @@ def test_config_defines_each_alias_once(environment: str) -> None:
     assert set(counts.values()) == {1}  # the registry describes one model per alias
 
 
-@pytest.mark.parametrize("environment", DISTINCT_MODEL_ENVIRONMENTS)
-def test_reasoning_and_verifier_use_different_models(environment: str) -> None:
-    config = load_config(environment)
+def test_prod_config_routes_every_alias_to_deepseek_v4_flash() -> None:
+    config = load_config("prod")
 
-    assert shared_models(config, "soc-reasoning", "soc-verifier") == set()
-    # A fallback or group alias could still send verifier requests to the reasoning model.
-    assert routing_indirections(config) == []
-
-
-def test_shared_model_between_reasoning_and_verifier_is_detected() -> None:
-    config = copy.deepcopy(load_config("prod"))
-    models = models_by_alias(config)
-    for entry in config["model_list"]:
-        if entry["model_name"] == "soc-verifier":
-            entry["litellm_params"]["model"] = next(iter(models["soc-reasoning"]))
-
-    assert shared_models(config, "soc-reasoning", "soc-verifier") == models["soc-reasoning"]
-
-
-@pytest.mark.parametrize("section", ["litellm_settings", "router_settings"])
-def test_fallback_between_aliases_is_detected(section: str) -> None:
-    config = copy.deepcopy(load_config("dev"))
-    config[section] = {"fallbacks": [{"soc-verifier": ["soc-reasoning"]}]}
-
-    assert routing_indirections(config) == [f"{section}.fallbacks"]
+    expected = {
+        "model": "hosted_vllm/deepseek-ai/DeepSeek-V4-Flash",
+        "api_base": "os.environ/VLLM_DEEPSEEK_V4_FLASH_API_BASE",
+        "api_key": "os.environ/VLLM_DEEPSEEK_V4_FLASH_API_KEY",
+    }
+    assert {
+        entry["model_name"]: entry["litellm_params"] for entry in config["model_list"]
+    } == dict.fromkeys(ALIASES, expected)
 
 
 @pytest.mark.parametrize("environment", ENVIRONMENTS)

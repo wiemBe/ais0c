@@ -192,7 +192,7 @@ def test_dev_model_that_differs_from_prod_is_reported() -> None:
 
     assert dev_prod_mismatches(dev, load_registry("prod")) == [
         "soc-verifier: dev runs 'openrouter/qwen/qwen3.5-397b-a17b', "
-        "prod runs 'hosted_vllm/Qwen/Qwen3.5-122B-A10B'"
+        "prod runs 'hosted_vllm/deepseek-ai/DeepSeek-V4-Flash'"
     ]
 
 
