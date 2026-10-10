@@ -1,0 +1,52 @@
+{
+  "offense_id": 48,
+  "description": "Vulnerability Scan",
+  "offense_type": "Source IP",
+  "offense_source": "192.0.2.88",
+  "rule_ids": [
+    100358
+  ],
+  "rule_names": [
+    "AIS0C LAB - WAF signature volume from an external source"
+  ],
+  "categories": [
+    "Misc Exploit",
+    "SQL Injection",
+    "Command Execution",
+    "Cross Site Scripting",
+    "Web Exploit"
+  ],
+  "magnitude": 4,
+  "start_time": "2026-10-09T17:28:43.618000Z",
+  "last_updated_time": "2026-10-09T17:28:43.618000Z",
+  "event_count": 20,
+  "log_source_ids": [
+    214
+  ],
+  "source_ips": [
+    "192.0.2.88"
+  ],
+  "destination_ips": [
+    "192.0.2.76",
+    "192.0.2.15",
+    "192.0.2.52",
+    "192.0.2.31",
+    "192.0.2.40",
+    "192.0.2.67",
+    "192.0.2.43",
+    "192.0.2.37",
+    "192.0.2.41",
+    "192.0.2.55",
+    "192.0.2.30",
+    "192.0.2.75",
+    "192.0.2.6",
+    "192.0.2.61",
+    "192.0.2.53",
+    "192.0.2.49",
+    "192.0.2.60",
+    "192.0.2.59",
+    "192.0.2.10",
+    "192.0.2.23"
+  ],
+  "usernames": []
+}

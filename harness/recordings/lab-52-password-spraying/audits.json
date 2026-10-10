@@ -1,0 +1,825 @@
+[
+  {
+    "name": "count_all",
+    "query": "SELECT COUNT(*) AS n FROM events WHERE LOGSOURCETYPENAME(devicetype) NOT IN ('Health Metrics') AND starttime BETWEEN 1791564179793 AND 1791571439793 LIMIT 10 START 1791563579793 STOP 1791572039793",
+    "rows": [
+      {
+        "n": 20615.0
+      }
+    ]
+  },
+  {
+    "name": "qidname_filter",
+    "query": "SELECT starttime, sourceip, username, QIDNAME(qid) AS q FROM events WHERE LOGSOURCETYPENAME(devicetype) NOT IN ('Health Metrics') AND starttime BETWEEN 1791567778793 AND 1791567840793 AND QIDNAME(qid) ILIKE '%object%' ORDER BY starttime ASC LIMIT 50 START 1791567178793 STOP 1791568440793",
+    "rows": []
+  },
+  {
+    "name": "group_count",
+    "query": "SELECT logsourceid, COUNT(*) AS n FROM events WHERE LOGSOURCETYPENAME(devicetype) NOT IN ('Health Metrics') AND starttime BETWEEN 1791564179793 AND 1791571439793 GROUP BY logsourceid ORDER BY logsourceid ASC LIMIT 20 START 1791563579793 STOP 1791572039793",
+    "rows": [
+      {
+        "logsourceid": 63,
+        "n": 5.0
+      },
+      {
+        "logsourceid": 64,
+        "n": 6315.0
+      },
+      {
+        "logsourceid": 65,
+        "n": 13993.0
+      },
+      {
+        "logsourceid": 138,
+        "n": 9.0
+      },
+      {
+        "logsourceid": 213,
+        "n": 82.0
+      },
+      {
+        "logsourceid": 214,
+        "n": 111.0
+      },
+      {
+        "logsourceid": 362,
+        "n": 100.0
+      }
+    ]
+  },
+  {
+    "name": "ilike_payload",
+    "query": "SELECT starttime, sourceip, username FROM events WHERE LOGSOURCETYPENAME(devicetype) NOT IN ('Health Metrics') AND starttime BETWEEN 1791567778793 AND 1791567840793 AND UTF8(payload) ILIKE '%192.0.2.80%' ORDER BY starttime ASC LIMIT 50 START 1791567178793 STOP 1791568440793",
+    "rows": [
+      {
+        "starttime": 1791567779793,
+        "sourceip": "192.0.2.80",
+        "username": "branch.user06"
+      },
+      {
+        "starttime": 1791567779793,
+        "sourceip": "192.0.2.80",
+        "username": "branch.user06"
+      },
+      {
+        "starttime": 1791567779793,
+        "sourceip": "192.0.2.80",
+        "username": "branch.user06"
+      },
+      {
+        "starttime": 1791567779793,
+        "sourceip": "192.0.2.80",
+        "username": "branch.user07"
+      },
+      {
+        "starttime": 1791567779793,
+        "sourceip": "192.0.2.80",
+        "username": "branch.user04"
+      },
+      {
+        "starttime": 1791567779793,
+        "sourceip": "192.0.2.80",
+        "username": "branch.user07"
+      },
+      {
+        "starttime": 1791567779793,
+        "sourceip": "192.0.2.80",
+        "username": "branch.user04"
+      },
+      {
+        "starttime": 1791567779793,
+        "sourceip": "192.0.2.80",
+        "username": "branch.user09"
+      },
+      {
+        "starttime": 1791567779793,
+        "sourceip": "192.0.2.80",
+        "username": "branch.user02"
+      },
+      {
+        "starttime": 1791567779793,
+        "sourceip": "192.0.2.80",
+        "username": "branch.user11"
+      },
+      {
+        "starttime": 1791567779793,
+        "sourceip": "192.0.2.80",
+        "username": "branch.user07"
+      },
+      {
+        "starttime": 1791567779793,
+        "sourceip": "192.0.2.80",
+        "username": "branch.user09"
+      },
+      {
+        "starttime": 1791567779793,
+        "sourceip": "192.0.2.80",
+        "username": "branch.user11"
+      },
+      {
+        "starttime": 1791567779793,
+        "sourceip": "192.0.2.80",
+        "username": "branch.user05"
+      },
+      {
+        "starttime": 1791567779793,
+        "sourceip": "192.0.2.80",
+        "username": "branch.user02"
+      },
+      {
+        "starttime": 1791567779793,
+        "sourceip": "192.0.2.80",
+        "username": "branch.user09"
+      },
+      {
+        "starttime": 1791567779793,
+        "sourceip": "192.0.2.80",
+        "username": "branch.user07"
+      },
+      {
+        "starttime": 1791567779793,
+        "sourceip": "192.0.2.80",
+        "username": "branch.user11"
+      },
+      {
+        "starttime": 1791567779793,
+        "sourceip": "192.0.2.80",
+        "username": "branch.user08"
+      },
+      {
+        "starttime": 1791567779793,
+        "sourceip": "192.0.2.80",
+        "username": "branch.user05"
+      },
+      {
+        "starttime": 1791567779793,
+        "sourceip": "192.0.2.80",
+        "username": "branch.user12"
+      },
+      {
+        "starttime": 1791567779793,
+        "sourceip": "192.0.2.80",
+        "username": "branch.user12"
+      },
+      {
+        "starttime": 1791567779793,
+        "sourceip": "192.0.2.80",
+        "username": "branch.user06"
+      },
+      {
+        "starttime": 1791567779793,
+        "sourceip": "192.0.2.80",
+        "username": "branch.user06"
+      },
+      {
+        "starttime": 1791567779793,
+        "sourceip": "192.0.2.80",
+        "username": "branch.user06"
+      },
+      {
+        "starttime": 1791567779793,
+        "sourceip": "192.0.2.80",
+        "username": "branch.user09"
+      },
+      {
+        "starttime": 1791567779793,
+        "sourceip": "192.0.2.80",
+        "username": "branch.user10"
+      },
+      {
+        "starttime": 1791567779793,
+        "sourceip": "192.0.2.80",
+        "username": "branch.user01"
+      },
+      {
+        "starttime": 1791567779793,
+        "sourceip": "192.0.2.80",
+        "username": "branch.user03"
+      },
+      {
+        "starttime": 1791567779793,
+        "sourceip": "192.0.2.80",
+        "username": "branch.user03"
+      },
+      {
+        "starttime": 1791567779793,
+        "sourceip": "192.0.2.80",
+        "username": "branch.user11"
+      },
+      {
+        "starttime": 1791567779793,
+        "sourceip": "192.0.2.80",
+        "username": "branch.user09"
+      },
+      {
+        "starttime": 1791567779793,
+        "sourceip": "192.0.2.80",
+        "username": "branch.user07"
+      },
+      {
+        "starttime": 1791567779793,
+        "sourceip": "192.0.2.80",
+        "username": "branch.user10"
+      },
+      {
+        "starttime": 1791567779793,
+        "sourceip": "192.0.2.80",
+        "username": "branch.user03"
+      },
+      {
+        "starttime": 1791567779793,
+        "sourceip": "192.0.2.80",
+        "username": "branch.user07"
+      },
+      {
+        "starttime": 1791567779793,
+        "sourceip": "192.0.2.80",
+        "username": "branch.user03"
+      }
+    ]
+  },
+  {
+    "name": "epoch_window",
+    "query": "SELECT starttime, sourceip, username, qid FROM events WHERE LOGSOURCETYPENAME(devicetype) NOT IN ('Health Metrics') AND starttime BETWEEN 1791567778793 AND 1791567840793 ORDER BY starttime ASC LIMIT 50 START 1791567178793 STOP 1791568440793",
+    "rows": [
+      {
+        "starttime": 1791567779258,
+        "sourceip": "192.0.2.132",
+        "username": "AIS0C",
+        "qid": 28250286
+      },
+      {
+        "starttime": 1791567779793,
+        "sourceip": "192.0.2.82",
+        "username": "helpdesk1",
+        "qid": 5000830
+      },
+      {
+        "starttime": 1791567779793,
+        "sourceip": "192.0.2.111",
+        "username": "branch.user02",
+        "qid": 5000830
+      },
+      {
+        "starttime": 1791567779793,
+        "sourceip": "192.0.2.120",
+        "username": "analyst1",
+        "qid": 5000830
+      },
+      {
+        "starttime": 1791567779793,
+        "sourceip": "192.0.2.89",
+        "username": "analyst1",
+        "qid": 5000830
+      },
+      {
+        "starttime": 1791567779793,
+        "sourceip": "192.0.2.106",
+        "username": "analyst1",
+        "qid": 5000830
+      },
+      {
+        "starttime": 1791567779793,
+        "sourceip": "192.0.2.95",
+        "username": "analyst1",
+        "qid": 5000830
+      },
+      {
+        "starttime": 1791567779793,
+        "sourceip": "192.0.2.80",
+        "username": "branch.user06",
+        "qid": 5000831
+      },
+      {
+        "starttime": 1791567779793,
+        "sourceip": "192.0.2.80",
+        "username": "branch.user02",
+        "qid": 5000831
+      },
+      {
+        "starttime": 1791567779793,
+        "sourceip": "192.0.2.80",
+        "username": "branch.user09",
+        "qid": 5000831
+      },
+      {
+        "starttime": 1791567779793,
+        "sourceip": "192.0.2.80",
+        "username": "branch.user06",
+        "qid": 5000831
+      },
+      {
+        "starttime": 1791567779793,
+        "sourceip": "192.0.2.110",
+        "username": "analyst1",
+        "qid": 5000831
+      },
+      {
+        "starttime": 1791567779793,
+        "sourceip": "192.0.2.90",
+        "username": "helpdesk1",
+        "qid": 5000830
+      },
+      {
+        "starttime": 1791567779793,
+        "sourceip": "192.0.2.128",
+        "username": "branch.user02",
+        "qid": 5000830
+      },
+      {
+        "starttime": 1791567779793,
+        "sourceip": "192.0.2.102",
+        "username": "analyst1",
+        "qid": 5000830
+      },
+      {
+        "starttime": 1791567779793,
+        "sourceip": "192.0.2.80",
+        "username": "branch.user04",
+        "qid": 5000831
+      },
+      {
+        "starttime": 1791567779793,
+        "sourceip": "192.0.2.80",
+        "username": "branch.user04",
+        "qid": 5000940
+      },
+      {
+        "starttime": 1791567779793,
+        "sourceip": "192.0.2.80",
+        "username": "branch.user07",
+        "qid": 5000831
+      },
+      {
+        "starttime": 1791567779793,
+        "sourceip": "192.0.2.80",
+        "username": "branch.user07",
+        "qid": 5000831
+      },
+      {
+        "starttime": 1791567779793,
+        "sourceip": "192.0.2.80",
+        "username": "branch.user06",
+        "qid": 5000940
+      },
+      {
+        "starttime": 1791567779793,
+        "sourceip": "192.0.2.80",
+        "username": "branch.user01",
+        "qid": 5000831
+      },
+      {
+        "starttime": 1791567779793,
+        "sourceip": "192.0.2.80",
+        "username": "branch.user03",
+        "qid": 5000940
+      },
+      {
+        "starttime": 1791567779793,
+        "sourceip": "192.0.2.80",
+        "username": "branch.user03",
+        "qid": 5000831
+      },
+      {
+        "starttime": 1791567779793,
+        "sourceip": "192.0.2.105",
+        "username": "branch.user02",
+        "qid": 5000830
+      },
+      {
+        "starttime": 1791567779793,
+        "sourceip": "192.0.2.80",
+        "username": "branch.user07",
+        "qid": 67500016
+      },
+      {
+        "starttime": 1791567779793,
+        "sourceip": "192.0.2.80",
+        "username": "branch.user07",
+        "qid": 67500010
+      },
+      {
+        "starttime": 1791567779793,
+        "sourceip": "192.0.2.80",
+        "username": "branch.user07",
+        "qid": 67500012
+      },
+      {
+        "starttime": 1791567779793,
+        "sourceip": "192.0.2.80",
+        "username": "branch.user03",
+        "qid": 67500110
+      },
+      {
+        "starttime": 1791567779793,
+        "sourceip": "192.0.2.80",
+        "username": "branch.user03",
+        "qid": 67500118
+      },
+      {
+        "starttime": 1791567779793,
+        "sourceip": "192.0.2.80",
+        "username": "branch.user10",
+        "qid": 5000831
+      },
+      {
+        "starttime": 1791567779793,
+        "sourceip": "192.0.2.133",
+        "username": null,
+        "qid": 38750003
+      },
+      {
+        "starttime": 1791567779793,
+        "sourceip": "192.0.2.80",
+        "username": "branch.user09",
+        "qid": 5000831
+      },
+      {
+        "starttime": 1791567779793,
+        "sourceip": "192.0.2.80",
+        "username": "branch.user07",
+        "qid": 5000831
+      },
+      {
+        "starttime": 1791567779793,
+        "sourceip": "192.0.2.80",
+        "username": "branch.user11",
+        "qid": 5000940
+      },
+      {
+        "starttime": 1791567779793,
+        "sourceip": "192.0.2.80",
+        "username": "branch.user08",
+        "qid": 5000940
+      },
+      {
+        "starttime": 1791567779793,
+        "sourceip": "192.0.2.80",
+        "username": "branch.user05",
+        "qid": 5000831
+      },
+      {
+        "starttime": 1791567779793,
+        "sourceip": "192.0.2.80",
+        "username": "branch.user12",
+        "qid": 5000831
+      },
+      {
+        "starttime": 1791567779793,
+        "sourceip": "192.0.2.80",
+        "username": "branch.user12",
+        "qid": 5000940
+      },
+      {
+        "starttime": 1791567779793,
+        "sourceip": "192.0.2.80",
+        "username": "branch.user06",
+        "qid": 5000831
+      },
+      {
+        "starttime": 1791567779793,
+        "sourceip": "192.0.2.80",
+        "username": "branch.user06",
+        "qid": 5000831
+      },
+      {
+        "starttime": 1791567779793,
+        "sourceip": "192.0.2.129",
+        "username": "branch.user02",
+        "qid": 5000830
+      },
+      {
+        "starttime": 1791567779793,
+        "sourceip": "192.0.2.80",
+        "username": "branch.user06",
+        "qid": 5000831
+      },
+      {
+        "starttime": 1791567779793,
+        "sourceip": "192.0.2.80",
+        "username": "branch.user09",
+        "qid": 5000940
+      },
+      {
+        "starttime": 1791567779793,
+        "sourceip": "192.0.2.80",
+        "username": "branch.user09",
+        "qid": 5000831
+      },
+      {
+        "starttime": 1791567779793,
+        "sourceip": "192.0.2.80",
+        "username": "branch.user11",
+        "qid": 5000831
+      },
+      {
+        "starttime": 1791567779793,
+        "sourceip": "192.0.2.80",
+        "username": "branch.user05",
+        "qid": 5000940
+      },
+      {
+        "starttime": 1791567779793,
+        "sourceip": "192.0.2.80",
+        "username": "branch.user02",
+        "qid": 5000831
+      },
+      {
+        "starttime": 1791567779793,
+        "sourceip": "192.0.2.80",
+        "username": "branch.user11",
+        "qid": 5000940
+      },
+      {
+        "starttime": 1791567779793,
+        "sourceip": "192.0.2.80",
+        "username": "branch.user07",
+        "qid": 5000831
+      },
+      {
+        "starttime": 1791567779793,
+        "sourceip": "192.0.2.121",
+        "username": "analyst1",
+        "qid": 5000830
+      }
+    ]
+  },
+  {
+    "name": "dateformat_user",
+    "query": "SELECT DATEFORMAT(starttime, 'yyyy-MM-dd HH:mm:ss') AS t, username, sourceip FROM events WHERE LOGSOURCETYPENAME(devicetype) NOT IN ('Health Metrics') AND starttime BETWEEN 1791567778793 AND 1791567840793 AND username = '192.0.2.80' ORDER BY starttime ASC LIMIT 20 START 1791567178793 STOP 1791568440793",
+    "rows": []
+  },
+  {
+    "name": "aggregates",
+    "query": "SELECT SUM(eventcount) AS total, MIN(starttime) AS earliest, MAX(starttime) AS latest, COUNT(username) AS named FROM events WHERE LOGSOURCETYPENAME(devicetype) NOT IN ('Health Metrics') AND starttime BETWEEN 1791567778793 AND 1791567840793 LIMIT 10 START 1791567178793 STOP 1791568440793",
+    "rows": [
+      {
+        "total": 216.0,
+        "earliest": 1791567779258.0,
+        "latest": 1791567840761.0,
+        "named": 82.0
+      }
+    ]
+  },
+  {
+    "name": "agent_form",
+    "query": "SELECT starttime, username, sourceip, QIDNAME(qid) AS event_name FROM events WHERE username = '192.0.2.80' ORDER BY starttime ASC LIMIT 100 START 1791567779793 STOP 1791567899793",
+    "rows": []
+  },
+  {
+    "name": "in_between_null",
+    "query": "SELECT starttime, sourceip, username FROM events WHERE LOGSOURCETYPENAME(devicetype) NOT IN ('Health Metrics') AND starttime BETWEEN 1791567778793 AND 1791567840793 AND (username IS NULL OR username IN ('192.0.2.80')) AND eventcount BETWEEN 1 AND 5 AND NOT (sourceport = 1) ORDER BY starttime ASC LIMIT 50 START 1791567178793 STOP 1791568440793",
+    "rows": [
+      {
+        "starttime": 1791567779793,
+        "sourceip": "192.0.2.133",
+        "username": null
+      },
+      {
+        "starttime": 1791567780235,
+        "sourceip": "192.0.2.133",
+        "username": null
+      },
+      {
+        "starttime": 1791567780235,
+        "sourceip": "192.0.2.133",
+        "username": null
+      },
+      {
+        "starttime": 1791567780235,
+        "sourceip": "192.0.2.133",
+        "username": null
+      },
+      {
+        "starttime": 1791567780235,
+        "sourceip": "192.0.2.133",
+        "username": null
+      },
+      {
+        "starttime": 1791567780779,
+        "sourceip": "192.0.2.133",
+        "username": null
+      },
+      {
+        "starttime": 1791567780779,
+        "sourceip": "192.0.2.133",
+        "username": null
+      },
+      {
+        "starttime": 1791567780779,
+        "sourceip": "192.0.2.133",
+        "username": null
+      },
+      {
+        "starttime": 1791567780779,
+        "sourceip": "192.0.2.133",
+        "username": null
+      },
+      {
+        "starttime": 1791567780779,
+        "sourceip": "192.0.2.133",
+        "username": null
+      },
+      {
+        "starttime": 1791567780779,
+        "sourceip": "192.0.2.133",
+        "username": null
+      },
+      {
+        "starttime": 1791567780779,
+        "sourceip": "192.0.2.133",
+        "username": null
+      },
+      {
+        "starttime": 1791567780779,
+        "sourceip": "192.0.2.133",
+        "username": null
+      },
+      {
+        "starttime": 1791567780779,
+        "sourceip": "192.0.2.133",
+        "username": null
+      },
+      {
+        "starttime": 1791567780779,
+        "sourceip": "192.0.2.133",
+        "username": null
+      },
+      {
+        "starttime": 1791567780779,
+        "sourceip": "192.0.2.133",
+        "username": null
+      },
+      {
+        "starttime": 1791567780779,
+        "sourceip": "192.0.2.81",
+        "username": null
+      },
+      {
+        "starttime": 1791567780779,
+        "sourceip": "192.0.2.81",
+        "username": null
+      },
+      {
+        "starttime": 1791567780779,
+        "sourceip": "192.0.2.133",
+        "username": null
+      },
+      {
+        "starttime": 1791567780949,
+        "sourceip": "192.0.2.133",
+        "username": null
+      },
+      {
+        "starttime": 1791567780949,
+        "sourceip": "192.0.2.133",
+        "username": null
+      },
+      {
+        "starttime": 1791567780949,
+        "sourceip": "192.0.2.133",
+        "username": null
+      },
+      {
+        "starttime": 1791567780949,
+        "sourceip": "192.0.2.133",
+        "username": null
+      },
+      {
+        "starttime": 1791567789183,
+        "sourceip": "192.0.2.133",
+        "username": null
+      },
+      {
+        "starttime": 1791567789183,
+        "sourceip": "192.0.2.133",
+        "username": null
+      },
+      {
+        "starttime": 1791567789183,
+        "sourceip": "192.0.2.133",
+        "username": null
+      },
+      {
+        "starttime": 1791567789183,
+        "sourceip": "192.0.2.133",
+        "username": null
+      },
+      {
+        "starttime": 1791567790101,
+        "sourceip": "192.0.2.133",
+        "username": null
+      },
+      {
+        "starttime": 1791567790413,
+        "sourceip": "192.0.2.133",
+        "username": null
+      },
+      {
+        "starttime": 1791567790977,
+        "sourceip": "192.0.2.133",
+        "username": null
+      },
+      {
+        "starttime": 1791567790977,
+        "sourceip": "192.0.2.133",
+        "username": null
+      },
+      {
+        "starttime": 1791567792193,
+        "sourceip": "192.0.2.133",
+        "username": null
+      },
+      {
+        "starttime": 1791567792405,
+        "sourceip": "192.0.2.133",
+        "username": null
+      },
+      {
+        "starttime": 1791567792405,
+        "sourceip": "192.0.2.133",
+        "username": null
+      },
+      {
+        "starttime": 1791567799126,
+        "sourceip": "192.0.2.133",
+        "username": null
+      },
+      {
+        "starttime": 1791567801109,
+        "sourceip": "192.0.2.133",
+        "username": null
+      },
+      {
+        "starttime": 1791567801550,
+        "sourceip": "192.0.2.133",
+        "username": null
+      },
+      {
+        "starttime": 1791567801550,
+        "sourceip": "192.0.2.133",
+        "username": null
+      },
+      {
+        "starttime": 1791567801550,
+        "sourceip": "192.0.2.133",
+        "username": null
+      },
+      {
+        "starttime": 1791567801550,
+        "sourceip": "192.0.2.133",
+        "username": null
+      },
+      {
+        "starttime": 1791567801550,
+        "sourceip": "192.0.2.133",
+        "username": null
+      },
+      {
+        "starttime": 1791567801550,
+        "sourceip": "192.0.2.133",
+        "username": null
+      },
+      {
+        "starttime": 1791567801550,
+        "sourceip": "192.0.2.133",
+        "username": null
+      },
+      {
+        "starttime": 1791567801550,
+        "sourceip": "192.0.2.133",
+        "username": null
+      },
+      {
+        "starttime": 1791567801550,
+        "sourceip": "192.0.2.133",
+        "username": null
+      },
+      {
+        "starttime": 1791567801550,
+        "sourceip": "192.0.2.133",
+        "username": null
+      },
+      {
+        "starttime": 1791567801550,
+        "sourceip": "192.0.2.133",
+        "username": null
+      },
+      {
+        "starttime": 1791567801550,
+        "sourceip": "192.0.2.133",
+        "username": null
+      },
+      {
+        "starttime": 1791567801550,
+        "sourceip": "192.0.2.133",
+        "username": null
+      },
+      {
+        "starttime": 1791567801550,
+        "sourceip": "192.0.2.133",
+        "username": null
+      }
+    ]
+  }
+]

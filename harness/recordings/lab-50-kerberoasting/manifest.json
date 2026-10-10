@@ -1,0 +1,64 @@
+{
+  "schema_version": 2,
+  "recording_id": "lab-50-kerberoasting",
+  "offense_id": 50,
+  "offense_view": "open",
+  "window": {
+    "start": "2026-10-09T16:37:24.865000Z",
+    "end": "2026-10-09T18:37:24.865000Z"
+  },
+  "events": 19674,
+  "columns": [
+    "starttime",
+    "endtime",
+    "qid",
+    "qidname",
+    "category",
+    "categoryname",
+    "logsourceid",
+    "logsourcename",
+    "logsourcetypename",
+    "devicetype",
+    "sourceip",
+    "destinationip",
+    "sourceport",
+    "destinationport",
+    "username",
+    "eventcount",
+    "magnitude",
+    "payload"
+  ],
+  "excluded": [
+    "Health Metrics"
+  ],
+  "recorded_at": "2026-10-09T19:07:28.771663Z",
+  "gateway_version": "0.1.0+registry.2b9ac3da49e2",
+  "fork_version": "7dcf3ce72062978e74975c7bca4f77e21d383a68",
+  "files": [
+    {
+      "name": "offense.json",
+      "sha256": "837e3e127d42191a526752b066c6422d51b199f3469ef50688230d5e2d710c6d",
+      "size": 772
+    },
+    {
+      "name": "enrichment.json",
+      "sha256": "147bc591c479ff68dad4b71f0dd67a4ed24b01b6dad714ffb5d2fed0031995e0",
+      "size": 574
+    },
+    {
+      "name": "tools.json",
+      "sha256": "a87f064e81fc450aba84ffacd7ca49f34209b70a9243481611bb43de8481f06b",
+      "size": 5168
+    },
+    {
+      "name": "events.jsonl.gz",
+      "sha256": "13c3ff7c4910187bf2b3c8f24729b4cad4aadabec52995340a8945f7af51e4c3",
+      "size": 898400
+    },
+    {
+      "name": "audits.json",
+      "sha256": "48b29dc14782ffd0fecf5c6278be97d730be17b170f44ca436e34852cb575d4e",
+      "size": 20866
+    }
+  ]
+}

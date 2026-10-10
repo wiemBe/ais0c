@@ -1,0 +1,39 @@
+{
+  "offense_id": 50,
+  "description": "Success Audit: A Kerberos service ticket was granted",
+  "offense_type": "Username",
+  "offense_source": "branch.user05",
+  "rule_ids": [
+    100354
+  ],
+  "rule_names": [
+    "AIS0C LAB - Kerberoasting RC4 service tickets"
+  ],
+  "categories": [
+    "Kerberos Session Opened"
+  ],
+  "magnitude": 2,
+  "start_time": "2026-10-09T17:37:24.865000Z",
+  "last_updated_time": "2026-10-09T17:37:24.865000Z",
+  "event_count": 5,
+  "log_source_ids": [
+    213
+  ],
+  "source_ips": [
+    "192.0.2.83",
+    "192.0.2.98",
+    "192.0.2.101",
+    "192.0.2.99",
+    "192.0.2.120"
+  ],
+  "destination_ips": [
+    "192.0.2.83",
+    "192.0.2.98",
+    "192.0.2.99",
+    "192.0.2.101",
+    "192.0.2.120"
+  ],
+  "usernames": [
+    "branch.user05"
+  ]
+}

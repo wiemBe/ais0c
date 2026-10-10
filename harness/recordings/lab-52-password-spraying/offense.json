@@ -1,0 +1,40 @@
+{
+  "offense_id": 52,
+  "description": "Scan Followed By Successful Login\n preceded by Multiple Login Failures to the Same Destination\n preceded by Multiple Login Failures from the Same Source\n preceded by Login Failures Followed By Success from the same Source IP\n containing Success Audit: An account was successfully logged on",
+  "offense_type": "Source IP",
+  "offense_source": "192.0.2.80",
+  "rule_ids": [
+    100355,
+    100068,
+    100061,
+    100062
+  ],
+  "rule_names": [
+    "AIS0C LAB - Password spraying from one source",
+    "Login Successful After Scan Attempt",
+    "Login Failures Followed By Success from the same Source IP",
+    "Multiple Login Failures from the Same Source"
+  ],
+  "categories": [
+    "User Login Success",
+    "User Login Failure",
+    "Suspicious Pattern Detected",
+    "Remote Access Login Failed",
+    "Misc Login Failed"
+  ],
+  "magnitude": 3,
+  "start_time": "2026-10-09T17:42:59.793000Z",
+  "last_updated_time": "2026-10-09T17:43:59.793000Z",
+  "event_count": 14,
+  "log_source_ids": [
+    63,
+    213
+  ],
+  "source_ips": [
+    "192.0.2.80"
+  ],
+  "destination_ips": [
+    "192.0.2.80"
+  ],
+  "usernames": []
+}

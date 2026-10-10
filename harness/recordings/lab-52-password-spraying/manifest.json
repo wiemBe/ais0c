@@ -1,0 +1,64 @@
+{
+  "schema_version": 2,
+  "recording_id": "lab-52-password-spraying",
+  "offense_id": 52,
+  "offense_view": "open",
+  "window": {
+    "start": "2026-10-09T16:42:59.793000Z",
+    "end": "2026-10-09T18:43:59.793000Z"
+  },
+  "events": 20615,
+  "columns": [
+    "starttime",
+    "endtime",
+    "qid",
+    "qidname",
+    "category",
+    "categoryname",
+    "logsourceid",
+    "logsourcename",
+    "logsourcetypename",
+    "devicetype",
+    "sourceip",
+    "destinationip",
+    "sourceport",
+    "destinationport",
+    "username",
+    "eventcount",
+    "magnitude",
+    "payload"
+  ],
+  "excluded": [
+    "Health Metrics"
+  ],
+  "recorded_at": "2026-10-09T19:19:29.475224Z",
+  "gateway_version": "0.1.0+registry.2b9ac3da49e2",
+  "fork_version": "7dcf3ce72062978e74975c7bca4f77e21d383a68",
+  "files": [
+    {
+      "name": "offense.json",
+      "sha256": "4e3b256e411156f04cc65b8b4fc3d4fe3a8c6c9010483c4a1184b2763afb9d43",
+      "size": 1161
+    },
+    {
+      "name": "enrichment.json",
+      "sha256": "86ce11a705a3ef6e52514f75684cc881d1b0915d8554313978d2a91202b91ea7",
+      "size": 1236
+    },
+    {
+      "name": "tools.json",
+      "sha256": "3d0642ac33fafd3baf876050224de8b14714fae78304c52d406c9e5e17a94e25",
+      "size": 10476
+    },
+    {
+      "name": "events.jsonl.gz",
+      "sha256": "e3ff9bf935fee78c9b0d7f0eef237d75178af16d7afd560593da9cde956ef729",
+      "size": 962183
+    },
+    {
+      "name": "audits.json",
+      "sha256": "ced909b5c9c4b09e99a7fbc4e3b0c7c9695e5c652faaf9b3ac5bce3e4d67e4d4",
+      "size": 21135
+    }
+  ]
+}

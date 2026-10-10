@@ -1,0 +1,541 @@
+[
+  {
+    "name": "count_all",
+    "query": "SELECT COUNT(*) AS n FROM events WHERE LOGSOURCETYPENAME(devicetype) NOT IN ('Health Metrics') AND starttime BETWEEN 1791561551231 AND 1791568751231 LIMIT 10 START 1791560951231 STOP 1791569351231",
+    "rows": [
+      {
+        "n": 17060.0
+      }
+    ]
+  },
+  {
+    "name": "qidname_filter",
+    "query": "SELECT starttime, sourceip, username, QIDNAME(qid) AS q FROM events WHERE LOGSOURCETYPENAME(devicetype) NOT IN ('Health Metrics') AND starttime BETWEEN 1791565150231 AND 1791565152231 AND QIDNAME(qid) ILIKE '%object%' ORDER BY starttime ASC LIMIT 50 START 1791564550231 STOP 1791565752231",
+    "rows": []
+  },
+  {
+    "name": "group_count",
+    "query": "SELECT logsourceid, COUNT(*) AS n FROM events WHERE LOGSOURCETYPENAME(devicetype) NOT IN ('Health Metrics') AND starttime BETWEEN 1791561551231 AND 1791568751231 GROUP BY logsourceid ORDER BY logsourceid ASC LIMIT 20 START 1791560951231 STOP 1791569351231",
+    "rows": [
+      {
+        "logsourceid": 63,
+        "n": 5.0
+      },
+      {
+        "logsourceid": 64,
+        "n": 2846.0
+      },
+      {
+        "logsourceid": 65,
+        "n": 13907.0
+      },
+      {
+        "logsourceid": 138,
+        "n": 9.0
+      },
+      {
+        "logsourceid": 213,
+        "n": 82.0
+      },
+      {
+        "logsourceid": 214,
+        "n": 111.0
+      },
+      {
+        "logsourceid": 362,
+        "n": 100.0
+      }
+    ]
+  },
+  {
+    "name": "ilike_payload",
+    "query": "SELECT starttime, sourceip, username FROM events WHERE LOGSOURCETYPENAME(devicetype) NOT IN ('Health Metrics') AND starttime BETWEEN 1791565150231 AND 1791565152231 AND UTF8(payload) ILIKE '%203.0.113.61%' ORDER BY starttime ASC LIMIT 50 START 1791564550231 STOP 1791565752231",
+    "rows": [
+      {
+        "starttime": 1791565151231,
+        "sourceip": "203.0.113.61",
+        "username": null
+      },
+      {
+        "starttime": 1791565151231,
+        "sourceip": "203.0.113.61",
+        "username": null
+      },
+      {
+        "starttime": 1791565151231,
+        "sourceip": "203.0.113.61",
+        "username": null
+      },
+      {
+        "starttime": 1791565151231,
+        "sourceip": "203.0.113.61",
+        "username": null
+      },
+      {
+        "starttime": 1791565151231,
+        "sourceip": "203.0.113.61",
+        "username": null
+      },
+      {
+        "starttime": 1791565151231,
+        "sourceip": "203.0.113.61",
+        "username": null
+      }
+    ]
+  },
+  {
+    "name": "epoch_window",
+    "query": "SELECT starttime, sourceip, username, qid FROM events WHERE LOGSOURCETYPENAME(devicetype) NOT IN ('Health Metrics') AND starttime BETWEEN 1791565150231 AND 1791565152231 ORDER BY starttime ASC LIMIT 50 START 1791564550231 STOP 1791565752231",
+    "rows": [
+      {
+        "starttime": 1791565150435,
+        "sourceip": "192.0.2.133",
+        "username": "root",
+        "qid": 28250025
+      },
+      {
+        "starttime": 1791565150435,
+        "sourceip": "192.0.2.133",
+        "username": "root",
+        "qid": 28250025
+      },
+      {
+        "starttime": 1791565150435,
+        "sourceip": "192.0.2.133",
+        "username": "root",
+        "qid": 28250026
+      },
+      {
+        "starttime": 1791565150435,
+        "sourceip": "192.0.2.133",
+        "username": "root",
+        "qid": 28250025
+      },
+      {
+        "starttime": 1791565150435,
+        "sourceip": "192.0.2.133",
+        "username": "root",
+        "qid": 28250026
+      },
+      {
+        "starttime": 1791565150435,
+        "sourceip": "192.0.2.133",
+        "username": "root",
+        "qid": 28250026
+      },
+      {
+        "starttime": 1791565150435,
+        "sourceip": "192.0.2.133",
+        "username": null,
+        "qid": 38750003
+      },
+      {
+        "starttime": 1791565150899,
+        "sourceip": "192.0.2.133",
+        "username": null,
+        "qid": 38750003
+      },
+      {
+        "starttime": 1791565150899,
+        "sourceip": "192.0.2.133",
+        "username": null,
+        "qid": 38750003
+      },
+      {
+        "starttime": 1791565151231,
+        "sourceip": "192.0.2.62",
+        "username": null,
+        "qid": 55250104
+      },
+      {
+        "starttime": 1791565151231,
+        "sourceip": "203.0.113.129",
+        "username": null,
+        "qid": 55250104
+      },
+      {
+        "starttime": 1791565151231,
+        "sourceip": "192.0.2.210",
+        "username": null,
+        "qid": 20257841
+      },
+      {
+        "starttime": 1791565151231,
+        "sourceip": "203.0.113.99",
+        "username": null,
+        "qid": 20257841
+      },
+      {
+        "starttime": 1791565151231,
+        "sourceip": "192.0.2.139",
+        "username": null,
+        "qid": 20257841
+      },
+      {
+        "starttime": 1791565151231,
+        "sourceip": "198.51.100.205",
+        "username": null,
+        "qid": 20257841
+      },
+      {
+        "starttime": 1791565151231,
+        "sourceip": "203.0.113.208",
+        "username": null,
+        "qid": 20257841
+      },
+      {
+        "starttime": 1791565151231,
+        "sourceip": "198.51.100.243",
+        "username": null,
+        "qid": 20257841
+      },
+      {
+        "starttime": 1791565151231,
+        "sourceip": "192.0.2.103",
+        "username": null,
+        "qid": 20257841
+      },
+      {
+        "starttime": 1791565151231,
+        "sourceip": "192.0.2.250",
+        "username": null,
+        "qid": 20257841
+      },
+      {
+        "starttime": 1791565151231,
+        "sourceip": "192.0.2.57",
+        "username": null,
+        "qid": 20257841
+      },
+      {
+        "starttime": 1791565151231,
+        "sourceip": "203.0.113.227",
+        "username": null,
+        "qid": 20257841
+      },
+      {
+        "starttime": 1791565151231,
+        "sourceip": "198.51.100.61",
+        "username": null,
+        "qid": 20257841
+      },
+      {
+        "starttime": 1791565151231,
+        "sourceip": "203.0.113.61",
+        "username": null,
+        "qid": 55250081
+      },
+      {
+        "starttime": 1791565151231,
+        "sourceip": "198.51.100.222",
+        "username": null,
+        "qid": 20257841
+      },
+      {
+        "starttime": 1791565151231,
+        "sourceip": "203.0.113.61",
+        "username": null,
+        "qid": 55250081
+      },
+      {
+        "starttime": 1791565151231,
+        "sourceip": "192.0.2.198",
+        "username": null,
+        "qid": 20257841
+      },
+      {
+        "starttime": 1791565151231,
+        "sourceip": "203.0.113.61",
+        "username": null,
+        "qid": 55250081
+      },
+      {
+        "starttime": 1791565151231,
+        "sourceip": "198.51.100.95",
+        "username": null,
+        "qid": 20257841
+      },
+      {
+        "starttime": 1791565151231,
+        "sourceip": "192.0.2.133",
+        "username": null,
+        "qid": 38750003
+      },
+      {
+        "starttime": 1791565151231,
+        "sourceip": "203.0.113.61",
+        "username": null,
+        "qid": 55250081
+      },
+      {
+        "starttime": 1791565151231,
+        "sourceip": "198.51.100.211",
+        "username": null,
+        "qid": 20257841
+      },
+      {
+        "starttime": 1791565151231,
+        "sourceip": "198.51.100.179",
+        "username": null,
+        "qid": 20257841
+      },
+      {
+        "starttime": 1791565151231,
+        "sourceip": "203.0.113.61",
+        "username": null,
+        "qid": 55250081
+      },
+      {
+        "starttime": 1791565151231,
+        "sourceip": "203.0.113.31",
+        "username": null,
+        "qid": 55250104
+      },
+      {
+        "starttime": 1791565151231,
+        "sourceip": "192.0.2.197",
+        "username": null,
+        "qid": 20257841
+      },
+      {
+        "starttime": 1791565151231,
+        "sourceip": "192.0.2.119",
+        "username": null,
+        "qid": 20257841
+      },
+      {
+        "starttime": 1791565151231,
+        "sourceip": "198.51.100.89",
+        "username": null,
+        "qid": 20257841
+      },
+      {
+        "starttime": 1791565151231,
+        "sourceip": "192.0.2.179",
+        "username": null,
+        "qid": 20257841
+      },
+      {
+        "starttime": 1791565151231,
+        "sourceip": "203.0.113.61",
+        "username": null,
+        "qid": 55250081
+      },
+      {
+        "starttime": 1791565152090,
+        "sourceip": "192.0.2.81",
+        "username": null,
+        "qid": 28250369
+      },
+      {
+        "starttime": 1791565152193,
+        "sourceip": "192.0.2.133",
+        "username": null,
+        "qid": 38750003
+      }
+    ]
+  },
+  {
+    "name": "dateformat_user",
+    "query": "SELECT DATEFORMAT(starttime, 'yyyy-MM-dd HH:mm:ss') AS t, username, sourceip FROM events WHERE LOGSOURCETYPENAME(devicetype) NOT IN ('Health Metrics') AND starttime BETWEEN 1791565150231 AND 1791565152231 AND username = '203.0.113.61' ORDER BY starttime ASC LIMIT 20 START 1791564550231 STOP 1791565752231",
+    "rows": []
+  },
+  {
+    "name": "aggregates",
+    "query": "SELECT SUM(eventcount) AS total, MIN(starttime) AS earliest, MAX(starttime) AS latest, COUNT(username) AS named FROM events WHERE LOGSOURCETYPENAME(devicetype) NOT IN ('Health Metrics') AND starttime BETWEEN 1791565150231 AND 1791565152231 LIMIT 10 START 1791564550231 STOP 1791565752231",
+    "rows": [
+      {
+        "total": 41.0,
+        "earliest": 1791565150435.0,
+        "latest": 1791565152193.0,
+        "named": 6.0
+      }
+    ]
+  },
+  {
+    "name": "agent_form",
+    "query": "SELECT starttime, username, sourceip, QIDNAME(qid) AS event_name FROM events WHERE username = '203.0.113.61' ORDER BY starttime ASC LIMIT 100 START 1791565151231 STOP 1791565211231",
+    "rows": []
+  },
+  {
+    "name": "in_between_null",
+    "query": "SELECT starttime, sourceip, username FROM events WHERE LOGSOURCETYPENAME(devicetype) NOT IN ('Health Metrics') AND starttime BETWEEN 1791565150231 AND 1791565152231 AND (username IS NULL OR username IN ('203.0.113.61')) AND eventcount BETWEEN 1 AND 5 AND NOT (sourceport = 1) ORDER BY starttime ASC LIMIT 50 START 1791564550231 STOP 1791565752231",
+    "rows": [
+      {
+        "starttime": 1791565150435,
+        "sourceip": "192.0.2.133",
+        "username": null
+      },
+      {
+        "starttime": 1791565150899,
+        "sourceip": "192.0.2.133",
+        "username": null
+      },
+      {
+        "starttime": 1791565150899,
+        "sourceip": "192.0.2.133",
+        "username": null
+      },
+      {
+        "starttime": 1791565151231,
+        "sourceip": "192.0.2.62",
+        "username": null
+      },
+      {
+        "starttime": 1791565151231,
+        "sourceip": "203.0.113.129",
+        "username": null
+      },
+      {
+        "starttime": 1791565151231,
+        "sourceip": "192.0.2.210",
+        "username": null
+      },
+      {
+        "starttime": 1791565151231,
+        "sourceip": "203.0.113.99",
+        "username": null
+      },
+      {
+        "starttime": 1791565151231,
+        "sourceip": "192.0.2.139",
+        "username": null
+      },
+      {
+        "starttime": 1791565151231,
+        "sourceip": "198.51.100.205",
+        "username": null
+      },
+      {
+        "starttime": 1791565151231,
+        "sourceip": "203.0.113.208",
+        "username": null
+      },
+      {
+        "starttime": 1791565151231,
+        "sourceip": "198.51.100.243",
+        "username": null
+      },
+      {
+        "starttime": 1791565151231,
+        "sourceip": "192.0.2.103",
+        "username": null
+      },
+      {
+        "starttime": 1791565151231,
+        "sourceip": "192.0.2.250",
+        "username": null
+      },
+      {
+        "starttime": 1791565151231,
+        "sourceip": "192.0.2.57",
+        "username": null
+      },
+      {
+        "starttime": 1791565151231,
+        "sourceip": "203.0.113.227",
+        "username": null
+      },
+      {
+        "starttime": 1791565151231,
+        "sourceip": "198.51.100.61",
+        "username": null
+      },
+      {
+        "starttime": 1791565151231,
+        "sourceip": "203.0.113.61",
+        "username": null
+      },
+      {
+        "starttime": 1791565151231,
+        "sourceip": "198.51.100.222",
+        "username": null
+      },
+      {
+        "starttime": 1791565151231,
+        "sourceip": "203.0.113.61",
+        "username": null
+      },
+      {
+        "starttime": 1791565151231,
+        "sourceip": "192.0.2.198",
+        "username": null
+      },
+      {
+        "starttime": 1791565151231,
+        "sourceip": "203.0.113.61",
+        "username": null
+      },
+      {
+        "starttime": 1791565151231,
+        "sourceip": "198.51.100.95",
+        "username": null
+      },
+      {
+        "starttime": 1791565151231,
+        "sourceip": "192.0.2.133",
+        "username": null
+      },
+      {
+        "starttime": 1791565151231,
+        "sourceip": "203.0.113.61",
+        "username": null
+      },
+      {
+        "starttime": 1791565151231,
+        "sourceip": "198.51.100.211",
+        "username": null
+      },
+      {
+        "starttime": 1791565151231,
+        "sourceip": "198.51.100.179",
+        "username": null
+      },
+      {
+        "starttime": 1791565151231,
+        "sourceip": "203.0.113.61",
+        "username": null
+      },
+      {
+        "starttime": 1791565151231,
+        "sourceip": "203.0.113.31",
+        "username": null
+      },
+      {
+        "starttime": 1791565151231,
+        "sourceip": "192.0.2.197",
+        "username": null
+      },
+      {
+        "starttime": 1791565151231,
+        "sourceip": "192.0.2.119",
+        "username": null
+      },
+      {
+        "starttime": 1791565151231,
+        "sourceip": "198.51.100.89",
+        "username": null
+      },
+      {
+        "starttime": 1791565151231,
+        "sourceip": "192.0.2.179",
+        "username": null
+      },
+      {
+        "starttime": 1791565151231,
+        "sourceip": "203.0.113.61",
+        "username": null
+      },
+      {
+        "starttime": 1791565152090,
+        "sourceip": "192.0.2.81",
+        "username": null
+      },
+      {
+        "starttime": 1791565152193,
+        "sourceip": "192.0.2.133",
+        "username": null
+      }
+    ]
+  }
+]

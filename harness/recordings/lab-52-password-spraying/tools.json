@@ -1,0 +1,383 @@
+[
+  {
+    "tool_id": "get_offense",
+    "arguments": {
+      "offense_id": 52
+    },
+    "result": {
+      "status": "ok",
+      "deny_reason": null,
+      "evidence_id": "ev_01a122103a0a73a6ab2f1db28ecf33be",
+      "data": [
+        {
+          "last_persisted_time": 1791568136000,
+          "username_count": 6,
+          "description": "Scan Followed By Successful Login\n preceded by Multiple Login Failures to the Same Destination\n preceded by Multiple Login Failures from the Same Source\n preceded by Login Failures Followed By Success from the same Source IP\n containing Success Audit: An account was successfully logged on\n",
+          "rules": [
+            {
+              "id": 100355,
+              "type": "CRE_RULE"
+            },
+            {
+              "id": 100068,
+              "type": "CRE_RULE"
+            },
+            {
+              "id": 100061,
+              "type": "CRE_RULE"
+            },
+            {
+              "id": 100062,
+              "type": "CRE_RULE"
+            }
+          ],
+          "event_count": 14,
+          "flow_count": 0,
+          "assigned_to": null,
+          "security_category_count": 5,
+          "follow_up": false,
+          "source_address_ids": [
+            24
+          ],
+          "source_count": 1,
+          "inactive": false,
+          "protected": false,
+          "closing_user": null,
+          "destination_networks": [
+            "Net-10-172-192.Net_10_0_0_0"
+          ],
+          "source_network": "Net-10-172-192.Net_10_0_0_0",
+          "category_count": 5,
+          "close_time": null,
+          "remote_destination_count": 0,
+          "start_time": 1791567779793,
+          "magnitude": 3,
+          "last_updated_time": 1791567839793,
+          "credibility": 2,
+          "id": 52,
+          "categories": [
+            "User Login Success",
+            "User Login Failure",
+            "Suspicious Pattern Detected",
+            "Remote Access Login Failed",
+            "Misc Login Failed"
+          ],
+          "severity": 5,
+          "policy_category_count": 0,
+          "log_sources": [
+            {
+              "type_name": "EventCRE",
+              "type_id": 18,
+              "name": "Custom Rule Engine-8 :: qradarce2",
+              "id": 63
+            },
+            {
+              "type_name": "WindowsAuthServer",
+              "type_id": 12,
+              "name": "DC-LAB-01@Windows",
+              "id": 213
+            }
+          ],
+          "closing_reason_id": null,
+          "device_count": 2,
+          "last_assigned_user_time": 1791568079000,
+          "first_persisted_time": 1791567781000,
+          "offense_type": 0,
+          "relevance": 3,
+          "domain_id": 0,
+          "offense_source": "192.0.2.80",
+          "local_destination_address_ids": [
+            663
+          ],
+          "local_destination_count": 1,
+          "status": "OPEN"
+        }
+      ],
+      "truncated": false,
+      "coverage": {
+        "complete": true,
+        "gaps": []
+      }
+    }
+  },
+  {
+    "tool_id": "get_rule",
+    "arguments": {
+      "rule_id": 100355
+    },
+    "result": {
+      "status": "ok",
+      "deny_reason": null,
+      "evidence_id": "ev_01a122103a3a778d8aa32e4fead8d823",
+      "data": [
+        {
+          "owner": "admin",
+          "identifier": "a20f6430-ce06-5d2a-a9bd-d1b8256a4a40",
+          "base_host_id": 53,
+          "capacity_timestamp": 1791572780292,
+          "origin": "USER",
+          "creation_date": 1791381600000,
+          "type": "EVENT",
+          "enabled": true,
+          "modification_date": 1791382356570,
+          "linked_rule_identifier": null,
+          "name": "AIS0C LAB - Password spraying from one source",
+          "average_capacity": 7711884,
+          "id": 100355,
+          "base_capacity": 7711884
+        }
+      ],
+      "truncated": false,
+      "coverage": {
+        "complete": true,
+        "gaps": []
+      }
+    }
+  },
+  {
+    "tool_id": "get_rule",
+    "arguments": {
+      "rule_id": 100068
+    },
+    "result": {
+      "status": "ok",
+      "deny_reason": null,
+      "evidence_id": "ev_01a122103a6a7f5cbf48c842ca7d56b4",
+      "data": [
+        {
+          "owner": "admin",
+          "identifier": "SYSTEM-1199",
+          "base_host_id": 53,
+          "capacity_timestamp": 1791572780292,
+          "origin": "SYSTEM",
+          "creation_date": 1192392720374,
+          "type": "COMMON",
+          "enabled": true,
+          "modification_date": 1267747985320,
+          "linked_rule_identifier": null,
+          "name": "Login Successful After Scan Attempt",
+          "average_capacity": 4460502,
+          "id": 100068,
+          "base_capacity": 4460502
+        }
+      ],
+      "truncated": false,
+      "coverage": {
+        "complete": true,
+        "gaps": []
+      }
+    }
+  },
+  {
+    "tool_id": "get_rule",
+    "arguments": {
+      "rule_id": 100061
+    },
+    "result": {
+      "status": "ok",
+      "deny_reason": null,
+      "evidence_id": "ev_01a122103a9a7423bb39b5632140fcaf",
+      "data": [
+        {
+          "owner": "admin",
+          "identifier": "SYSTEM-1365",
+          "base_host_id": 53,
+          "capacity_timestamp": 1791572780292,
+          "origin": "SYSTEM",
+          "creation_date": 1133998885680,
+          "type": "EVENT",
+          "enabled": true,
+          "modification_date": 1363628166560,
+          "linked_rule_identifier": null,
+          "name": "Login Failures Followed By Success from the same Source IP",
+          "average_capacity": 3982635,
+          "id": 100061,
+          "base_capacity": 3982635
+        }
+      ],
+      "truncated": false,
+      "coverage": {
+        "complete": true,
+        "gaps": []
+      }
+    }
+  },
+  {
+    "tool_id": "get_rule",
+    "arguments": {
+      "rule_id": 100062
+    },
+    "result": {
+      "status": "ok",
+      "deny_reason": null,
+      "evidence_id": "ev_01a122103acd72189b865b1d94a820a4",
+      "data": [
+        {
+          "owner": "admin",
+          "identifier": "SYSTEM-1407",
+          "base_host_id": 53,
+          "capacity_timestamp": 1791572780292,
+          "origin": "SYSTEM",
+          "creation_date": 1149093503918,
+          "type": "EVENT",
+          "enabled": true,
+          "modification_date": 1784480045462,
+          "linked_rule_identifier": null,
+          "name": "Multiple Login Failures from the Same Source",
+          "average_capacity": 13993842,
+          "id": 100062,
+          "base_capacity": 13993842
+        }
+      ],
+      "truncated": false,
+      "coverage": {
+        "complete": true,
+        "gaps": []
+      }
+    }
+  },
+  {
+    "tool_id": "get_log_source",
+    "arguments": {
+      "log_source_id": 63
+    },
+    "result": {
+      "status": "ok",
+      "deny_reason": null,
+      "evidence_id": "ev_01a122103b027571bddac678d430b392",
+      "data": [
+        {
+          "sending_ip": null,
+          "internal": true,
+          "log_source_identifiers": [
+            {
+              "identifier": "192.0.2.133",
+              "parsing_order": 0
+            }
+          ],
+          "protocol_parameters": [
+            {
+              "name": "identifier",
+              "id": 0,
+              "value": "192.0.2.133"
+            },
+            {
+              "name": "incomingPayloadEncoding",
+              "id": 1,
+              "value": "UTF-8"
+            }
+          ],
+          "description": "Custom Rule Engine",
+          "coalesce_events": true,
+          "enabled": true,
+          "parsing_order": 0,
+          "average_eps": 0,
+          "group_ids": [
+            0
+          ],
+          "credibility": 8,
+          "id": 63,
+          "store_event_payload": true,
+          "target_event_collector_id": 7,
+          "protocol_type_id": 0,
+          "language_id": 1,
+          "creation_date": 1784479231442,
+          "wincollect_external_destination_ids": null,
+          "log_source_extension_id": null,
+          "syslog_event_timeout": null,
+          "name": "Custom Rule Engine-8 :: qradarce2",
+          "modified_date": 1784479231442,
+          "auto_discovered": false,
+          "type_id": 18,
+          "last_event_time": 0,
+          "requires_deploy": false,
+          "gateway": false,
+          "wincollect_internal_destination_id": null,
+          "status": {
+            "last_updated": 0,
+            "messages": null,
+            "status": "NA"
+          },
+          "disconnected_log_collector_id": null
+        }
+      ],
+      "truncated": false,
+      "coverage": {
+        "complete": true,
+        "gaps": []
+      }
+    }
+  },
+  {
+    "tool_id": "get_log_source",
+    "arguments": {
+      "log_source_id": 213
+    },
+    "result": {
+      "status": "ok",
+      "deny_reason": null,
+      "evidence_id": "ev_01a122103b39748ebc2c3dff524b164d",
+      "data": [
+        {
+          "sending_ip": null,
+          "internal": false,
+          "log_source_identifiers": [
+            {
+              "identifier": "DC-LAB-01",
+              "parsing_order": 3
+            }
+          ],
+          "protocol_parameters": [
+            {
+              "name": "identifier",
+              "id": 0,
+              "value": "DC-LAB-01"
+            },
+            {
+              "name": "incomingPayloadEncoding",
+              "id": 1,
+              "value": "UTF-8"
+            }
+          ],
+          "description": "",
+          "coalesce_events": false,
+          "enabled": true,
+          "parsing_order": 2,
+          "average_eps": 0,
+          "group_ids": [
+            0
+          ],
+          "credibility": 5,
+          "id": 213,
+          "store_event_payload": true,
+          "target_event_collector_id": 7,
+          "protocol_type_id": 0,
+          "language_id": 1,
+          "creation_date": 1785672343030,
+          "wincollect_external_destination_ids": null,
+          "log_source_extension_id": null,
+          "syslog_event_timeout": null,
+          "name": "DC-LAB-01@Windows",
+          "modified_date": 1785672343030,
+          "auto_discovered": false,
+          "type_id": 12,
+          "last_event_time": 1791567779793,
+          "requires_deploy": false,
+          "gateway": false,
+          "wincollect_internal_destination_id": null,
+          "status": {
+            "last_updated": 0,
+            "messages": null,
+            "status": "SUCCESS"
+          },
+          "disconnected_log_collector_id": null
+        }
+      ],
+      "truncated": false,
+      "coverage": {
+        "complete": true,
+        "gaps": []
+      }
+    }
+  }
+]

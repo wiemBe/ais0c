@@ -1,0 +1,57 @@
+{
+  "catalog": {
+    "rules": [
+      {
+        "rule_id": 100061,
+        "mode": "analyze",
+        "min_level": null,
+        "context_note": null,
+        "attack_techniques": null
+      },
+      {
+        "rule_id": 100062,
+        "mode": "analyze",
+        "min_level": null,
+        "context_note": null,
+        "attack_techniques": null
+      },
+      {
+        "rule_id": 100068,
+        "mode": "analyze",
+        "min_level": null,
+        "context_note": null,
+        "attack_techniques": null
+      },
+      {
+        "rule_id": 100355,
+        "mode": "analyze",
+        "min_level": null,
+        "context_note": null,
+        "attack_techniques": [
+          "T1110.003"
+        ]
+      }
+    ],
+    "log_sources": [
+      {
+        "log_source_id": 63,
+        "type_name": "Custom Rule Engine",
+        "description": null,
+        "criticality": null,
+        "context_note": null
+      },
+      {
+        "log_source_id": 213,
+        "type_name": "Microsoft Windows Security Event Log",
+        "description": null,
+        "criticality": null,
+        "context_note": null
+      }
+    ]
+  },
+  "critical_asset_hits": [],
+  "ioc_hits": [],
+  "entity_resolutions": [],
+  "group_id": null,
+  "floor_level": null
+}

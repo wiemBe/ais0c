@@ -1,0 +1,32 @@
+{
+  "offense_id": 46,
+  "description": "Cross Site Scripting (XSS)",
+  "offense_type": "Source IP",
+  "offense_source": "203.0.113.61",
+  "rule_ids": [
+    100357
+  ],
+  "rule_names": [
+    "AIS0C LAB - WAF cross-site scripting not blocked"
+  ],
+  "categories": [
+    "Cross Site Scripting"
+  ],
+  "magnitude": 4,
+  "start_time": "2026-10-09T16:59:11.231000Z",
+  "last_updated_time": "2026-10-09T16:59:11.231000Z",
+  "event_count": 4,
+  "log_source_ids": [
+    214
+  ],
+  "source_ips": [
+    "203.0.113.61"
+  ],
+  "destination_ips": [
+    "192.0.2.5",
+    "192.0.2.41",
+    "192.0.2.8",
+    "192.0.2.51"
+  ],
+  "usernames": []
+}

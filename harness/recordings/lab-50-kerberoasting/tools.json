@@ -1,0 +1,195 @@
+[
+  {
+    "tool_id": "get_offense",
+    "arguments": {
+      "offense_id": 50
+    },
+    "result": {
+      "status": "ok",
+      "deny_reason": null,
+      "evidence_id": "ev_01a122046b07750c9dbb874e62f92f65",
+      "data": [
+        {
+          "last_persisted_time": 1791567805000,
+          "username_count": 1,
+          "description": "Success Audit: A Kerberos service ticket was granted\n",
+          "rules": [
+            {
+              "id": 100354,
+              "type": "CRE_RULE"
+            }
+          ],
+          "event_count": 5,
+          "flow_count": 0,
+          "assigned_to": null,
+          "security_category_count": 1,
+          "follow_up": false,
+          "source_address_ids": [
+            21,
+            27,
+            25,
+            26,
+            28
+          ],
+          "source_count": 5,
+          "inactive": false,
+          "protected": false,
+          "closing_user": null,
+          "destination_networks": [
+            "Net-10-172-192.Net_192_168_0_0"
+          ],
+          "source_network": "Net-10-172-192.Net_192_168_0_0",
+          "category_count": 1,
+          "close_time": null,
+          "remote_destination_count": 0,
+          "start_time": 1791567444865,
+          "magnitude": 2,
+          "last_updated_time": 1791567444865,
+          "credibility": 2,
+          "id": 50,
+          "categories": [
+            "Kerberos Session Opened"
+          ],
+          "severity": 1,
+          "policy_category_count": 0,
+          "log_sources": [
+            {
+              "type_name": "WindowsAuthServer",
+              "type_id": 12,
+              "name": "DC-LAB-01@Windows",
+              "id": 213
+            }
+          ],
+          "closing_reason_id": null,
+          "device_count": 1,
+          "last_assigned_user_time": 1791567761000,
+          "first_persisted_time": 1791567446000,
+          "offense_type": 3,
+          "relevance": 3,
+          "domain_id": 0,
+          "offense_source": "branch.user05",
+          "local_destination_address_ids": [
+            666,
+            695,
+            694,
+            693,
+            696
+          ],
+          "local_destination_count": 5,
+          "status": "OPEN"
+        }
+      ],
+      "truncated": false,
+      "coverage": {
+        "complete": true,
+        "gaps": []
+      }
+    }
+  },
+  {
+    "tool_id": "get_rule",
+    "arguments": {
+      "rule_id": 100354
+    },
+    "result": {
+      "status": "ok",
+      "deny_reason": null,
+      "evidence_id": "ev_01a122046b387ffc958c7085390c07eb",
+      "data": [
+        {
+          "owner": "admin",
+          "identifier": "8b988904-03f5-5a01-9e23-b496894dbb47",
+          "base_host_id": 53,
+          "capacity_timestamp": 1791571998151,
+          "origin": "USER",
+          "creation_date": 1791381600000,
+          "type": "EVENT",
+          "enabled": true,
+          "modification_date": 1791382356601,
+          "linked_rule_identifier": null,
+          "name": "AIS0C LAB - Kerberoasting RC4 service tickets",
+          "average_capacity": 1351522,
+          "id": 100354,
+          "base_capacity": 1351522
+        }
+      ],
+      "truncated": false,
+      "coverage": {
+        "complete": true,
+        "gaps": []
+      }
+    }
+  },
+  {
+    "tool_id": "get_log_source",
+    "arguments": {
+      "log_source_id": 213
+    },
+    "result": {
+      "status": "ok",
+      "deny_reason": null,
+      "evidence_id": "ev_01a122046b6d7e24aeb92a1eb6d47cb1",
+      "data": [
+        {
+          "sending_ip": null,
+          "internal": false,
+          "log_source_identifiers": [
+            {
+              "identifier": "DC-LAB-01",
+              "parsing_order": 3
+            }
+          ],
+          "protocol_parameters": [
+            {
+              "name": "identifier",
+              "id": 0,
+              "value": "DC-LAB-01"
+            },
+            {
+              "name": "incomingPayloadEncoding",
+              "id": 1,
+              "value": "UTF-8"
+            }
+          ],
+          "description": "",
+          "coalesce_events": false,
+          "enabled": true,
+          "parsing_order": 2,
+          "average_eps": 0,
+          "group_ids": [
+            0
+          ],
+          "credibility": 5,
+          "id": 213,
+          "store_event_payload": true,
+          "target_event_collector_id": 7,
+          "protocol_type_id": 0,
+          "language_id": 1,
+          "creation_date": 1785672343030,
+          "wincollect_external_destination_ids": null,
+          "log_source_extension_id": null,
+          "syslog_event_timeout": null,
+          "name": "DC-LAB-01@Windows",
+          "modified_date": 1785672343030,
+          "auto_discovered": false,
+          "type_id": 12,
+          "last_event_time": 1791567779793,
+          "requires_deploy": false,
+          "gateway": false,
+          "wincollect_internal_destination_id": null,
+          "status": {
+            "last_updated": 0,
+            "messages": null,
+            "status": "SUCCESS"
+          },
+          "disconnected_log_collector_id": null
+        }
+      ],
+      "truncated": false,
+      "coverage": {
+        "complete": true,
+        "gaps": []
+      }
+    }
+  }
+]
