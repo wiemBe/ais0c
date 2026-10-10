@@ -255,7 +255,7 @@ def test_smoke_script_gets_an_answer_from_soc_fast() -> None:
 def prod_litellm() -> Iterator[Callable[..., str]]:
     """Run the pinned LiteLLM image with litellm.prod.yaml and no network.
 
-    Only the DeepSeek endpoint is set; the Qwen variables are missing on purpose.
+    Only the DeepSeek V4 Flash variables exist, as required by D-45.
     """
     image = compose_services()["litellm"]["image"]
     config = REPO_ROOT / "config/litellm/litellm.prod.yaml"

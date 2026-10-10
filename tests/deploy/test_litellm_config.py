@@ -25,6 +25,12 @@ ENV_REFERENCE = re.compile(r"os\.environ/(?P<name>[A-Z][A-Z0-9_]*)")
 # Environment variables the prod file may read: vLLM endpoints and keys, and LiteLLM's own key.
 PROD_ENV_NAME = re.compile(r"VLLM_[A-Z0-9_]+_(API_BASE|API_KEY)|LITELLM_MASTER_KEY")
 SECRET_SETTING = re.compile(r"(^|_)(key|secret|password|token)$")
+ROUTING_SETTINGS = [
+    "fallbacks",
+    "context_window_fallbacks",
+    "default_fallbacks",
+    "model_group_alias",
+]
 
 
 def load_config(environment: str) -> dict[str, Any]:
@@ -53,6 +59,16 @@ def foreign_env_names(config: dict[str, Any]) -> set[str]:
     """Return the environment variables a prod configuration reads that are not vLLM's or LiteLLM's."""
     names = {match["name"] for match in ENV_REFERENCE.finditer(yaml.safe_dump(config))}
     return {name for name in names if not PROD_ENV_NAME.fullmatch(name)}
+
+
+def routing_indirections(config: dict[str, Any]) -> list[str]:
+    """Return the settings that could route one alias to another alias's models."""
+    return [
+        f"{section}.{setting}"
+        for section in ("litellm_settings", "router_settings")
+        for setting in ROUTING_SETTINGS
+        if (config.get(section) or {}).get(setting)
+    ]
 
 
 def literal_secrets(node: object, path: str = "") -> list[str]:
@@ -106,6 +122,20 @@ def test_prod_config_routes_every_alias_to_deepseek_v4_flash() -> None:
     assert {
         entry["model_name"]: entry["litellm_params"] for entry in config["model_list"]
     } == dict.fromkeys(ALIASES, expected)
+
+
+@pytest.mark.parametrize("environment", ["dev", "prod"])
+def test_no_routing_between_aliases(environment: str) -> None:
+    assert routing_indirections(load_config(environment)) == []
+
+
+@pytest.mark.parametrize("section", ["litellm_settings", "router_settings"])
+@pytest.mark.parametrize("setting", ROUTING_SETTINGS)
+def test_fallback_between_aliases_is_detected(section: str, setting: str) -> None:
+    config = copy.deepcopy(load_config("dev"))
+    config[section] = {setting: [{"soc-verifier": ["soc-reasoning"]}]}
+
+    assert routing_indirections(config) == [f"{section}.{setting}"]
 
 
 @pytest.mark.parametrize("environment", ENVIRONMENTS)
