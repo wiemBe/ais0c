@@ -50,7 +50,7 @@ flowchart LR
     GW["MCP Policy Gateway"]
     LLM["LiteLLM"]
     DEVM["Dev: OpenRouter"]
-    PRODM["Prod on-prem: DeepSeek V4 Flash · Qwen 122B"]
+    PRODM["Prod on-prem: DeepSeek V4 Flash (D-45)"]
     QR["IBM QRadar 7.5 UP14+ / 7.6"]
     FAL["CrowdStrike Falcon NG-SIEM"]
     CTI["MITRE ATT&CK · USTA · Soteryan"]
@@ -78,7 +78,7 @@ flowchart LR
 
 | | Dev / Lab | Prod |
 |---|---|---|
-| Model | OpenRouter; mümkünse prod'daki modellerin aynısı (D-10, D-12) | Yalnızca on-prem: DeepSeek V4 Flash ve Qwen 122B (D-11, D-21) |
+| Model | OpenRouter; mümkünse prod'daki modellerin aynısı (D-10, D-12) | Yalnızca on-prem LiteLLM → DeepSeek V4 Flash; bütün alias'lar bu modele (D-11, D-21, D-45) |
 | SIEM | Lab QRadar | Prod QRadar |
 | Veri | Sentetik loglar ve lab'da saldırı emülasyonu (D-13) | Gerçek veri; ortam dışına çıkmaz |
 | Falcon | Fake MCP ve kayıtlı yanıtlar | Falcon NG-SIEM, salt okunur |
@@ -825,8 +825,8 @@ Hunt kaynaklı vakalar:
 | `soc-embed` | Knowledge retrieval. Küçük bir model; dev'de CPU'da yerel çalışabilir. |
 
 - **Dev:** LiteLLM → OpenRouter. **Prod:** LiteLLM → mevcut vLLM sunucusu (D-21). Ollama yalnızca yerel denemeler içindir; eşzamanlı prod yükü için kullanılmaz.
-- **Prod modelleri:** DeepSeek V4 Flash ve Qwen 122B. Alias'ların bu iki modele nasıl dağıtılacağını harness sonuçları belirler. Kesin kural tek: `soc-reasoning` ile `soc-verifier` farklı modellere gider.
-- **Verifier çeşitliliği:** İki farklı model ailesi olduğu için verifier, investigator'dan farklı bir aileden çalışır. Böylece iki modelin aynı hataya veya aynı injection'a düşme olasılığı azalır.
+- **Prod modelleri:** Yalnızca DeepSeek V4 Flash (D-45, 2026-10-10; önceki plan DeepSeek V4 Flash ve Qwen 122B idi). Bütün alias'lar bu modele gider; alias'lar yine ayrı tutulur, böylece ileride ikinci bir model gelirse yalnızca LiteLLM config'i ve registry değişir.
+- **Verifier çeşitliliği:** Hedef, verifier'ın investigator'dan farklı bir model ailesinden çalışmasıdır (iki modelin aynı hataya veya aynı injection'a düşme olasılığı azalır). Prod'da tek model olduğu için bu hedef bugün sağlanmaz (D-45): shadow'da kabul, çünkü verifier'ın itirazları yalnızca QA kuyruğuna gider. Canary'den önce yeniden değerlendirilir.
 - **Yük ayrımı:** Model kapasitesi yeterlidir (D-21). Yine de 12 aylık hunt'lar vakaları yavaşlatmasın diye LiteLLM'de vaka ve hunt için ayrı eşzamanlılık limitleri tutulur.
 - **Tool calling ayarı:** vLLM'de her model için doğru tool parser ayarlanır ve bu ayar model registry'de tutulur (§8.4).
 - **Model çalışma kaydı (T-24):** Her ajan çalışmasına modelin gerçek kimliği yazılır: model artifact adı ve hash'i, quantization, tokenizer, vLLM sürümü, tool parser ayarı, context ve inference ayarları. Bunlardan biri değişirse yeni bir model sürümü sayılır ve model geçiş gate'i yeniden koşar.
@@ -941,7 +941,7 @@ Arayüz sıfırdan yazılır (D-06), tüm metinler Türkçedir (D-07).
 | `temporal`, `temporal-ui` | Workflow motoru | Uygulama |
 | `worker-case`, `worker-hunt`, `worker-batch` | Temporal worker'ları ve ajanlar | Uygulama |
 | `litellm` | Model gateway | AI |
-| Mevcut vLLM sunucusu | DeepSeek V4 Flash ve Qwen 122B; platform yalnızca LiteLLM üzerinden bağlanır, yeni kurulum gerekmez | AI |
+| Mevcut vLLM sunucusu | DeepSeek V4 Flash (D-45); platform yalnızca LiteLLM üzerinden bağlanır, yeni kurulum gerekmez | AI |
 | `mcp-gateway` | Policy Gateway | Entegrasyon |
 | `qradar-mcp-read` | Fork'lanmış QRadar MCP, salt okunur token | Entegrasyon |
 | `qradar-mcp-note` | Fork'lanmış QRadar MCP, yalnızca not araçları kayıtlı | Entegrasyon |

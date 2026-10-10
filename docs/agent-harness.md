@@ -114,7 +114,7 @@ Harness yalnızca başarılı tool cevaplarını değil, reddedilen çağrılar�
 
 ## 5. Çalıştırma modları
 
-Prod verisi test ortamına hiçbir zaman gelmez (D-13). Dev ve testte modeller OpenRouter üzerinden, prod'da ise yalnızca on-prem modellerle (DeepSeek V4 Flash, Qwen 122B) çalışır (D-10, D-11, D-21). Bu yüzden her modun hangi ortamda ve hangi modelle koştuğu sabittir:
+Prod verisi test ortamına hiçbir zaman gelmez (D-13). Dev ve testte modeller OpenRouter üzerinden, prod'da ise yalnızca on-prem DeepSeek V4 Flash ile çalışır (D-10, D-11, D-21, D-45). Bu yüzden her modun hangi ortamda ve hangi modelle koştuğu sabittir:
 
 | Mod | Ortam | Model | Veri |
 |---|---|---|---|

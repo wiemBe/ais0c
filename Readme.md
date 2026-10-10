@@ -12,7 +12,7 @@ Bu aşamada uygulama kodu yoktur. Dokümanlar platformun sınırlarını, ajan t
 - Seçilen tehdit grubu veya hipotez için 3, 6 veya 12 aylık geriye dönük threat hunt'lar koşturmak; manuel veya periyodik.
 - Ana orchestrator'ın specialist ajanları kontrollü biçimde çalıştırabilmesi.
 - Falcon, e-posta güvenliği, kimlik sistemleri ve Strix gibi yeni kaynakları çekirdeğe dokunmadan manifest ile ekleyebilmek.
-- Dev'de OpenRouter, prod'da yalnızca on-prem modellerle (DeepSeek V4 Flash, Qwen 122B) aynı kod üzerinden çalışmak.
+- Dev'de OpenRouter, prod'da yalnızca on-prem DeepSeek V4 Flash ile (D-45) aynı kod üzerinden çalışmak.
 - Ajanların doğruluğunu, tool kullanımını ve güvenliğini prod'a çıkmadan ölçmek.
 
 ## Mimari karar özeti
@@ -21,7 +21,7 @@ Bu aşamada uygulama kodu yoktur. Dokümanlar platformun sınırlarını, ajan t
 |---|---|
 | Workflow motoru | Temporal; sıfırdan workflow platformu yazılmaz |
 | Ajan runtime'ı | Pydantic AI, Temporal entegrasyonu `TemporalDurability` ile |
-| Modeller | LiteLLM ve mantıksal alias'lar; dev'de OpenRouter, prod'da yalnızca on-prem DeepSeek V4 Flash ve Qwen 122B |
+| Modeller | LiteLLM ve mantıksal alias'lar; dev'de OpenRouter, prod'da yalnızca on-prem DeepSeek V4 Flash (D-45) |
 | SIEM | Fork'lanmış IBM qradar-mcp, MCP Policy Gateway arkasında |
 | EDR | CrowdStrike falcon-mcp (NG-SIEM), salt okunur |
 | Sorgular | Sigma kanonik format; AQL ve CQL'e pySigma ile derlenir; LLM'in yazdığı AQL, AQL Guard'dan geçer |

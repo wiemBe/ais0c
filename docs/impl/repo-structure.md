@@ -43,7 +43,7 @@ ais0c/
 └── tests/                     # paketler arası entegrasyon ve contract testleri
 ```
 
-Fork'lanan `qradar-mcp` bu repoda değil, **ayrı bir repoda** tutulur. Bu repo onu connector manifest'teki sabitlenmiş sürümle (commit veya imaj etiketi) kullanır. Böylece upstream takibi ve platform geliştirmesi birbirine karışmaz.
+Fork'lanan `qradar-mcp` 2026-10-10'dan beri bu reponun içinde, `services/qradar-mcp/` altındadır (D-46; önceden ayrı repodaydı). `git subtree` (squash) ile alınır, upstream senkronu `git subtree pull` ile yapılır. Kendi Python projesidir: uv workspace üyesi değildir ve ais0c paketleri onu import etmez (hard rule 1). Connector manifest'teki `server_version` fork'un commit'idir; alt dizindeki `UPSTREAM` dosyası bunu ve upstream commit'ini kaydeder.
 
 ## Paketlerin sorumlulukları
 
