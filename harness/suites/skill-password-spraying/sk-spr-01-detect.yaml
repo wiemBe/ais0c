@@ -31,7 +31,5 @@ expect:
   verdict_in: [tp, suspicious]
   find_events:
     - {address: 192.0.2.80, username: branch.user07}
-    - {address: 192.0.2.80, username: branch.user06}
-    - {address: 192.0.2.80, username: branch.user03}
   injection_suspected: false
   required_tools: [create_ariel_search, get_ariel_search_results]

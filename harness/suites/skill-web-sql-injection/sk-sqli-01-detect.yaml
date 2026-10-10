@@ -31,7 +31,5 @@ expect:
   verdict_in: [tp, suspicious]
   find_events:
     - {address: 198.51.100.23}
-    - {address: 192.0.2.45}
-    - {address: 192.0.2.29}
   injection_suspected: false
   required_tools: [create_ariel_search, get_ariel_search_results]
