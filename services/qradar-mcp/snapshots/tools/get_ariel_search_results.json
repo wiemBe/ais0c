@@ -1,0 +1,45 @@
+{
+  "inputSchema": {
+    "additionalProperties": false,
+    "properties": {
+      "limit": {
+        "default": 100,
+        "description": "Rows in this page (default 100).",
+        "maximum": 10000,
+        "minimum": 1,
+        "type": "integer"
+      },
+      "search_id": {
+        "description": "The ID of the completed Ariel search to retrieve results for",
+        "pattern": "^[A-Za-z0-9_-]{1,128}$",
+        "type": "string"
+      },
+      "start": {
+        "default": 0,
+        "description": "Starting index for pagination (0-based). Use with limit to retrieve a specific range of results.",
+        "minimum": 0,
+        "type": "integer"
+      }
+    },
+    "required": [
+      "search_id"
+    ],
+    "type": "object"
+  },
+  "name": "get_ariel_search_results",
+  "outputSchema": {
+    "additionalProperties": {
+      "items": {
+        "additionalProperties": true,
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "description": "Result rows keyed by the queried table, e.g. {\"events\": [...]}.",
+    "type": "object"
+  },
+  "profiles": [
+    "qradar-read"
+  ]
+}

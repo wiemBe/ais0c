@@ -1,0 +1,54 @@
+{
+  "inputSchema": {
+    "additionalProperties": false,
+    "properties": {
+      "fields": {
+        "description": "Optional comma-separated list of fields to return (e.g., 'id,name,entry_type,number_of_entries')",
+        "type": "string"
+      },
+      "set_id": {
+        "description": "The ID of the reference set to retrieve",
+        "minimum": 0,
+        "type": "integer"
+      }
+    },
+    "required": [
+      "set_id"
+    ],
+    "type": "object"
+  },
+  "name": "get_reference_set",
+  "outputSchema": {
+    "additionalProperties": true,
+    "properties": {
+      "description": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "entry_type": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "id": {
+        "type": "integer"
+      },
+      "name": {
+        "type": "string"
+      },
+      "namespace": {
+        "type": [
+          "string",
+          "null"
+        ]
+      }
+    },
+    "type": "object"
+  },
+  "profiles": [
+    "qradar-read"
+  ]
+}

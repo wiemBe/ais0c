@@ -29,6 +29,8 @@ COMPOSE_DIR = REPO_ROOT / "deploy/compose"
 DEV_FILE = COMPOSE_DIR / "docker-compose.dev.yaml"
 LAB_FILE = COMPOSE_DIR / "docker-compose.lab.yaml"
 DOCKERFILE = REPO_ROOT / "services/mcp-gateway/Dockerfile"
+FORK_DIR = REPO_ROOT / "services/qradar-mcp"
+PROD_FILE = COMPOSE_DIR / "docker-compose.prod.yaml"
 GATEWAY = "mcp-gateway"
 # Compose service (= MCP instance) and the fork --profile it runs.
 MCP_INSTANCES = {"qradar-mcp-read": "qradar-read", "qradar-mcp-note": "qradar-note"}
@@ -143,19 +145,36 @@ def test_the_build_context_is_only_the_workspace_and_the_gateways_packages() -> 
 # --- criterion 2: the MCP instances ----------------------------------------------------------
 
 
-def test_the_mcp_instances_run_the_forks_profiles_from_the_pinned_image() -> None:
+def test_the_mcp_instances_run_the_forks_profiles_from_the_checkout_image() -> None:
     connector = manifest()
     services = dev()["services"]
 
     for name, fork_profile in MCP_INSTANCES.items():
         service = services[name]
         assert connector["server_profiles"][fork_profile]["instance"] == name
-        # The tag is the fork commit of the connector manifest (T-018 notes).
-        assert service["image"] == f"qradar-mcp-fork:{connector['server_version']}"
-        assert service["pull_policy"] == "never"
+        # The fork is built from this checkout (D-46); the tag is not the fork commit.
+        assert service["image"] == "qradar-mcp-fork:dev"
+        assert (COMPOSE_DIR / service["build"]["context"]).resolve() == FORK_DIR
+        assert service["pull_policy"] == "build"
         assert option(service["command"], "--profile") == fork_profile
         assert service["profiles"] == ["qradar"]
         assert (service["read_only"], service["cap_drop"]) == (True, ["ALL"])
+
+
+def test_the_prod_fork_image_is_tagged_with_the_release_version() -> None:
+    services = load(PROD_FILE)["services"]
+
+    for name in MCP_INSTANCES:
+        assert services[name]["image"].startswith("qradar-mcp-fork:${AIS0C_VERSION:?")
+        assert services[name]["pull_policy"] == "never"
+        assert "build" not in services[name]
+
+
+def test_upstream_file_names_the_server_version() -> None:
+    lines = (FORK_DIR / "UPSTREAM").read_text(encoding="utf-8").splitlines()
+    fork_line = next(line for line in lines if line.startswith("fork_commit: "))
+
+    assert fork_line.removeprefix("fork_commit: ").strip() == manifest()["server_version"]
 
 
 def test_qradar_tokens_are_read_from_secret_files() -> None:

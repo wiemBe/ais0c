@@ -43,7 +43,7 @@ Test `@pytest.mark.lab` ile işaretlidir. `QRADAR_LAB_URL` ve `QRADAR_LAB_TOKEN`
 
 2. **Lab QRadar bağlantısı:** `QRADAR_LAB_URL` (şemasız host), `QRADAR_LAB_TOKEN` ve gerekirse `QRADAR_LAB_VERIFY_SSL=false`. Bu değerler repoya yazılmaz; örneğin `~/.config/ais0c/lab.env` dosyasından yüklenir. Syslog hedefi varsayılan olarak `<QRADAR_LAB_URL>:514`'tür.
 
-3. **qradar-mcp fork'u (T-006):** Ayrı repodaki fork'un kurulu çalıştırılabilir dosyası, örneğin `<fork>/.venv/bin/qradar-mcp-fork`.
+3. **qradar-mcp fork'u (T-006):** Fork bu repodadır (`services/qradar-mcp/`, D-46). Dev compose imajı `--build` ile checkout'tan derler; ayrı bir fork reposu ya da kurulu dosya gerekmez.
 
 4. **Lab kuralı:** Seçilen senaryonun QRadar'da etkin bir kuralı bulunmalıdır (aşağıda "Senaryo seçimi"). Kurallar `harness/lab/qradar/` altında kaynak olarak durur ve tek bir eklenti zip'i olarak kurulur (README orada). DCSync kuralı (`s2-dcsync`, varsayılan) şu koşulların hepsi sağlandığında event'i bir offense'e ekler ve offense'i kullanıcı adına göre indeksler:
    - Log source tipi Microsoft Windows Security Event Log

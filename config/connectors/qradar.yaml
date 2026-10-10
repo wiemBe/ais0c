@@ -1,7 +1,7 @@
 # QRadar connector manifest (architecture §8.2).
 #
-# The MCP server is the platform fork of IBM/qradar-mcp, kept in its own repository
-# (docs/impl/repo-structure.md). Tool names are the fork's real names; they differ from
+# The MCP server is the platform fork of IBM/qradar-mcp, lives in services/qradar-mcp
+# (D-46, docs/impl/repo-structure.md). Tool names are the fork's real names; they differ from
 # the example names in architecture §8.2, e.g. ariel_search_create is create_ariel_search.
 #
 # server_profiles are the fork's --profile values. Each runs as its own instance with its
@@ -12,11 +12,10 @@
 # config/policies/qradar.yaml.
 id: qradar
 server: qradar-mcp-fork
-# Fork commit with the T-006 and T-040 changes; the input schemas under `tools` are its
-# snapshots. Replace with the fork's merge commit or image tag once the fork PR is merged. The dev
-# stack runs the image qradar-mcp-fork:<server_version> (deploy/compose/docker-compose.dev.yaml);
-# change both together.
-server_version: 7dcf3ce72062978e74975c7bca4f77e21d383a68
+# The fork commit the input schemas under `tools` were snapshotted from (D-46). This is not
+# an image tag: the fork lives in services/qradar-mcp and is built with the platform.
+# services/qradar-mcp/UPSTREAM names the same commit; change both together.
+server_version: 7f17ada3f63a61dac945784480ad69249aa1c6f9
 upstream:
   repository: https://github.com/IBM/qradar-mcp
   commit: f51c0070f0b480c401fd527b0bf5b8e1bf360169
@@ -508,5 +507,5 @@ limits:
   # Rows are cut once their JSON exceeds this; the result is then marked truncated.
   max_result_bytes: 32768
 
-# Tool input and output schemas: snapshots/ in the fork repository.
-contract_tests: tests/lab/ in the fork repository
+# Tool input and output schemas: services/qradar-mcp/snapshots/ (the fork lives in this repository, D-46).
+contract_tests: services/qradar-mcp/tests/lab/

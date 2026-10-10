@@ -1,0 +1,27 @@
+{
+  "profile": "qradar-read",
+  "tools": [
+    "create_ariel_search",
+    "delete_ariel_search",
+    "get_ariel_search_results",
+    "get_ariel_search_status",
+    "get_log_source",
+    "get_offense",
+    "get_reference_map",
+    "get_reference_set",
+    "get_reference_table",
+    "get_rule",
+    "list_assets",
+    "list_local_destination_addresses",
+    "list_log_source_types",
+    "list_log_sources",
+    "list_offense_closing_reasons",
+    "list_offense_types",
+    "list_offenses",
+    "list_reference_maps",
+    "list_reference_sets",
+    "list_reference_tables",
+    "list_rules",
+    "list_source_addresses"
+  ]
+}

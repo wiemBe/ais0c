@@ -22,13 +22,15 @@
 
 name: ais0c-dev
 
-# What the two qradar-mcp instances share. The image is the fork (T-006) built on this machine
-# from the commit in config/connectors/qradar.yaml (server_version), tagged with that commit; it
-# is never pulled (README, "Fork imajı").
+# What the two qradar-mcp instances share. The image is the fork (T-006, D-46) built from
+# services/qradar-mcp in this checkout on every `up --build`; it is never pulled (README,
+# "Fork imajı").
 x-qradar-mcp: &qradar-mcp
   profiles: [qradar]
-  image: qradar-mcp-fork:7dcf3ce72062978e74975c7bca4f77e21d383a68
-  pull_policy: never
+  image: qradar-mcp-fork:dev
+  build:
+    context: ../../services/qradar-mcp
+  pull_policy: build
   read_only: true
   cap_drop: [ALL]
   security_opt: ["no-new-privileges:true"]

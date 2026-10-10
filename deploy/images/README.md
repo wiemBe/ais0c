@@ -1,12 +1,13 @@
 # Platform imajları
 
-Dört imaj vardır; hepsi repo kökünden build edilir (T-076, T-077). Gateway ve LiteLLM imajları ayrı Dockerfile'lardır.
+Beş imaj vardır (T-076, T-077, D-46). Dördü repo kökünden build edilir; fork imajı kendi dizininden (`services/qradar-mcp`) build edilir. Gateway, LiteLLM ve fork imajları ayrı Dockerfile'lardır.
 
 ```bash
 docker build -f deploy/images/platform.Dockerfile -t ais0c-platform:dev .
 docker build -f deploy/images/ui.Dockerfile -t ais0c-ui:dev .
 docker build -f services/mcp-gateway/Dockerfile -t ais0c-mcp-gateway:dev .
 docker build -f deploy/images/litellm.Dockerfile -t ais0c-litellm:dev .
+docker build -f services/qradar-mcp/Dockerfile -t qradar-mcp-fork:dev services/qradar-mcp
 ```
 
 Taban imajlar etiket ve digest ile sabitlenmiştir; `tests/deploy/test_images.py` her `FROM` satırını denetler.
@@ -47,12 +48,16 @@ Yanıtlara `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy` ve `Co
 
 `deploy/images/litellm.Dockerfile`: dev compose'taki LiteLLM imajı (aynı etiket ve digest) artı `config/litellm/litellm.prod.yaml` (`/etc/litellm/litellm.prod.yaml`). Başka değişiklik yoktur. Dosya vLLM adreslerini ve anahtarlarını `os.environ/VLLM_*` olarak adlandırır; imajda adres ya da anahtar yoktur. Prod compose bu dosyayı `preflight` servisine de imajdan salt okunur image volume olarak verir.
 
+## `qradar-mcp-fork`
+
+`services/qradar-mcp/Dockerfile` (uid 1001): IBM qradar-mcp'nin platform fork'u, giriş noktası `qradar-mcp-fork`. Context fork dizinidir; ais0c kodu imaja girmez. `--profile` verilmeden başlamaz. Prod'da etiketi `AIS0C_VERSION`'dır; fork'un kendi sürümü `services/qradar-mcp/UPSTREAM`'de ve connector manifest'teki `server_version`'dadır.
+
 ## Release paketi
 
 Temiz bir çalışma ağacında prod shadow release paketini repo kökünden üretmek için:
 
 ```bash
-uv run python deploy/release/build_release.py --version 0.1.0-shadow1 --fork ../qradar-mcp --out ../ais0c-release-0.1.0-shadow1
+uv run python deploy/release/build_release.py --version 0.1.0-shadow1 --out ../ais0c-release-0.1.0-shadow1
 ```
 
 Çıktı dizininde imaj arşivi (`ais0c-images-<sürüm>.tar.gz`), kurulum dosyaları

@@ -4,7 +4,6 @@
 # ruff: noqa: S603, S607
 
 import copy
-import io
 import json
 import os
 import subprocess
@@ -50,14 +49,13 @@ def test_version_pattern_refuses_invalid_values(version: str) -> None:
 
 def test_compose_images_lists_every_prod_image() -> None:
     compose = yaml.safe_load(PROD_COMPOSE.read_text(encoding="utf-8"))
-    server_version = yaml.safe_load(CONNECTOR.read_text(encoding="utf-8"))["server_version"]
 
     images = compose_images(compose, "9.9.9-test")
 
     assert images == tuple(sorted(set(images)))
     for name in OWN_IMAGES:
         assert f"{name}:9.9.9-test" in images
-    assert f"qradar-mcp-fork:{server_version}" in images
+    assert "qradar-mcp-fork:9.9.9-test" in images
     assert any(image.startswith("docker.io/pgvector/pgvector:") for image in images)
     assert any(image.startswith("docker.io/library/busybox:") for image in images)
     assert images.count("ais0c-litellm:9.9.9-test") == 1
@@ -153,7 +151,6 @@ def test_a_non_empty_out_dir_stops_with_exit_2(
     out.mkdir()
     (out / "existing").write_text("occupied\n", encoding="utf-8")
     monkeypatch.setattr(build_release, "working_tree_clean", lambda root: True)
-    monkeypatch.setattr(build_release, "_fork_has_commit", lambda fork, version: True)
 
     result = main(["--version", "0.1.0-test", "--out", str(out), "--dry-run"])
 
@@ -161,22 +158,12 @@ def test_a_non_empty_out_dir_stops_with_exit_2(
     assert "not empty" in capsys.readouterr().err
 
 
-def test_the_default_fork_is_next_to_the_repository(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    observed_forks: list[Path] = []
-    monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(build_release, "working_tree_clean", lambda root: True)
-    monkeypatch.setattr(
-        build_release,
-        "_fork_has_commit",
-        lambda fork, version: observed_forks.append(fork) is None,
-    )
+def test_the_fork_option_is_gone(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit) as raised:
+        main(["--version", "0.1.0-test", "--fork", str(tmp_path), "--out", str(tmp_path / "out")])
 
-    result = main(["--version", "0.1.0-test", "--out", str(tmp_path / "out"), "--dry-run"])
-
-    assert result == 0
-    assert observed_forks == [ROOT.parent / "qradar-mcp"]
+    assert raised.value.code == 2
+    assert "--fork" in capsys.readouterr().err
 
 
 def test_archived_paths_exist_and_hold_no_secret() -> None:
@@ -205,15 +192,12 @@ def test_dry_run_prints_the_commands_in_order(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.setattr(build_release, "working_tree_clean", lambda root: True)
-    monkeypatch.setattr(build_release, "_fork_has_commit", lambda fork, version: True)
     out = tmp_path / "release"
 
     result = main(
         [
             "--version",
             "9.9.9-test",
-            "--fork",
-            str(tmp_path / "fork"),
             "--out",
             str(out),
             "--dry-run",
@@ -222,10 +206,13 @@ def test_dry_run_prints_the_commands_in_order(
 
     assert result == 0
     lines = capsys.readouterr().out.splitlines()
-    assert [line.split()[0:2] for line in lines[:4]] == [["docker", "build"]] * 4
-    assert lines[4].startswith("git -C ")
-    assert " archive --format=tar " in lines[4]
-    assert " | docker build " in lines[4]
+    assert [line.split()[0:2] for line in lines[:5]] == [["docker", "build"]] * 5
+    assert lines[3].endswith(" .")
+    assert lines[4] == (
+        "docker build -f services/qradar-mcp/Dockerfile "
+        "-t qradar-mcp-fork:9.9.9-test services/qradar-mcp"
+    )
+    assert all(line.endswith(" .") for line in lines[:4])
     assert lines[5].startswith("docker save ")
     assert " | gzip > " in lines[5]
     assert lines[6].startswith("git -C ")
@@ -236,8 +223,6 @@ def test_dry_run_prints_the_commands_in_order(
         [
             "--version",
             "9.9.9-test",
-            "--fork",
-            str(tmp_path / "fork"),
             "--out",
             str(out),
             "--skip-build",
@@ -258,14 +243,11 @@ def test_dry_run_saves_tag_references(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.setattr(build_release, "working_tree_clean", lambda root: True)
-    monkeypatch.setattr(build_release, "_fork_has_commit", lambda fork, version: True)
 
     result = main(
         [
             "--version",
             "9.9.9-test",
-            "--fork",
-            str(tmp_path / "fork"),
             "--out",
             str(tmp_path / "release"),
             "--dry-run",
@@ -285,7 +267,6 @@ def test_a_tag_that_is_not_the_pinned_image_exits_1(
     plan = build_release.plan_release(ROOT, "0.1.0-test")
     pinned_image = next(image for image in plan.images if "@sha256:" in image)
     monkeypatch.setattr(build_release, "working_tree_clean", lambda root: True)
-    monkeypatch.setattr(build_release, "_fork_has_commit", lambda fork, version: True)
     monkeypatch.setattr(build_release, "_inspect_image", lambda image, root: (0, "sha256:id"))
     monkeypatch.setattr(
         build_release,
@@ -297,8 +278,6 @@ def test_a_tag_that_is_not_the_pinned_image_exits_1(
         [
             "--version",
             plan.version,
-            "--fork",
-            str(tmp_path / "fork"),
             "--out",
             str(tmp_path / "release"),
             "--skip-build",
@@ -314,7 +293,6 @@ def test_a_failed_step_exits_1_without_release_md(
 ) -> None:
     out = tmp_path / "release"
     monkeypatch.setattr(build_release, "working_tree_clean", lambda root: True)
-    monkeypatch.setattr(build_release, "_fork_has_commit", lambda fork, version: True)
     monkeypatch.setattr(
         build_release,
         "_prepare_images",
@@ -332,8 +310,6 @@ def test_a_failed_step_exits_1_without_release_md(
         [
             "--version",
             "0.1.0-test",
-            "--fork",
-            str(tmp_path / "fork"),
             "--out",
             str(out),
             "--skip-build",
@@ -347,42 +323,24 @@ def test_a_failed_step_exits_1_without_release_md(
     assert not (out / "RELEASE.md").exists()
 
 
-def test_a_failing_fork_build_exits_1(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    class Process:
-        def __init__(self, returncode: int, *, with_stdout: bool = False) -> None:
-            self.returncode = returncode
-            self.stdout = io.BytesIO() if with_stdout else None
+def test_a_failing_build_exits_1(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    seen: list[list[str]] = []
 
-        def wait(self) -> int:
-            return self.returncode
+    def run(command: list[str], cwd: Path) -> None:
+        seen.append(command)
+        if command[-1] == "services/qradar-mcp":
+            raise build_release.CommandFailed(command, 23)
 
-    def popen(command: list[str], **kwargs: object) -> Process:
-        return Process(23, with_stdout=True) if command[0] == "git" else Process(0)
-
-    plan = build_release.plan_release(ROOT, "0.1.0-test")
-    monkeypatch.setattr(build_release.subprocess, "Popen", popen)
-
-    with pytest.raises(build_release.CommandFailed) as raised:
-        build_release._build_fork(plan, ROOT, tmp_path / "fork")
-    assert raised.value.returncode == 23
-
-    monkeypatch.setattr(build_release, "plan_release", lambda root, version: plan)
     monkeypatch.setattr(build_release, "working_tree_clean", lambda root: True)
-    monkeypatch.setattr(build_release, "_fork_has_commit", lambda fork, version: True)
-    monkeypatch.setattr(build_release, "_run", lambda command, cwd: None)
+    monkeypatch.setattr(build_release, "_run", run)
 
-    result = main(
-        [
-            "--version",
-            "0.1.0-test",
-            "--fork",
-            str(tmp_path / "fork"),
-            "--out",
-            str(tmp_path / "out"),
-        ]
-    )
+    result = main(["--version", "0.1.0-test", "--out", str(tmp_path / "out")])
 
     assert result == 1
+    assert "exit 23" in capsys.readouterr().err
+    assert seen[-1][-1] == "services/qradar-mcp"
 
 
 def test_sha256sums_pass_sha256sum_check(tmp_path: Path) -> None:
@@ -424,14 +382,11 @@ def test_release_md_names_version_commit_images_and_sums() -> None:
     reason="set AIS0C_RELEASE_TEST=1 to build the real release",
 )
 def test_a_real_release_builds_and_verifies(tmp_path: Path) -> None:
-    fork_value = os.environ.get("AIS0C_RELEASE_FORK")
-    if not fork_value:
-        pytest.skip("set AIS0C_RELEASE_FORK to the qradar-mcp fork")
     version = "0.0.0-test"
     out = tmp_path / "release"
     tags = [f"{name}:{version}" for name in OWN_IMAGES]
     try:
-        assert main(["--version", version, "--fork", fork_value, "--out", str(out)]) == 0
+        assert main(["--version", version, "--out", str(out)]) == 0
         subprocess.run(["sha256sum", "-c", "SHA256SUMS"], cwd=out, check=True)
         files_done = subprocess.run(
             ["tar", "-tzf", f"ais0c-files-{version}.tar.gz"],

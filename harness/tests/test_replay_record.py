@@ -307,4 +307,4 @@ def test_the_manifests_versions_come_from_the_package_and_the_connector() -> Non
     assert gateway.startswith("0.1.0+registry.")
     assert len(gateway.split(".")[-1]) == 12
     assert len(fork) == 40
-    assert fork == "7dcf3ce72062978e74975c7bca4f77e21d383a68"
+    assert fork == "7f17ada3f63a61dac945784480ad69249aa1c6f9"

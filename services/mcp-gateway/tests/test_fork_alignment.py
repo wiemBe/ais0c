@@ -6,18 +6,12 @@ get_reference_table and get_reference_map have no `filter` argument: QRadar 29.0
 GET /reference_data/tables/{name} with 422, and the map read lost its filter with it (decision
 T-34). A call that still sends one is denied by the schema and never reaches the MCP server.
 
-The comparison with the fork's snapshots reads them from the fork's git history at
-server_version: the repository at AIS0C_QRADAR_MCP_REPO, or ../qradar-mcp next to this one.
-Without it, that comparison is skipped.
+The comparison reads the fork's snapshots from services/qradar-mcp (D-46).
 """
 
 import copy
 import json
-import os
 import re
-import shutil
-import subprocess
-from pathlib import Path
 from typing import Any
 
 import pytest
@@ -31,7 +25,7 @@ pytestmark = pytest.mark.anyio
 REFERENCE_READS = ("get_reference_table", "get_reference_map")
 HUNT_PROFILE = "qradar-hunt-read"
 FULL_SHA = re.compile(r"[0-9a-f]{40}")
-FORK_REPO = Path(os.environ.get("AIS0C_QRADAR_MCP_REPO") or REPO_ROOT.parent / "qradar-mcp")
+FORK_DIR = REPO_ROOT / "services/qradar-mcp"
 # The maxLength the manifest gives a free-form string of these tools; JSON Schema keywords that
 # pin a string's form, so that it is not free-form.
 FREE_TEXT_LIMIT = 1000
@@ -43,22 +37,20 @@ def manifest() -> dict[str, Any]:
     return load_config()[0]
 
 
-def fork_snapshot(commit: str, tool_id: str) -> dict[str, Any]:
-    """The fork's snapshot of `tool_id` at `commit` (snapshots/tools/<tool>.json)."""
-    git = shutil.which("git")
-    if git is None or not (FORK_REPO / ".git").exists():
-        pytest.skip(f"no qradar-mcp fork at {FORK_REPO}; set AIS0C_QRADAR_MCP_REPO")
-    shown = subprocess.run(  # noqa: S603
-        [git, "-C", str(FORK_REPO), "show", f"{commit}:snapshots/tools/{tool_id}.json"],
-        capture_output=True,
-        text=True,
-        check=False,
+def fork_snapshot(tool_id: str) -> dict[str, Any]:
+    """The fork's snapshot of `tool_id` (services/qradar-mcp/snapshots/tools/<tool>.json)."""
+    snapshot: dict[str, Any] = json.loads(
+        (FORK_DIR / "snapshots/tools" / f"{tool_id}.json").read_text(encoding="utf-8")
     )
-    assert shown.returncode == 0, (
-        f"the fork at {FORK_REPO} has no snapshot of {tool_id} at {commit}: {shown.stderr.strip()}"
-    )
-    snapshot: dict[str, Any] = json.loads(shown.stdout)
     return snapshot
+
+
+def test_the_manifest_paths_into_the_fork_exist(manifest: dict[str, Any]) -> None:
+    contract_tests = manifest["contract_tests"]
+
+    assert (REPO_ROOT / contract_tests).is_dir()
+    assert (REPO_ROOT / contract_tests / "test_contract.py").is_file()
+    assert (FORK_DIR / "snapshots/tools").is_dir()
 
 
 def with_platform_limits(fork_schema: dict[str, Any]) -> dict[str, Any]:
@@ -88,7 +80,7 @@ def test_the_reference_reads_take_no_filter(
 def test_the_reference_reads_match_the_forks_snapshot(
     manifest: dict[str, Any], tool_id: str
 ) -> None:
-    snapshot = fork_snapshot(manifest["server_version"], tool_id)
+    snapshot = fork_snapshot(tool_id)
 
     assert "filter" not in snapshot["inputSchema"]["properties"]
     assert manifest["tools"][tool_id]["input_schema"] == with_platform_limits(

@@ -1,0 +1,24 @@
+{
+  "qradar": {
+    "host": "",
+    "sec_token": "",
+    "csrf_token": "",
+    "authorized_service_token": "",
+    "app_id": "",
+    "verify_ssl": false,
+    "proxy": null
+  },
+  "server": {
+    "host": "127.0.0.1",
+    "port": 5000,
+    "debug": true
+  },
+  "httpx": {
+    "max_keepalive_connections": 20,
+    "max_connections": 100,
+    "timeout": 30.0
+  },
+  "proxy": {
+    "port": 8080
+  }
+}
