@@ -320,6 +320,18 @@ async def test_each_agent_gets_the_structured_results_before_it(
         assert "rationale" not in handed
 
 
+async def test_verification_input_carries_the_enrichment(env: WorkflowEnvironment) -> None:
+    fakes = await chain(env, floor_level=Level.HIGH)
+
+    verification = only(fakes.requests(AgentKind.VERIFICATION))
+    reporting = only(fakes.requests(AgentKind.REPORTING))
+    assert isinstance(verification.inputs, VerificationInput)
+    assert isinstance(reporting.inputs, ReportingInput)
+    assert verification.inputs.enrichment == reporting.inputs.enrichment
+    assert verification.inputs.enrichment is not None
+    assert verification.inputs.enrichment.floor_level is Level.HIGH
+
+
 async def test_without_investigation_in_the_plan_triage_decides(env: WorkflowEnvironment) -> None:
     """The default answers plan Verification alone: it reviews Triage's claims, and Reporting
     gets no urgent event candidates."""

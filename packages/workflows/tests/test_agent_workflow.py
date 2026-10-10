@@ -113,6 +113,7 @@ def inputs_of(agent: AgentKind) -> ChainInput:
         case AgentKind.VERIFICATION:
             return VerificationInput(
                 offense=OFFENSE,
+                enrichment=ENRICHMENT,
                 verdict=CaseVerdict.SUSPICIOUS,
                 confidence=Confidence.MEDIUM,
                 ai_level=Level.MEDIUM,
@@ -166,6 +167,16 @@ def verification_result(task_id: str) -> VerificationResult:
         disagreements=[],
         checked_evidence_ids=[],
     )
+
+
+def test_a_verification_input_without_enrichment_still_loads() -> None:
+    current = inputs_of(AgentKind.VERIFICATION)
+    assert isinstance(current, VerificationInput)
+    old_json = current.model_dump_json(exclude={"enrichment"})
+
+    loaded = VerificationInput.model_validate_json(old_json)
+
+    assert loaded.enrichment is None
 
 
 def evidence(evidence_id: str) -> EvidenceRef:

@@ -162,6 +162,8 @@ class VerificationInputs(Protocol):
     @property
     def offense(self) -> OffenseSnapshot: ...
     @property
+    def enrichment(self) -> EnrichmentContext | None: ...
+    @property
     def verdict(self) -> CaseVerdict: ...
     @property
     def confidence(self) -> Confidence: ...
@@ -293,6 +295,7 @@ def verification_task(
         claims=[ReviewedClaim(claim=claim, critical=inputs.critical) for claim in claims],
         evidence=cited,
         offense=inputs.offense,
+        enrichment=inputs.enrichment,
     )
 
 

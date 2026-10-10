@@ -200,6 +200,7 @@ class AgentChain:
                     ai_level=decision.ai_level,
                     claims=decision.claims,
                     critical=claims_are_critical(decision.verdict, level),
+                    enrichment=enrichment,
                 )
                 verification = await self._agent(
                     self._step_request(

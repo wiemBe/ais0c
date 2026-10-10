@@ -268,6 +268,12 @@ def test_verification_gets_the_decision_and_critical_claims() -> None:
     assert [item.evidence_id for item in built.evidence] == ["ev_1"]
 
 
+def test_verification_task_passes_the_enrichment() -> None:
+    built = verification_task(task("verification"), Inputs(enrichment=ENRICHMENT), [])
+
+    assert built.enrichment is ENRICHMENT
+
+
 def test_verification_keeps_to_its_claim_limit() -> None:
     claims = tuple(claim(n, 1) for n in range(1, 26))
 

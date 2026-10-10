@@ -161,6 +161,7 @@ class VerificationInput(_Input):
     ai_level: Level
     claims: tuple[Claim, ...]
     critical: bool
+    enrichment: EnrichmentContext | None = None
 
 
 class ReportingInput(_Input):

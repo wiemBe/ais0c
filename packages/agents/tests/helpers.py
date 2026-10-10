@@ -709,6 +709,7 @@ def verification_task(
     *,
     evidence: Sequence[EvidenceRef] | None = None,
     claims: Sequence[ReviewedClaim] | None = None,
+    enrichment: EnrichmentContext | None = None,
 ) -> VerificationTask:
     """The reviewed decision, its claims and their evidence; the offense of `offense()`.
 
@@ -725,6 +726,7 @@ def verification_task(
         ],
         evidence=list(context_evidence() if evidence is None else evidence),
         offense=offense(),
+        enrichment=enrichment,
     )
 
 

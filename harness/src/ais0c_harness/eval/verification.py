@@ -47,6 +47,7 @@ from ais0c_contracts import (
     CaseVerdict,
     Claim,
     Confidence,
+    EnrichmentContext,
     EvidenceRef,
     Level,
     OffenseSnapshot,
@@ -114,6 +115,7 @@ class _Inputs:
     """The workflow's VerificationInput, as `verification_task` reads it."""
 
     offense: OffenseSnapshot
+    enrichment: EnrichmentContext
     verdict: CaseVerdict
     confidence: Confidence
     ai_level: Level
@@ -161,6 +163,7 @@ class VerificationAdapter(AgentAdapter):
             agent_task,
             _Inputs(
                 offense=offense,
+                enrichment=recording.enrichment,
                 verdict=reviewed.verdict,
                 confidence=reviewed.confidence,
                 ai_level=reviewed.ai_level,

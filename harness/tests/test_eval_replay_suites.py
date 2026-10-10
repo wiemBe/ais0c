@@ -663,6 +663,17 @@ def test_the_verification_window_is_the_union_of_the_claims_evidence_windows() -
     assert task.reviewed.verdict.value == "tp"
 
 
+def test_the_verification_adapter_passes_the_recordings_enrichment() -> None:
+    played = verification(VER_01)
+    found = adapter("config/agents/verification.yaml")
+    assert isinstance(found, VerificationAdapter)
+    stored = recording_of(REPO_ROOT.resolve(), RECORDING)
+
+    task = found.task(played, run_id="harness-ver-01-refutable-ip-1")
+
+    assert task.enrichment is stored.enrichment
+
+
 # --- run files (criterion 9) --------------------------------------------------------------------------
 
 

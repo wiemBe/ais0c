@@ -46,16 +46,18 @@ from ais0c_agents.evidence import context_alias, render_context_evidence
 from ais0c_agents.gateway import GatewayClient
 from ais0c_agents.investigation import render_time_window
 from ais0c_agents.manifest import AgentManifest
-from ais0c_agents.prompts import PromptTemplate, wrap_json_lines
+from ais0c_agents.prompts import PromptTemplate, render_org_context, wrap_json_lines
 from ais0c_agents.runner import AgentRun, prompt_tool_budget, run_agent, usage_limits
 from ais0c_agents.toolset import RunDeps, ToolsetProfile, build_gateway_toolset
 from ais0c_contracts import (
     AgentTask,
     CaseVerdict,
+    CatalogContext,
     Claim,
     Confidence,
     DataGap,
     Disagreement,
+    EnrichmentContext,
     EvidenceId,
     EvidenceRef,
     Level,
@@ -145,6 +147,7 @@ class VerificationTask(BaseModel):
     evidence: Annotated[list[EvidenceRef], Field(max_length=MAX_EVIDENCE)] = []
     """The evidence the claims rest on; the prompt shows it as `ev_c<n>` (decision T-38)."""
     offense: OffenseSnapshot
+    enrichment: EnrichmentContext | None = None
 
 
 # What the model returns: a VerificationResult without task_id, status and usage, which the run
@@ -256,29 +259,37 @@ class VerificationAgent:
             ref.evidence_id: context_alias(position)
             for position, ref in enumerate(task.evidence, start=1)
         }
-        return self.prompt.render(
-            {
-                "objective": wrap_json_lines(
-                    [{"objective": task.task.objective}], source=OBJECTIVE_SOURCE, nonce=nonce
-                ),
-                "reviewed": render_reviewed(task.reviewed),
-                # check_claims keeps a claim only when all its evidence is in aliases.
-                "claims": render_claims(checked.claims, aliases, nonce=nonce),
-                "offense": wrap_json_lines(
-                    [task.offense.model_dump(mode="json", exclude=set(OFFENSE_TEXT_FIELDS))],
-                    source=OFFENSE_SOURCE,
-                    nonce=nonce,
-                ),
-                "evidence": render_context_evidence(task.evidence, nonce=nonce) or NO_EVIDENCE,
-                "time_window": render_time_window(
-                    task.task.time_window,
-                    limit=EXAMPLE_LIMIT,
-                    max_span=self.max_query_window,
-                ),
-                "tools": ", ".join(tool.id for tool in self.profile.tools),
-                "tool_budget": str(tool_budget),
-            }
-        )
+        values = {
+            "objective": wrap_json_lines(
+                [{"objective": task.task.objective}], source=OBJECTIVE_SOURCE, nonce=nonce
+            ),
+            "reviewed": render_reviewed(task.reviewed),
+            # check_claims keeps a claim only when all its evidence is in aliases.
+            "claims": render_claims(checked.claims, aliases, nonce=nonce),
+            "offense": wrap_json_lines(
+                [task.offense.model_dump(mode="json", exclude=set(OFFENSE_TEXT_FIELDS))],
+                source=OFFENSE_SOURCE,
+                nonce=nonce,
+            ),
+            "evidence": render_context_evidence(task.evidence, nonce=nonce) or NO_EVIDENCE,
+            "time_window": render_time_window(
+                task.task.time_window,
+                limit=EXAMPLE_LIMIT,
+                max_span=self.max_query_window,
+            ),
+            "tools": ", ".join(tool.id for tool in self.profile.tools),
+            "tool_budget": str(tool_budget),
+        }
+        if "org_context" in self.prompt.placeholders:
+            values["org_context"] = (
+                render_org_context(
+                    task.enrichment.catalog,
+                    critical_assets=task.enrichment.critical_asset_hits,
+                )
+                if task.enrichment is not None
+                else render_org_context(CatalogContext(rules=[], log_sources=[]))
+            )
+        return self.prompt.render(values)
 
     async def run(
         self,
