@@ -1,0 +1,30 @@
+{
+  "verb_toggles": {
+    "GET": true,
+    "POST": true,
+    "PUT": true,
+    "DELETE": true
+  },
+  "group_toggles": {
+    "offense": true,
+    "ariel": true,
+    "reference_data": true,
+    "asset": true,
+    "log_source": true,
+    "analytics": true,
+    "system": true,
+    "config": true,
+    "services": true,
+    "forensics": true,
+    "qvm": true,
+    "data_classification": true
+  },
+  "per_tool_toggles": {},
+  "resource_toggles": {
+    "aql_events_fields": true,
+    "aql_flows_fields": true,
+    "aql_functions": true,
+    "aql_generation_guide": true,
+    "api_query_syntax": true
+  }
+}

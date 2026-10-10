@@ -1,0 +1,247 @@
+{
+  "inputSchema": {
+    "additionalProperties": false,
+    "properties": {
+      "fields": {
+        "description": "Comma-separated list of fields to include.",
+        "type": "string"
+      },
+      "filter": {
+        "description": "Optional filter expression.\"",
+        "type": "string"
+      },
+      "limit": {
+        "default": 10,
+        "description": "Maximum number of offenses to return (default: 10, max: 10000)",
+        "maximum": 10000,
+        "minimum": 1,
+        "type": "integer"
+      },
+      "offset": {
+        "default": 0,
+        "description": "Number of offenses to skip for pagination (default: 0)",
+        "minimum": 0,
+        "type": "integer"
+      },
+      "sort": {
+        "description": "Sort expression.",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  },
+  "name": "list_offenses",
+  "outputSchema": {
+    "additionalProperties": true,
+    "properties": {
+      "count": {
+        "type": "integer"
+      },
+      "offenses": {
+        "items": {
+          "additionalProperties": true,
+          "properties": {
+            "assigned_to": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "categories": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "category_count": {
+              "type": "integer"
+            },
+            "close_time": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "closing_reason_id": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "closing_user": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "credibility": {
+              "type": "integer"
+            },
+            "description": {
+              "type": "string"
+            },
+            "destination_networks": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "device_count": {
+              "type": "integer"
+            },
+            "domain_id": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "event_count": {
+              "type": "integer"
+            },
+            "first_persisted_time": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "flow_count": {
+              "type": "integer"
+            },
+            "follow_up": {
+              "type": "boolean"
+            },
+            "id": {
+              "type": "integer"
+            },
+            "inactive": {
+              "type": "boolean"
+            },
+            "last_persisted_time": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "last_updated_time": {
+              "type": "integer"
+            },
+            "local_destination_address_ids": {
+              "items": {
+                "type": "integer"
+              },
+              "type": "array"
+            },
+            "local_destination_count": {
+              "type": "integer"
+            },
+            "log_sources": {
+              "items": {
+                "additionalProperties": true,
+                "properties": {
+                  "id": {
+                    "type": "integer"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "type_id": {
+                    "type": "integer"
+                  },
+                  "type_name": {
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "magnitude": {
+              "type": "integer"
+            },
+            "offense_source": {
+              "type": "string"
+            },
+            "offense_type": {
+              "type": "integer"
+            },
+            "policy_category_count": {
+              "type": "integer"
+            },
+            "protected": {
+              "type": "boolean"
+            },
+            "relevance": {
+              "type": "integer"
+            },
+            "remote_destination_count": {
+              "type": "integer"
+            },
+            "rules": {
+              "items": {
+                "additionalProperties": true,
+                "properties": {
+                  "id": {
+                    "type": "integer"
+                  },
+                  "type": {
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "security_category_count": {
+              "type": "integer"
+            },
+            "severity": {
+              "type": "integer"
+            },
+            "source_address_ids": {
+              "items": {
+                "type": "integer"
+              },
+              "type": "array"
+            },
+            "source_count": {
+              "type": "integer"
+            },
+            "source_network": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "start_time": {
+              "type": "integer"
+            },
+            "status": {
+              "enum": [
+                "OPEN",
+                "HIDDEN",
+                "CLOSED"
+              ],
+              "type": "string"
+            },
+            "username_count": {
+              "type": "integer"
+            }
+          },
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "total_count": {
+        "type": "integer"
+      }
+    },
+    "required": [
+      "offenses",
+      "count"
+    ],
+    "type": "object"
+  },
+  "profiles": [
+    "qradar-read"
+  ]
+}

@@ -1,0 +1,134 @@
+# Copyright 2026 IBM Corporation
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+# Modified in the ais0c platform fork (T-040): no filter argument, like get_reference_table.
+# QRadar documents one for this endpoint, but which fields it filters on is not verified on the
+# lab, and the upstream description called it an AQL filter.
+
+
+"""
+Get Reference Map Tool
+
+Retrieves a specific reference data map by name from QRadar SIEM.
+"""
+
+from typing import Dict, Any
+import json
+from qradar_mcp.tools.base import MCPTool
+from qradar_mcp.tools.schema import schema
+from qradar_mcp.utils.parameters import build_query_params, build_headers, parse_range_from_limit_offset
+from qradar_mcp.tools import endpoints
+
+
+class GetReferenceMap(MCPTool):
+    """Tool for retrieving a specific QRadar reference map by name."""
+
+    @property
+    def name(self) -> str:
+        return "get_reference_map"
+
+    @property
+    def description(self) -> str:
+        return """Get reference map metadata and data by name from QRadar SIEM.
+
+Returns map configuration, element type, key and value labels, element
+count, expiry settings, and stored key-value entries."""
+
+    @property
+    def input_schema(self) -> Dict[str, Any]:
+        return (schema()
+            .string("name")
+                .description("The name of the reference map to retrieve")
+                .required()
+            .string("namespace")
+                .description("Optional namespace: SHARED or TENANT (default: SHARED)")
+                .enum(["SHARED", "TENANT"])
+            .integer("limit")
+                .description("Maximum number of entries to return (default: 50)")
+                .minimum(1)
+                .maximum(10000)
+            .integer("offset")
+                .description("Number of entries to skip for pagination (default: 0)")
+                .minimum(0)
+            .string("fields")
+                .description("Optional comma-separated list of fields to return")
+            .build())
+
+    @property
+    def http_verb(self) -> str:
+        return "GET"
+
+    @property
+    def endpoint(self) -> str:
+        return endpoints.REFERENCE_DATA_MAP
+
+    @property
+    def approval_required(self) -> bool:
+        """GET operation - does not require approval."""
+        return False
+
+    async def _execute_impl(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Execute the get_reference_map tool.
+
+        Args:
+            arguments: Must contain 'name', optional namespace, limit, offset, fields
+
+        Returns:
+            MCP response with reference map data or error
+        """
+        name = arguments.get("name")
+
+        if not name:
+            return self.create_error_response("Error: name is required")
+
+
+        # Build request parameters
+        params = self._build_params(arguments)
+        headers = self._build_headers(arguments)
+
+        # Make API request
+        response = await self.client.get(
+            self.endpoint.format(name=name),
+            headers=headers,
+            params=params
+        )
+        response.raise_for_status()
+        map_data = response.json()
+
+        # Format response
+        formatted_output = json.dumps(map_data, indent=2)
+        return self.create_success_response(formatted_output)
+
+    def _build_params(self, arguments: Dict[str, Any]) -> Dict[str, str]:
+        """Build query parameters from arguments."""
+        params = build_query_params(
+            fields=[f.strip() for f in arguments["fields"].split(",")] if arguments.get("fields") else None
+        )
+
+        # Add namespace if provided
+        if arguments.get("namespace"):
+            params["namespace"] = arguments["namespace"]
+
+        return params
+
+    def _build_headers(self, arguments: Dict[str, Any]) -> Dict[str, str]:
+        """Build headers with pagination from arguments."""
+        if arguments.get("limit") is not None or arguments.get("offset") is not None:
+            start, end = parse_range_from_limit_offset(
+                limit=arguments.get("limit", 50),
+                offset=arguments.get("offset", 0)
+            )
+            return build_headers(start=start, end=end)
+        return {}

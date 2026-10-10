@@ -1,0 +1,49 @@
+{
+  "inputSchema": {
+    "additionalProperties": false,
+    "properties": {
+      "fields": {
+        "description": "Comma-separated list of fields to return in response",
+        "type": "string"
+      },
+      "note_text": {
+        "description": "The text content of the note",
+        "maxLength": 10000,
+        "minLength": 1,
+        "type": "string"
+      },
+      "offense_id": {
+        "description": "The ID of the offense to add the note to",
+        "minimum": 0,
+        "type": "integer"
+      }
+    },
+    "required": [
+      "offense_id",
+      "note_text"
+    ],
+    "type": "object"
+  },
+  "name": "add_offense_note",
+  "outputSchema": {
+    "additionalProperties": true,
+    "properties": {
+      "create_time": {
+        "type": "integer"
+      },
+      "id": {
+        "type": "integer"
+      },
+      "note_text": {
+        "type": "string"
+      },
+      "username": {
+        "type": "string"
+      }
+    },
+    "type": "object"
+  },
+  "profiles": [
+    "qradar-note"
+  ]
+}

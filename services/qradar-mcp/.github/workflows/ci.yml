@@ -1,0 +1,85 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  python:
+    name: Lint, contract snapshots and tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version: "0.12.22"
+
+      - name: Install dependencies
+        id: install
+        run: |
+          uv venv --python 3.11 .venv
+          uv pip install --python .venv/bin/python --requirement dev_requirements.txt
+          uv pip install --python .venv/bin/python --no-deps --editable .
+
+      # The checks below also run when an earlier check failed, so one run reports every failure.
+      # Ruff covers the fork's code only (see [tool.ruff] include in pyproject.toml).
+      - name: ruff check
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: uvx ruff@0.16.10 check --output-format=github
+
+      - name: ruff format
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: uvx ruff@0.16.10 format --check
+
+      - name: Tool contract snapshots are up to date
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: |
+          if ! .venv/bin/python -m qradar_mcp.fork.schema_export --check; then
+            echo "::error::Tool schemas changed. Run 'python -m qradar_mcp.fork.schema_export', review the snapshot diff and commit it."
+            exit 1
+          fi
+
+      # Upstream tests and the fork's tests. Lab contract tests skip without QRADAR_LAB_*.
+      - name: pytest
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: .venv/bin/python -m pytest
+
+  image:
+    name: Container image
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Build
+        run: docker build --tag qradar-mcp-fork:ci .
+
+      - name: Refuses to start without a profile
+        run: |
+          status=0
+          docker run --rm qradar-mcp-fork:ci || status=$?
+          test "$status" -eq 2
+
+      - name: Refuses to start without a QRadar token
+        run: |
+          status=0
+          docker run --rm qradar-mcp-fork:ci --profile qradar-read || status=$?
+          test "$status" -eq 1

@@ -1,0 +1,144 @@
+# Copyright 2026 IBM Corporation
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+
+"""
+Remove from Reference Table Tool
+
+Removes a specific cell from a reference data table.
+"""
+
+from typing import Dict, Any
+import json
+from qradar_mcp.tools.base import MCPTool
+from qradar_mcp.tools.schema import schema
+from qradar_mcp.tools import endpoints
+
+
+class RemoveFromReferenceTable(MCPTool):
+    """Tool for removing cells from a QRadar reference table."""
+
+    @property
+    def name(self) -> str:
+        return "remove_from_reference_table"
+
+    @property
+    def description(self) -> str:
+        return """Remove a specific cell from a reference data table.
+
+Use cases:
+  - Remove specific service mapping
+  - Delete access level entry
+  - Clean up table cells
+  - Maintain data accuracy
+
+Required parameters:
+  - name: Table name
+  - outer_key: The outer key
+  - inner_key: The inner key
+  - value: The value to remove
+
+Optional parameters:
+  - namespace: SHARED or TENANT (default: SHARED)
+  - domain_id: Domain ID for multi-tenancy
+  - fields: Response field selection
+
+Note: All three (outer_key, inner_key, value) must match for removal."""
+
+    @property
+    def input_schema(self) -> Dict[str, Any]:
+        return (schema()
+            .string("name")
+                .description("The name of the reference table")
+                .required()
+            .string("outer_key")
+                .description("The outer key")
+                .required()
+            .string("inner_key")
+                .description("The inner key")
+                .required()
+            .string("value")
+                .description("The value to remove (must match existing value)")
+                .required()
+            .string("namespace")
+                .description("Optional namespace: SHARED or TENANT")
+                .enum(["SHARED", "TENANT"])
+            .integer("domain_id")
+                .description("Optional domain ID for multi-tenancy")
+                .minimum(0)
+            .string("fields")
+                .description("Optional comma-separated list of fields to return")
+            .build())
+
+    @property
+    def http_verb(self) -> str:
+        return "DELETE"
+
+    @property
+    def endpoint(self) -> str:
+        return endpoints.REFERENCE_DATA_TABLE_ENTRY
+
+    async def _execute_impl(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Execute the remove_from_reference_table tool.
+
+        Args:
+            arguments: Must contain 'name', 'outer_key', 'inner_key', 'value', optional others
+
+        Returns:
+            MCP response with updated reference table metadata or error
+        """
+        name = arguments.get("name")
+        outer_key = arguments.get("outer_key")
+        inner_key = arguments.get("inner_key")
+        value = arguments.get("value")
+
+        if not name:
+            return self.create_error_response("Error: name is required")
+        if not outer_key:
+            return self.create_error_response("Error: outer_key is required")
+        if not inner_key:
+            return self.create_error_response("Error: inner_key is required")
+        if not value:
+            return self.create_error_response("Error: value is required")
+
+
+        # Build request parameters
+        params = self._build_params(arguments)
+
+        # Make API request
+        response = await self.client.delete(
+            self.endpoint.format(name=name, outer_key=outer_key, inner_key=inner_key),
+            params=params
+        )
+        response.raise_for_status()
+        table_data = response.json()
+
+        formatted_output = json.dumps(table_data, indent=2)
+        return self.create_success_response(formatted_output)
+
+    def _build_params(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
+        """Build query parameters for the API request."""
+        params = {
+            "value": arguments["value"]
+        }
+
+        # Add optional fields
+        optional_fields = ["namespace", "domain_id", "fields"]
+
+        for field in optional_fields:
+            if field in arguments and arguments[field] is not None:
+                params[field] = arguments[field]
+
+        return params

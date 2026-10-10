@@ -1,0 +1,115 @@
+{
+  "inputSchema": {
+    "additionalProperties": false,
+    "properties": {
+      "search_id": {
+        "description": "The ID of the Ariel search to retrieve status for",
+        "pattern": "^[A-Za-z0-9_-]{1,128}$",
+        "type": "string"
+      },
+      "wait_seconds": {
+        "description": "Optional number of seconds to wait for search completion. If specified, the API will wait up to this many seconds for the search to reach COMPLETED status before returning.",
+        "maximum": 20,
+        "minimum": 0,
+        "type": "integer"
+      }
+    },
+    "required": [
+      "search_id"
+    ],
+    "type": "object"
+  },
+  "name": "get_ariel_search_status",
+  "outputSchema": {
+    "additionalProperties": true,
+    "properties": {
+      "completed": {
+        "type": "boolean"
+      },
+      "compressed_data_file_count": {
+        "type": "integer"
+      },
+      "compressed_data_total_size": {
+        "type": "integer"
+      },
+      "cursor_id": {
+        "type": "string"
+      },
+      "data_file_count": {
+        "type": "integer"
+      },
+      "data_total_size": {
+        "type": "integer"
+      },
+      "desired_retention_time_msec": {
+        "type": "integer"
+      },
+      "error_messages": {
+        "items": {
+          "additionalProperties": true,
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "index_file_count": {
+        "type": "integer"
+      },
+      "index_total_size": {
+        "type": "integer"
+      },
+      "processed_record_count": {
+        "type": "integer"
+      },
+      "progress": {
+        "type": "number"
+      },
+      "progress_details": {
+        "items": {
+          "type": "number"
+        },
+        "type": "array"
+      },
+      "query_execution_time": {
+        "type": "integer"
+      },
+      "query_string": {
+        "type": "string"
+      },
+      "record_count": {
+        "type": "integer"
+      },
+      "save_results": {
+        "type": "boolean"
+      },
+      "search_id": {
+        "type": "string"
+      },
+      "status": {
+        "enum": [
+          "WAIT",
+          "EXECUTE",
+          "SORTING",
+          "COMPLETED",
+          "CANCELED",
+          "ERROR"
+        ],
+        "type": "string"
+      },
+      "subsearch_ids": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      }
+    },
+    "required": [
+      "search_id",
+      "status"
+    ],
+    "type": "object"
+  },
+  "profiles": [
+    "qradar-read"
+  ]
+}

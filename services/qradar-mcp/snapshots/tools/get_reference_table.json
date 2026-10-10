@@ -1,0 +1,128 @@
+{
+  "inputSchema": {
+    "additionalProperties": false,
+    "properties": {
+      "fields": {
+        "description": "Optional comma-separated list of fields to return",
+        "type": "string"
+      },
+      "limit": {
+        "default": 50,
+        "description": "Maximum number of entries to return (default: 50)",
+        "maximum": 10000,
+        "minimum": 1,
+        "type": "integer"
+      },
+      "name": {
+        "description": "The name of the reference table to retrieve",
+        "pattern": "^(?!\\.{1,2}$)[^/\\\\?#%]{1,255}$",
+        "type": "string"
+      },
+      "namespace": {
+        "description": "Optional namespace: SHARED or TENANT (default: SHARED)",
+        "enum": [
+          "SHARED",
+          "TENANT"
+        ],
+        "type": "string"
+      },
+      "offset": {
+        "description": "Number of entries to skip for pagination (default: 0)",
+        "minimum": 0,
+        "type": "integer"
+      }
+    },
+    "required": [
+      "name"
+    ],
+    "type": "object"
+  },
+  "name": "get_reference_table",
+  "outputSchema": {
+    "additionalProperties": true,
+    "properties": {
+      "creation_time": {
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "data": {
+        "additionalProperties": {
+          "additionalProperties": {
+            "additionalProperties": true,
+            "properties": {
+              "first_seen": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "last_seen": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "source": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "value": {
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "type": "object"
+        },
+        "type": "object"
+      },
+      "element_type": {
+        "type": "string"
+      },
+      "key_label": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "key_name_types": {
+        "additionalProperties": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "name": {
+        "type": "string"
+      },
+      "namespace": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "number_of_elements": {
+        "type": "integer"
+      },
+      "time_to_live": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "timeout_type": {
+        "type": [
+          "string",
+          "null"
+        ]
+      }
+    },
+    "type": "object"
+  },
+  "profiles": [
+    "qradar-read"
+  ]
+}

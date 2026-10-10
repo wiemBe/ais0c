@@ -1,0 +1,110 @@
+{
+  "inputSchema": {
+    "additionalProperties": false,
+    "properties": {
+      "query_expression": {
+        "description": "The AQL query to run, with a time range and a LIMIT.",
+        "maxLength": 50000,
+        "minLength": 1,
+        "type": "string"
+      }
+    },
+    "required": [
+      "query_expression"
+    ],
+    "type": "object"
+  },
+  "name": "create_ariel_search",
+  "outputSchema": {
+    "additionalProperties": true,
+    "properties": {
+      "completed": {
+        "type": "boolean"
+      },
+      "compressed_data_file_count": {
+        "type": "integer"
+      },
+      "compressed_data_total_size": {
+        "type": "integer"
+      },
+      "cursor_id": {
+        "type": "string"
+      },
+      "data_file_count": {
+        "type": "integer"
+      },
+      "data_total_size": {
+        "type": "integer"
+      },
+      "desired_retention_time_msec": {
+        "type": "integer"
+      },
+      "error_messages": {
+        "items": {
+          "additionalProperties": true,
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "index_file_count": {
+        "type": "integer"
+      },
+      "index_total_size": {
+        "type": "integer"
+      },
+      "processed_record_count": {
+        "type": "integer"
+      },
+      "progress": {
+        "type": "number"
+      },
+      "progress_details": {
+        "items": {
+          "type": "number"
+        },
+        "type": "array"
+      },
+      "query_execution_time": {
+        "type": "integer"
+      },
+      "query_string": {
+        "type": "string"
+      },
+      "record_count": {
+        "type": "integer"
+      },
+      "save_results": {
+        "type": "boolean"
+      },
+      "search_id": {
+        "type": "string"
+      },
+      "status": {
+        "enum": [
+          "WAIT",
+          "EXECUTE",
+          "SORTING",
+          "COMPLETED",
+          "CANCELED",
+          "ERROR"
+        ],
+        "type": "string"
+      },
+      "subsearch_ids": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      }
+    },
+    "required": [
+      "search_id",
+      "status"
+    ],
+    "type": "object"
+  },
+  "profiles": [
+    "qradar-read"
+  ]
+}

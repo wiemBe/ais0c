@@ -1,0 +1,7 @@
+{
+  "profile": "qradar-note",
+  "tools": [
+    "add_offense_note",
+    "get_offense_notes"
+  ]
+}
