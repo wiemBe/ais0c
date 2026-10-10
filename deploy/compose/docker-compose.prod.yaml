@@ -8,8 +8,8 @@
 # needs two admins (T-033). No mechanism in this file opens writes.
 #
 # - Third-party images keep the exact tag and digest of docker-compose.dev.yaml. Our own images
-#   (platform, ui, gateway) are tagged ${AIS0C_VERSION}, never pulled and never built here: they
-#   come from the release tar with `docker load`.
+#   (platform, ui, gateway, litellm) are tagged ${AIS0C_VERSION}, never pulled and never built
+#   here: they come from the release tar with `docker load`.
 # - Only the UI's port 8443 is published; the Temporal UI is on 127.0.0.1 for operations.
 # - Secrets come from the environment (.env.prod, git-ignored; template: .env.prod.example) or
 #   from secret files under ${AIS0C_SECRETS_DIR}, made by make_secrets.py --directory.

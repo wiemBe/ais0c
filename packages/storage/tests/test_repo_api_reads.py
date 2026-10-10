@@ -309,14 +309,15 @@ async def test_the_qa_queue_filters_and_pages(session: AsyncSession) -> None:
     assert [row.id for row in page] == ids[:2]
     assert [row.id for row in await list_qa_queue(session, after=page[-1].id)] == ids[2:]
 
-    # UUIDv7 IDs sort by the millisecond they were made in, so the two items a single call opens
-    # may come back in either order; the reasons identify them.
+    # IDs made in one process strictly increase (ids.py), so the queue keeps the order the items
+    # were opened in.
+    assert [(row.case_id, row.reason) for row in everything] == [
+        ("case-1", QAReason.RANDOM_SAMPLE),
+        ("case-2", QAReason.VERIFIER_CONFLICT),
+        ("case-2", QAReason.LOW_CONFIDENCE),
+    ]
     low = await list_qa_queue(session, reasons={QAReason.LOW_CONFIDENCE})
     assert [(row.case_id, row.reason) for row in low] == [("case-2", QAReason.LOW_CONFIDENCE)]
-    conflict = await list_qa_queue(session, reasons={QAReason.VERIFIER_CONFLICT})
-    assert [(row.case_id, row.reason) for row in conflict] == [
-        ("case-2", QAReason.VERIFIER_CONFLICT)
-    ]
     assert [row.id for row in await list_qa_queue(session, statuses={QAStatus.OPEN})] == ids
     assert await list_qa_queue(session, statuses={QAStatus.RESOLVED}) == []
     # The per-case list still reads one case.

@@ -2,14 +2,16 @@
 
 import time
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, date, datetime, timedelta, timezone
+from itertools import pairwise
 
 import pytest
 from sqlalchemy.dialects import postgresql
 
 from ais0c_contracts import AgentTask, CaseReport, Level
 from ais0c_storage.columns import ContractJSONB, EnumText, UtcDateTime
-from ais0c_storage.ids import new_uuid7
+from ais0c_storage.ids import Uuid7Generator, new_uuid7
 
 DIALECT = postgresql.dialect()
 ISTANBUL = timezone(timedelta(hours=3))
@@ -32,6 +34,81 @@ def test_uuid7_sorts_by_creation_time() -> None:
 
     assert first < second
     assert len({new_uuid7() for _ in range(1000)}) == 1000
+
+
+def test_ids_of_one_millisecond_strictly_increase() -> None:
+    generator = Uuid7Generator(clock=lambda: 1_000_000_000, randbits=lambda _: 17)
+
+    values = [generator() for _ in range(1000)]
+
+    assert all(first < second for first, second in pairwise(values))
+    assert all(value.version == 7 for value in values)
+    assert all(value.variant == uuid.RFC_4122 for value in values)
+    assert {value.int >> 80 for value in values} == {1000}
+
+
+def test_a_clock_step_back_keeps_the_order() -> None:
+    times = iter((1_000_000_000, 990_000_000))
+    generator = Uuid7Generator(clock=lambda: next(times), randbits=lambda _: 17)
+
+    first = generator()
+    second = generator()
+
+    assert second > first
+    assert second.int >> 80 == 1000
+
+
+def test_random_bit_overflow_moves_to_the_next_millisecond() -> None:
+    generator = Uuid7Generator(
+        clock=lambda: 1_000_000_000,
+        randbits=lambda _: (1 << 74) - 1,
+    )
+
+    first = generator()
+    second = generator()
+
+    assert second.int >> 80 == (first.int >> 80) + 1
+    assert (second.int >> 64) & ((1 << 12) - 1) == 0
+    assert second.int & ((1 << 62) - 1) == 0
+    assert second.version == 7
+    assert second.variant == uuid.RFC_4122
+
+
+def test_a_new_millisecond_takes_fresh_random_bits() -> None:
+    times = iter((1_000_000_000, 1_001_000_000))
+    random_values = iter((17, 23))
+    calls: list[int] = []
+
+    def randbits(bit_count: int) -> int:
+        calls.append(bit_count)
+        return next(random_values)
+
+    generator = Uuid7Generator(clock=lambda: next(times), randbits=randbits)
+
+    generator()
+    second = generator()
+
+    assert calls == [74, 74]
+    assert (second.int >> 64) & ((1 << 12) - 1) == 0
+    assert second.int & ((1 << 62) - 1) == 23
+
+
+def test_ids_from_threads_are_unique_and_ordered_per_thread() -> None:
+    generator = Uuid7Generator(clock=lambda: 1_000_000_000, randbits=lambda _: 17)
+
+    def make_ids(_: int) -> list[uuid.UUID]:
+        return [generator() for _ in range(500)]
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        values_by_thread = list(pool.map(make_ids, range(8)))
+
+    values = [value for thread_values in values_by_thread for value in thread_values]
+    assert len(set(values)) == 4000
+    assert all(
+        first < second
+        for thread_values in values_by_thread
+        for first, second in pairwise(thread_values)
+    )
 
 
 def test_timestamps_are_written_and_read_in_utc() -> None:

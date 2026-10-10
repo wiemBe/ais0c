@@ -1,8 +1,8 @@
 ## Purpose
 
 Investigate an offense that points to a silver ticket: a service ticket forged
-with a service account's key (ATT&CK T1558.002, Forge Web Cookies' Kerberos
-sibling under Steal or Forge Kerberos Tickets). Unlike a golden ticket it
+with a service account's key (ATT&CK T1558.002 Silver Ticket, a sub-technique
+of T1558 Steal or Forge Kerberos Tickets). Unlike a golden ticket it
 reaches one service, not the domain - but it needs no domain controller to
 agree, so the domain controller's logs are exactly where the gap shows. The
 question is which service's tickets were used without ever being issued.

@@ -1,6 +1,6 @@
 # Geliştirme ortamı (Docker Compose)
 
-Temporal, PostgreSQL + pgvector, LiteLLM, OpenTelemetry collector ve Mailpit e-posta yakalayıcısını tek komutla ayağa kaldırır ([T-003](../../docs/impl/tasks/T-003-dev-compose.md), mimari §4 ve §25). Yalnızca dev ve lab içindir; prod compose dosyası Faz 1'de yazılır.
+Temporal, PostgreSQL + pgvector, LiteLLM, OpenTelemetry collector ve Mailpit e-posta yakalayıcısını tek komutla ayağa kaldırır ([T-003](../../docs/impl/tasks/T-003-dev-compose.md), mimari §4 ve §25). Bu bölümler dev ve lab içindir; prod shadow için [Prod (shadow)](#prod-shadow) bölümüne bak.
 
 ## Servisler
 
@@ -177,7 +177,7 @@ AIS0C_HEALTH_INTERVAL_MINUTES=1 AIS0C_HEALTH_EXECUTOR_ABSENT_MINUTES=1 \
 
 ### API (arayüz servisi)
 
-Analist arayüzünün konuştuğu FastAPI servisi ([T-028](../../docs/impl/tasks/T-028-api.md), [api.md](../../docs/impl/api.md)): `uv run python -m ais0c_api`. Prod'da compose servisi T-031'in konusudur; dev'de host'ta çalışır. Yalnızca uygulama veritabanını okur ve operatörün değiştirdiği satırları yazar; QRadar'a, gateway'e veya modele hiçbir istek göndermez.
+Analist arayüzünün konuştuğu FastAPI servisi ([T-028](../../docs/impl/tasks/T-028-api.md), [api.md](../../docs/impl/api.md)): `uv run python -m ais0c_api`. Prod'da compose'un `api` servisidir ([Prod (shadow)](#prod-shadow)); dev'de host'ta çalışır. Yalnızca uygulama veritabanını okur ve operatörün değiştirdiği satırları yazar; QRadar'a, gateway'e veya modele hiçbir istek göndermez.
 
 | Değişken | Anlamı | Varsayılan |
 |---|---|---|
