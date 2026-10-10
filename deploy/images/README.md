@@ -46,3 +46,16 @@ Yanıtlara `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy` ve `Co
 ## `ais0c-litellm`
 
 `deploy/images/litellm.Dockerfile`: dev compose'taki LiteLLM imajı (aynı etiket ve digest) artı `config/litellm/litellm.prod.yaml` (`/etc/litellm/litellm.prod.yaml`). Başka değişiklik yoktur. Dosya vLLM adreslerini ve anahtarlarını `os.environ/VLLM_*` olarak adlandırır; imajda adres ya da anahtar yoktur. Prod compose bu dosyayı `preflight` servisine de imajdan salt okunur image volume olarak verir.
+
+## Release paketi
+
+Temiz bir çalışma ağacında prod shadow release paketini repo kökünden üretmek için:
+
+```bash
+uv run python deploy/release/build_release.py --version 0.1.0-shadow1 --fork ../qradar-mcp --out ../ais0c-release-0.1.0-shadow1
+```
+
+Çıktı dizininde imaj arşivi (`ais0c-images-<sürüm>.tar.gz`), kurulum dosyaları
+(`ais0c-files-<sürüm>.tar.gz`), `SHA256SUMS` ve `RELEASE.md` oluşur. Komutları çalıştırmadan
+görmek için `--dry-run`, hazır imajları yalnızca denetleyip paketlemek için `--skip-build`
+kullanılır.
