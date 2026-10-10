@@ -6,13 +6,14 @@
 #
 # Addresses are the recording's anonymized ones (RFC 5737); the evidence is made up as the
 # earlier agents would have handed it over.
-id: ver-04-approved-scanner-fp
+id: ver-04-scanner-claims-hold
 suite: verification-gold
 agent: verification
-title: Every claim of the fp decision on the approved scanner holds
+title: The claims of an fp decision on the scanner hold at the source
 description: >-
-  The three claims count the scanner's requests, name their five families and name the log
-  source. All hold in the events, so the verifier agrees.
+  Checks that the claims of an fp decision hold at the source: they count the scanner's requests,
+  name their five families and name the log source. All hold in the events, so the verifier
+  agrees. The verdict itself is not scored here (T-066 adds org_context to Verification).
 
 input:
   recording: lab-49-approved-scanner

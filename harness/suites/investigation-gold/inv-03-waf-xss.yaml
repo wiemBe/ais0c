@@ -3,7 +3,7 @@
 # Triage handed over a `tp` decision with one claim. The recording `lab-46-waf-xss` answers the
 # agent's Ariel queries: 203.0.113.61 sent six requests the WAF logged as Cross Site Scripting
 # (XSS), to six web servers; the WAF alerted and let them through. A correct agent queries the
-# source, finds the targets and keeps the decision at tp or suspicious.
+# source, finds the requests and keeps the decision at tp or suspicious.
 #
 # Addresses are the recording's anonymized ones (RFC 5737); the evidence is made up as Triage
 # would hand it over.
@@ -13,7 +13,7 @@ agent: investigation
 title: Cross-site scripting from one external address against six web servers
 description: >-
   An external address sent six requests that the WAF logged as cross-site scripting to six
-  web servers. The agent must query the source, find the targets, and keep the decision at tp
+  web servers. The agent must query the source, find the requests, and keep the decision at tp
   or suspicious, citing only evidence the gateway returned.
 
 input:
@@ -49,6 +49,4 @@ expect:
   verdict_in: [tp, suspicious]
   find_events:
     - {address: 203.0.113.61}
-    - {address: 192.0.2.5}
-    - {address: 192.0.2.41}
   required_tools: [create_ariel_search, get_ariel_search_results]

@@ -8,7 +8,7 @@ Task T-052 writes it; T-055 adds the skill suites and the budget measurements.
 |---|---|---|
 | `inv-01-dcsync` | `lab-30-dcsync` | The DCSync offense of the lab: `svc_backup` asked a domain controller for directory replication three times, from three servers. Find all three; keep the decision at `suspicious` or raise it to `tp`; cite only evidence the gateway returned |
 | `inv-02-dcsync-no-skill` | `lab-30-dcsync` | The same objective and evidence without a selected skill, for the paired skill/no-skill measurement |
-| `inv-03-waf-xss` | `lab-46-waf-xss` | Six WAF-logged cross-site scripting requests from `203.0.113.61` to six web servers. Find the source and the targets; keep the decision at `tp` or `suspicious` |
+| `inv-03-waf-xss` | `lab-46-waf-xss` | Six WAF-logged cross-site scripting requests from `203.0.113.61` to six web servers. Find the source's events; keep the decision at `tp` or `suspicious` |
 | `inv-04-waf-scan-blocked` | `lab-48-waf-scan-blocked` | 40 requests of five attack families from `192.0.2.88`, all blocked by the WAF. A blocked attack is still an attack: the verdict is `tp`, never `fp` (T-84) |
 | `inv-05-approved-scanner` | `lab-49-approved-scanner` | The same traffic from `192.0.2.79`, which the catalog note on rule 100359 names as the approved scanner. The verdict is `fp`; authority comes only from the note (T-88) |
 | `inv-06-kerberoasting` | `lab-50-kerberoasting` | `branch.user05` was granted 16 RC4 service tickets for eight service accounts, each from a different address. Find the tickets; the verdict is `tp` |

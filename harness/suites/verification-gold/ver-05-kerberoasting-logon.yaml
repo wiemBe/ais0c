@@ -34,12 +34,12 @@ input:
   evidence:
     - evidence_id: ev_ver05_tickets
       source: qradar
-      query_hash: c552954f843d395e18837759a74a26345a1c06c7c33b38b1443552eac6b0a2fd
-      query_text: "SELECT sourceip FROM events WHERE username = 'branch.user05' AND qid = 5000938 LIMIT 100 START 1791567443865 STOP 1791567445865"
+      query_hash: 884b7de4814a9f4959d9e1286da42f651e4f945aff248f6377e2e2e09a268958
+      query_text: "SELECT QIDNAME(qid) AS event_name, COUNT(*) AS tickets FROM events WHERE username = 'branch.user05' AND qid = 5000938 GROUP BY qid LIMIT 100 START 1791567443865 STOP 1791567445865"
       time_start: "2026-10-09T17:37:23.865Z"
       time_end: "2026-10-09T17:37:25.865Z"
-      identifiers: {tool: create_ariel_search, rows: "16"}
-      excerpt: '[{"sourceip":"192.0.2.98"},{"sourceip":"192.0.2.120"},{"sourceip":"192.0.2.99"},{"sourceip":"192.0.2.101"},{"sourceip":"192.0.2.100"},{"sourceip":"192.0.2.112"},{"sourceip":"192.0.2.114"},{"sourceip":"192.0.2.127"},{"sourceip":"192.0.2.122"},{"sourceip":"192.0.2.130"},{"sourceip":"192.0.2.97"},{"sourceip":"192.0.2.83"},{"sourceip":"192.0.2.125"},{"sourceip":"192.0.2.107"},{"sourceip":"192.0.2.115"},{"sourceip":"192.0.2.94"}]'
+      identifiers: {tool: create_ariel_search, rows: "1"}
+      excerpt: '[{"event_name":"Success Audit: A Kerberos service ticket was granted","tickets":16}]'
       retrieved_at: "2026-10-09T17:42:24Z"
     - evidence_id: ev_ver05_source
       source: qradar

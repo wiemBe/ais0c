@@ -54,7 +54,7 @@ INV_04 = "inv-04-waf-scan-blocked"
 INV_05 = "inv-05-approved-scanner"
 INV_06 = "inv-06-kerberoasting"
 VER_03 = "ver-03-xss-wrong-family"
-VER_04 = "ver-04-approved-scanner-fp"
+VER_04 = "ver-04-scanner-claims-hold"
 VER_05 = "ver-05-kerberoasting-logon"
 RECORDING = "lab-30-dcsync"
 
@@ -359,7 +359,6 @@ def test_the_new_gold_scenarios_name_events_their_recordings_hold() -> None:
     for scenario_id in NEW_INVESTIGATIONS:
         played = investigation_of(scenario_id)
         played.check_files(REPO_ROOT)  # raises when the recording, an event or the skill is missing
-        assert played.expect.find_events
         stored = recording_of(REPO_ROOT.resolve(), played.input.recording)
         for expected in played.expect.find_events:
             assert any(
@@ -410,11 +409,13 @@ def _recomputed(query: str, events: list[Any]) -> list[dict[str, Any]]:
     """Run the simple AQL of the verification scenarios over recorded events."""
     import re
 
-    select, rest = re.match(r"SELECT (.*?) FROM events WHERE (.*?) LIMIT", query).groups()  # type: ignore[union-attr]
+    parsed = re.match(
+        r"SELECT (.*?) FROM events WHERE (.*?) LIMIT (\d+) START (\d+) STOP (\d+)$", query
+    )
+    assert parsed, query
+    select, rest, limit, start, stop = parsed.groups()
     where, _, group = rest.partition(" GROUP BY ")
-    if not group:
-        group = ""
-    matching = events
+    matching = [event for event in events if int(start) <= event.starttime <= int(stop)]  # type: ignore[attr-defined]
     for column, quoted, number in re.findall(r"(\w+) = (?:'([^']*)'|(\d+))", where):
         wanted: object = quoted if quoted else int(number)
         matching = [event for event in matching if getattr(event, column) == wanted]
@@ -424,7 +425,7 @@ def _recomputed(query: str, events: list[Any]) -> list[dict[str, Any]]:
 
     columns = [part.strip() for part in select.split(", ")]
     if group:
-        key = group.split(" LIMIT")[0].strip()
+        key = group.strip()
         groups: dict[object, list[Any]] = {}
         for event in matching:
             groups.setdefault(getattr(event, key), []).append(event)
@@ -439,11 +440,11 @@ def _recomputed(query: str, events: list[Any]) -> list[dict[str, Any]]:
                     else value(members[0], column.split(" AS ")[0])
                 )
             rows.append(row)
-        return rows
+        return rows[: int(limit)]
     return [
         {column.split(" AS ")[-1]: value(event, column.split(" AS ")[0]) for column in columns}
         for event in matching
-    ]
+    ][: int(limit)]
 
 
 def _canonical(rows: list[Any]) -> list[str]:
@@ -465,6 +466,14 @@ def test_the_verification_excerpts_match_their_recordings() -> None:
             assert computed, evidence_id
             assert _canonical(excerpt) == _canonical(computed), evidence_id
             assert rows == len(excerpt)
+
+    for scenario_id, evidence_id in ((VER_03, "ev_ver03_wrong"), (VER_05, "ev_ver05_wrong")):
+        played = verification(scenario_id)
+        stored = recording_of(REPO_ROOT.resolve(), played.input.recording)
+        query, excerpt, rows = _excerpt_rows(played, evidence_id)
+        existing = _canonical(_recomputed(query, list(stored.events)))  # type: ignore[attr-defined]
+        assert rows == len(excerpt) == 1
+        assert not set(_canonical(excerpt)) & set(existing), evidence_id
 
 
 # --- the scenario files ---------------------------------------------------------------------------

@@ -9,7 +9,7 @@ Task T-052 writes it; T-055 adds the budget measurements.
 | `ver-01-refutable-ip` | `lab-30-dcsync` | Three claims of a `tp` decision; one names a source address (`192.0.2.250`) that no event of the account shows. The verifier contests that claim and only that one: `agrees: false` |
 | `ver-02-all-correct` | `lab-30-dcsync` | Three claims that hold. The verifier checks them at the source and agrees: `agrees: true` |
 | `ver-03-xss-wrong-family` | `lab-46-waf-xss` | Three claims of a `tp` decision; one says the source also sent SQL injection requests, which no event shows. The verifier contests that claim only: `agrees: false` |
-| `ver-04-approved-scanner-fp` | `lab-49-approved-scanner` | Three claims of an `fp` decision (40 requests, five families, one log source); all hold, and the evidence is aggregated with `GROUP BY`. The verifier agrees: `agrees: true` |
+| `ver-04-scanner-claims-hold` | `lab-49-approved-scanner` | Three claims of an `fp` decision (40 requests, five families, one log source); all hold, and the evidence is aggregated with `GROUP BY`. The verifier agrees: `agrees: true`. The verdict itself is not scored here (T-066 adds org_context to Verification) |
 | `ver-05-kerberoasting-logon` | `lab-50-kerberoasting` | Three claims of a `tp` decision; one invents a successful logon of the account, which the events do not show. The verifier contests that claim only: `agrees: false` |
 
 ## Format

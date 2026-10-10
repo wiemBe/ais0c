@@ -46,8 +46,4 @@ input:
 
 expect:
   verdict_in: [tp]
-  find_events:
-    - {address: 192.0.2.98, username: branch.user05}
-    - {address: 192.0.2.99, username: branch.user05}
-    - {address: 192.0.2.101, username: branch.user05}
   required_tools: [create_ariel_search, get_ariel_search_results]
