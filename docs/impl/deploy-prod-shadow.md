@@ -12,7 +12,7 @@ Bu belge, platformun bankanın prod ortamında **shadow** modunda ilk kez açıl
 
 | Girdi | Ne için | Kim | Ne zaman |
 |---|---|---|---|
-| Linux sunucu (Docker Engine + Compose v2). Boyut önerisi (ölçülmedi; ilk haftanın kullanımıyla düzeltilir): 16 vCPU, 64 GB RAM, 500 GB disk | Bütün servisler tek sunucuda | Banka altyapı | Kurulumdan önce |
+| Linux sunucu, **Docker Engine 28.0+ ve Docker Compose 2.35.0+** (prod compose `type: image` volume'u kullanır, T-113; Engine 29.7.2 / Compose 5.5.1 ile denendi). Boyut önerisi (ölçülmedi; ilk haftanın kullanımıyla düzeltilir): 16 vCPU, 64 GB RAM, 500 GB disk | Bütün servisler tek sunucuda | Banka altyapı | Kurulumdan önce |
 | Sunucudan prod QRadar konsoluna HTTPS (443) ve on-prem vLLM sunucularına erişim | Okuma ve model çağrıları | Banka ağ | Kurulumdan önce |
 | Prod QRadar **salt okunur** authorized service token'ı ve konsolun FQDN'i | `qradar-mcp-read` | QRadar admin | Kurulumdan önce |
 | Prod QRadar **yalnızca not ekleyen** token (canary için; shadow'da kullanılmaz ama servis açılırken dosyası beklenir) | `qradar-mcp-note` | QRadar admin | Kurulumdan önce (geçici olarak okuma token'ı da konabilir) |
@@ -27,40 +27,50 @@ Bu belge, platformun bankanın prod ortamında **shadow** modunda ilk kez açıl
 
 Planner her release için bir paket hazırlar ve sürümünü (`AIS0C_VERSION`, örnek `0.1.0-shadow1`) `main`'deki commit'le eşler:
 
-1. İmajlar, temiz bir checkout'tan:
+1. İmajlar, temiz bir checkout'tan (`deploy/images/README.md`):
    ```bash
    docker build -f services/mcp-gateway/Dockerfile -t ais0c-mcp-gateway:$V .
    docker build -f deploy/images/platform.Dockerfile -t ais0c-platform:$V .
    docker build -f deploy/images/ui.Dockerfile -t ais0c-ui:$V .
+   docker build -f deploy/images/litellm.Dockerfile -t ais0c-litellm:$V .
    # qradar-mcp fork imajı: deploy/compose/README.md "Fork imajı" (config/connectors/qradar.yaml'daki commit)
-   docker save ais0c-mcp-gateway:$V ais0c-platform:$V ais0c-ui:$V qradar-mcp-fork:<commit> \
-       postgres/temporal/litellm/otel imajları | gzip > ais0c-images-$V.tar.gz
+   docker save ais0c-mcp-gateway:$V ais0c-platform:$V ais0c-ui:$V ais0c-litellm:$V qradar-mcp-fork:<commit> \
+       <docker-compose.prod.yaml'daki postgres, temporal, temporal-ui, otel ve busybox imajları> \
+       | gzip > ais0c-images-$V.tar.gz
    sha256sum ais0c-images-$V.tar.gz > ais0c-images-$V.tar.gz.sha256
    ```
-2. Dosyalar (`git archive` ile): `deploy/compose/` (prod compose, `.env.prod.example`, `make_secrets.py`, otel ve temporal dosyaları), `config/connectors/`, `config/policies/`, `config/litellm/litellm.prod.yaml`. Dev dosyaları ve `secrets/` pakete girmez.
+2. Dosyalar (`git archive` ile): yalnızca `deploy/compose/` (prod compose, `.env.prod.example`, `make_secrets.py`, README ve compose'un bağladığı beş yardımcı dosya: Postgres init, Temporal betikleri ve dinamik config, collector config). Dev dosyaları ve `secrets/` pakete girmez.
 3. Paketin içinde: `RELEASE.md` (sürüm, commit, imajların digest'leri, değişiklikler, `harness gate` raporunun özeti).
 
-Onaylı içerik (prompt'lar, skill'ler, ajan manifest'leri, model kaydı) platform imajının içindedir; içerik değişikliği yeni bir release'tir.
+Release'in bütün içeriği imajlardadır (T-113); prod compose depodan config bağlamaz:
+
+| İmaj | İçindeki release içeriği |
+|---|---|
+| `ais0c-platform` | `config/agents`, `config/models`, `prompts`, `skills`, `config/policies`, `config/sigma`, `config/telemetry` |
+| `ais0c-mcp-gateway` | `config/connectors`, `config/policies` (`/etc/ais0c`) |
+| `ais0c-litellm` | `config/litellm/litellm.prod.yaml` (`/etc/litellm`); `preflight` aynı dosyayı bu imajdan okur |
+| `ais0c-ui` | Arayüzün build'i, nginx config'i |
+
+İçerik değişikliği (prompt, skill, ajan manifest'i, model kaydı, politika, LiteLLM config'i) yeni bir release'tir.
 
 ## 4. Kurulum
 
-Sunucuda, paketin açıldığı dizinde:
+Ayrıntılı adımlar `deploy/compose/README.md` "Prod (shadow)" bölümündedir. Sunucuda, paketin açıldığı dizinde:
 
-1. `docker load -i ais0c-images-$V.tar.gz` (önce `sha256sum -c`).
+1. `sha256sum -c ais0c-images-$V.tar.gz.sha256`, sonra `docker load -i ais0c-images-$V.tar.gz`.
 2. Sırlar dizini (`chmod 700`, git ve yedek dışı bir yer; örnek `/srv/ais0c/secrets`):
    ```bash
    AIS0C_QRADAR_READ_TOKEN=... AIS0C_QRADAR_NOTE_TOKEN=... \
      python3 deploy/compose/make_secrets.py --directory /srv/ais0c/secrets
    ```
-   Gateway ve MCP token'ları rastgele üretilir. `api/dev-users.json` (iki admin, token'ların sha256'sı; `deploy/compose/README.md` "Dev kullanıcı dosyası") ve `ui/tls.crt`, `ui/tls.key` elle konur. SELinux açıksa `chcon -R -t container_file_t`.
-3. `.env`: `.env.prod.example`'dan kopyalanır, her değer doldurulur. `AIS0C_VERSION`, `AIS0C_SECRETS_DIR`, veritabanı şifreleri, `LITELLM_MASTER_KEY`, `VLLM_*`, `QRADAR_CONSOLE_FQDN`, SMTP, `AIS0C_CASE_URL_BASE` (arayüzün adresi), `AIS0C_QRADAR_OFFENSE_URL_TEMPLATE`, `AIS0C_API_AUTH=dev`.
-4. `docker compose -f deploy/compose/docker-compose.prod.yaml up -d`. `migrate` tek sefer koşar ve biter; worker'lar ve API ondan sonra açılır.
-5. Ön kontrol:
+   Gateway ve MCP token'ları rastgele üretilir. Elle konanlar: `api/dev-users.json` (iki admin, token'ların sha256'sı), `ui/tls.crt` ve `ui/tls.key`, `executor/smtp-password` (relay giriş istemiyorsa boş dosya). SELinux açıksa `chcon -R -t container_file_t`.
+3. `cd deploy/compose && cp .env.prod.example .env.prod`, her değer doldurulur: `AIS0C_VERSION`, `AIS0C_SECRETS_DIR`, veritabanı şifreleri, `LITELLM_MASTER_KEY`, `VLLM_*`, `QRADAR_CONSOLE_FQDN`, SMTP, `AIS0C_CASE_URL_BASE` (arayüzün adresi), `AIS0C_QRADAR_OFFENSE_URL_TEMPLATE`, `AIS0C_API_AUTH=dev`, gerekiyorsa `AIS0C_UI_BIND` (bir IP adresi). `AIS0C_SKILLS_MODE`, model kaydı ve servis adresleri compose'da sabittir.
+4. `docker compose --env-file .env.prod -f docker-compose.prod.yaml up -d`. Sıra: Postgres ve Temporal, `migrate` (tek sefer, 0 ile biter), `preflight` (tek sefer), üç worker yalnızca `preflight` 0 dönerse başlar; API ve UI `preflight`'ı beklemez.
+5. Ön kontrolün sonucu:
    ```bash
-   docker compose -f deploy/compose/docker-compose.prod.yaml exec case-worker \
-       python -m ais0c_worker preflight
+   docker compose --env-file .env.prod -f docker-compose.prod.yaml logs preflight
    ```
-   Bütün satırlar `PASS` (onaylı skill yoksa `WARN skills` kabul) olmadan shadow başlamış sayılmaz. `FAIL model_registry` H-7'nin eksik olduğunu gösterir.
+   Bütün satırlar `PASS` olmalı (onaylı skill yoksa `WARN skills` kabul). `preflight` düşerse `up -d` "dependency failed" ile biter ve worker'lar `created`'da kalır; nedeni giderip `up -d` yeniden çalıştırılır. `FAIL model_registry` H-7'nin eksik olduğunu gösterir. Elle yeniden koşmak: `docker compose --env-file .env.prod -f docker-compose.prod.yaml run --rm preflight`.
 
 ## 5. Shadow başlamadan
 
@@ -81,7 +91,7 @@ Sunucuda, paketin açıldığı dizinde:
 - Günlük bakılacaklar (arayüz ve veritabanı): karar dağılımı, QA kuyruğu (`verifier_conflict`, `fp_with_data_gap`, örneklem), analist geri bildirimi, ajan başına süre ve token, `budget_exhausted` oranı, sağlık alarmları.
 - Sağlık alarmları e-posta ile gitmez (kill switch kapalı); syslog için H-8 (`AIS0C_ALARM_SYSLOG_*`).
 - Yedek: `postgres-data` volume'u (banka yedekleme politikasına göre; S-06 saklama süresi).
-- **Durdurma:** `docker compose -f deploy/compose/docker-compose.prod.yaml down`. QRadar'da hiçbir iz bırakmaz (yalnızca okuma ve Ariel aramaları; aramalar silinir).
+- **Durdurma:** `docker compose --env-file .env.prod -f docker-compose.prod.yaml down` (`deploy/compose/`'da). QRadar'da hiçbir iz bırakmaz (yalnızca okuma ve Ariel aramaları; aramalar silinir).
 
 ## 8. Canary'ye geçiş (sonraki adım)
 
