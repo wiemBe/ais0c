@@ -80,3 +80,9 @@ Her madde en az bir testle ya da ölçümle gösterilir.
 - Gerçek model koşusu dev stack'in LiteLLM'ini kullanır (ana checkout'tan; `--no-deps litellm`). `OPENROUTER_API_KEY`'in boş olmadığını uzunluğuyla kontrol et.
 - Prompt'ları senaryo metnine göre ezberletme; kurallar genel yazılır.
 - Token bütçesi yalnızca kaçak korumasıdır (T-85). Koşu sayısı kriter 4'teki kadardır.
+
+## Ek (2026-10-10, planner; görev verilmeden önce detaylandırılırken uygulanır)
+
+- **Var olan senaryolar.** T-080 `investigation-gold`'a `inv-04-waf-scan-blocked` (s8, `tp`) ve `inv-05-approved-scanner` (s9, `fp`, katalog notuyla) senaryolarını ekledi. Yukarıdaki "Yeni senaryolar" listesindeki `inv-0x-waf-scan-blocked` ve `inv-0x-approved-scanner` bunlardır; yeniden yazılmaz. `inv-0x-waf-sqli-reached` için T-060'ın `lab-45-waf-sqli` kaydı kullanılır.
+- **Verification'da `org_context` yok.** Investigation görevine katalog olguları `org_context` olarak girer (`packages/agents/src/ais0c_agents/investigation.py`, `render_org_context`); Verification görevine girmez (`packages/activities/src/ais0c_activities/agent_runtimes.py`'deki `verification_task` zenginleştirmeyi geçirmez). Verification v3 T-88'i uygulayacaksa ("yetki yalnızca `org_context` olgusundan") bu olguları görmelidir; yoksa doğru bir onaylı tarayıcı `fp`'sine itiraz eder. Bu bir kod değişikliğidir (ajan girdisi, activity), prompt göreviyle aynı göreve toplanmaz: T-066'dan önce ayrı küçük bir görev olur.
+- **Verification kararının puanlanması** T-082 ile gelir (`verdict_in`, isteğe bağlı). `verification-gold`'un `ver-04-scanner-claims-hold`'u (T-080) bugün yalnızca claim'leri ölçer; Verification `org_context`'i görünce aynı kayıtla `verdict_in: [fp]` olan bir senaryo eklenir.
