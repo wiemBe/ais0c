@@ -24,17 +24,25 @@ import yaml
 
 HERE: Final = Path(__file__).resolve().parent
 ROOT: Final = HERE.parents[1]
-DEFAULT_FORK: Final = ROOT.parent / "qradar-mcp"
 COMPOSE_FILE: Final = ROOT / "deploy/compose/docker-compose.prod.yaml"
 CONNECTOR_FILE: Final = ROOT / "config/connectors/qradar.yaml"
 VERSION_PATTERN: Final = re.compile(r"^\d+\.\d+\.\d+(?:-[0-9A-Za-z]+(?:\.[0-9A-Za-z]+)*)?$")
 _VERSION_REFERENCE: Final = re.compile(r"\$\{AIS0C_VERSION(?::\?[^}]*)?\}")
-OWN_IMAGES: Final = ("ais0c-platform", "ais0c-ui", "ais0c-mcp-gateway", "ais0c-litellm")
+OWN_IMAGES: Final = (
+    "ais0c-platform",
+    "ais0c-ui",
+    "ais0c-mcp-gateway",
+    "ais0c-litellm",
+    "qradar-mcp-fork",
+)
+# Image name -> (Dockerfile, build context), both relative to the repository root. The fork
+# (D-46) is a subtree with its own Dockerfile and context; the others build from the root.
 BUILDS: Final = {
-    "ais0c-platform": "deploy/images/platform.Dockerfile",
-    "ais0c-ui": "deploy/images/ui.Dockerfile",
-    "ais0c-mcp-gateway": "services/mcp-gateway/Dockerfile",
-    "ais0c-litellm": "deploy/images/litellm.Dockerfile",
+    "ais0c-platform": ("deploy/images/platform.Dockerfile", "."),
+    "ais0c-ui": ("deploy/images/ui.Dockerfile", "."),
+    "ais0c-mcp-gateway": ("services/mcp-gateway/Dockerfile", "."),
+    "ais0c-litellm": ("deploy/images/litellm.Dockerfile", "."),
+    "qradar-mcp-fork": ("services/qradar-mcp/Dockerfile", "services/qradar-mcp"),
 }
 ARCHIVED: Final = (
     "deploy/compose/docker-compose.prod.yaml",
@@ -138,9 +146,6 @@ def compose_images(compose: Mapping[str, Any], version: str) -> tuple[str, ...]:
         if expected not in references:
             raise ValueError(f"production Compose does not name {expected}")
 
-    forks = {reference for reference in references if reference.startswith("qradar-mcp-fork:")}
-    if len(forks) != 1:
-        raise ValueError("production Compose must name exactly one qradar-mcp-fork image")
     return tuple(sorted(set(references)))
 
 
@@ -165,9 +170,6 @@ def plan_release(root: Path, version: str) -> ReleasePlan:
     if not isinstance(server_version, str) or not server_version:
         raise ValueError("connector server_version is missing")
     images = compose_images(compose, checked_version)
-    expected_fork = f"qradar-mcp-fork:{server_version}"
-    if expected_fork not in images:
-        raise ValueError(f"production Compose does not name {expected_fork}")
     return ReleasePlan(
         version=checked_version,
         commit=commit,
@@ -176,32 +178,17 @@ def plan_release(root: Path, version: str) -> ReleasePlan:
     )
 
 
-def commands(
-    plan: ReleasePlan, root: Path, fork: Path, out: Path, *, build: bool
-) -> list[list[str]]:
+def build_command(name: str, version: str) -> list[str]:
+    """The `docker build` command for one of our own images."""
+    dockerfile, context = BUILDS[name]
+    return ["docker", "build", "-f", dockerfile, "-t", f"{name}:{version}", context]
+
+
+def commands(plan: ReleasePlan, root: Path, out: Path, *, build: bool) -> list[list[str]]:
     """Return the ordered, shell-display form of the release commands."""
     result: list[list[str]] = []
     if build:
-        result.extend(
-            ["docker", "build", "-f", dockerfile, "-t", f"{name}:{plan.version}", "."]
-            for name, dockerfile in BUILDS.items()
-        )
-        result.append(
-            [
-                "git",
-                "-C",
-                str(fork),
-                "archive",
-                "--format=tar",
-                plan.server_version,
-                "|",
-                "docker",
-                "build",
-                "-t",
-                f"qradar-mcp-fork:{plan.server_version}",
-                "-",
-            ]
-        )
+        result.extend(build_command(name, plan.version) for name in BUILDS)
     result.append(
         [
             "docker",
@@ -256,7 +243,7 @@ def render_release_md(
         f"- Sürüm: `{plan.version}`",
         f"- Commit: `{plan.commit}`",
         f"- Oluşturma zamanı: `{created}`",
-        f"- `server_version`: `{plan.server_version}`",
+        f"- `server_version` (fork commit, araç şemaları): `{plan.server_version}`",
         "",
         "## İmajlar",
         "",
@@ -286,21 +273,17 @@ def render_release_md(
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Build a production shadow release package.")
     parser.add_argument("--version", required=True)
-    parser.add_argument("--fork", type=Path, default=DEFAULT_FORK)
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--skip-build", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args(argv)
 
     root = ROOT
-    fork = args.fork.resolve()
     out = args.out.resolve()
     try:
         plan = plan_release(root, args.version)
         if not working_tree_clean(root):
             raise ValueError("working tree is not clean")
-        if not _fork_has_commit(fork, plan.server_version):
-            raise ValueError(f"fork does not contain server_version commit {plan.server_version}")
         if out.exists() and (not out.is_dir() or any(out.iterdir())):
             raise ValueError(f"output directory is not empty: {out}")
     except (
@@ -314,7 +297,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"build_release: {_one_line(error)}", file=sys.stderr)
         return 2
 
-    display_commands = commands(plan, root, fork, out, build=not args.skip_build)
+    display_commands = commands(plan, root, out, build=not args.skip_build)
     if args.dry_run:
         for command in display_commands:
             print(_command_text(command))
@@ -323,20 +306,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         out.mkdir(parents=True, exist_ok=True)
         if not args.skip_build:
-            for name, dockerfile in BUILDS.items():
-                _run(
-                    [
-                        "docker",
-                        "build",
-                        "-f",
-                        dockerfile,
-                        "-t",
-                        f"{name}:{plan.version}",
-                        ".",
-                    ],
-                    cwd=root,
-                )
-            _build_fork(plan, root, fork)
+            for name in BUILDS:
+                _run(build_command(name, plan.version), cwd=root)
 
         image_ids = _prepare_images(plan, root)
         images_name = f"ais0c-images-{plan.version}.tar.gz"
@@ -425,57 +396,14 @@ def _git_stdout(root: Path, *arguments: str) -> str:
     return done.stdout.strip()
 
 
-def _fork_has_commit(fork: Path, server_version: str) -> bool:
-    command = ["git", "-C", str(fork), "cat-file", "-e", f"{server_version}^{{commit}}"]
-    done = subprocess.run(command, capture_output=True, check=False)  # noqa: S603
-    return done.returncode == 0
-
-
 def _run(command: Sequence[str], *, cwd: Path) -> None:
     done = subprocess.run(command, cwd=cwd, check=False)  # noqa: S603
     if done.returncode != 0:
         raise CommandFailed(command, done.returncode)
 
 
-def _build_fork(plan: ReleasePlan, root: Path, fork: Path) -> None:
-    archive_command = [
-        "git",
-        "-C",
-        str(fork),
-        "archive",
-        "--format=tar",
-        plan.server_version,
-    ]
-    build_command = [
-        "docker",
-        "build",
-        "-t",
-        f"qradar-mcp-fork:{plan.server_version}",
-        "-",
-    ]
-    archive = subprocess.Popen(archive_command, cwd=root, stdout=subprocess.PIPE)  # noqa: S603
-    if archive.stdout is None:
-        raise RuntimeError("git archive stdout pipe was not created")
-    try:
-        build = subprocess.Popen(build_command, cwd=root, stdin=archive.stdout)  # noqa: S603
-    except OSError:
-        archive.stdout.close()
-        archive.terminate()
-        archive.wait()
-        raise
-    archive.stdout.close()
-    build_returncode = build.wait()
-    archive_returncode = archive.wait()
-    pipeline = [*archive_command, "|", *build_command]
-    if archive_returncode != 0:
-        raise CommandFailed(pipeline, archive_returncode)
-    if build_returncode != 0:
-        raise CommandFailed(pipeline, build_returncode)
-
-
 def _prepare_images(plan: ReleasePlan, root: Path) -> dict[str, str]:
     local_images = {f"{name}:{plan.version}" for name in OWN_IMAGES}
-    local_images.add(f"qradar-mcp-fork:{plan.server_version}")
     image_ids: dict[str, str] = {}
     for image in plan.images:
         saved_image = save_reference(image)

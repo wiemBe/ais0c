@@ -136,7 +136,9 @@ def dockerfile_images(dockerfile: str) -> list[str]:
 def built_services(compose: dict[str, Any]) -> dict[str, Path]:
     """Map each service that builds its image to its Dockerfile."""
     return {
-        name: COMPOSE_DIR / service["build"]["context"] / service["build"]["dockerfile"]
+        name: COMPOSE_DIR
+        / service["build"]["context"]
+        / service["build"].get("dockerfile", "Dockerfile")
         for name, service in compose["services"].items()
         if "build" in service
     }

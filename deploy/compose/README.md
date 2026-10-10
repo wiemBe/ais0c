@@ -56,8 +56,8 @@ Komutlar repo kökünden çalıştırılır.
 | Servis | İmaj | Adres | Görev |
 |---|---|---|---|
 | `mcp-gateway` | `ais0c-mcp-gateway:dev`, bu checkout'tan derlenir ([Dockerfile](../../services/mcp-gateway/Dockerfile)) | `127.0.0.1:8090` | MCP Policy Gateway |
-| `qradar-mcp-read` | `qradar-mcp-fork:<server_version>` | yalnızca `mcp` ağı | Fork, `--profile qradar-read`; salt okunur QRadar token'ı |
-| `qradar-mcp-note` | `qradar-mcp-fork:<server_version>` | yalnızca `mcp` ağı | Fork, `--profile qradar-note`; not ekleyebilen QRadar token'ı, üzerinde yalnızca not araçları kayıtlı |
+| `qradar-mcp-read` | `qradar-mcp-fork:dev`, `services/qradar-mcp`'ten derlenir | yalnızca `mcp` ağı | Fork, `--profile qradar-read`; salt okunur QRadar token'ı |
+| `qradar-mcp-note` | `qradar-mcp-fork:dev`, `services/qradar-mcp`'ten derlenir | yalnızca `mcp` ağı | Fork, `--profile qradar-note`; not ekleyebilen QRadar token'ı, üzerinde yalnızca not araçları kayıtlı |
 
 Ağlar:
 
@@ -67,15 +67,17 @@ Ağlar:
 
 ### Fork imajı
 
-İmaj fork reposundan (T-006), connector manifest'teki commit'ten ([`server_version`](../../config/connectors/qradar.yaml)) derlenir ve aynı commit ile etiketlenir. Compose bu imajı hiçbir zaman indirmez (`pull_policy: never`); imaj yoksa servis başlamaz. `git archive` yalnızca commit'teki dosyaları gönderir, çalışma dizinindeki değişiklikler imaja girmez.
+Fork artık bu reponun içindedir: `services/qradar-mcp/` (D-46, T-086), `git subtree` ile alınmış, kendi Python 3.11 projesi olarak kalan bir dizin. Dev compose imajı (`qradar-mcp-fork:dev`) bu checkout'tan, `services/qradar-mcp` context'iyle derler (`pull_policy: build`); `docker compose ... up --build` yeterlidir, ayrı bir build adımı ya da fork reposu gerekmez. Prod'da imaj `qradar-mcp-fork:${AIS0C_VERSION}` etiketlidir, release betiği onu diğer imajlarla birlikte build eder (`deploy/images/README.md`) ve compose onu hiçbir zaman indirmez (`pull_policy: never`).
+
+[`server_version`](../../config/connectors/qradar.yaml) imaj etiketi değildir: araç şemalarının alındığı fork commit'idir. `services/qradar-mcp/UPSTREAM` aynı commit'i `fork_commit` olarak ve IBM upstream commit'ini `upstream` olarak yazar; `services/mcp-gateway/tests/test_deploy.py` ikisinin aynı olduğunu kontrol eder.
+
+Upstream senkronu, `UPSTREAM_SYNC.md`'deki incelemeden sonra:
 
 ```bash
-FORK=../qradar-mcp   # fork reposunun yolu
-VERSION=$(sed -n 's/^server_version: //p' config/connectors/qradar.yaml)
-git -C "$FORK" archive --format=tar "$VERSION" | docker build -t "qradar-mcp-fork:$VERSION" -
+git subtree pull --prefix=services/qradar-mcp https://github.com/IBM/qradar-mcp <commit> --squash
 ```
 
-`server_version` değişince `docker-compose.dev.yaml`'daki etiket de değişir; `services/mcp-gateway/tests/test_deploy.py` ikisinin aynı olduğunu kontrol eder.
+Ardından `UPSTREAM`'in iki satırı (ve araç şemaları değiştiyse `server_version` ile connector manifest) güncellenir.
 
 ### Secret dosyaları
 
@@ -315,7 +317,7 @@ Anahtarı yığın çalışırken eklediysen önce LiteLLM'i yeniden oluştur: `
   ```
 
   `qradar` profiliyle başlatılmış yığında `COMPOSE_PROFILES=qradar` de ver; gateway ve MCP instance'larının sağlıklı olması da beklenir. Profilin konteynerleri çalışıyorsa bu değişken olmadan da sağlıklı olmaları gerekir.
-- `qradar` profilinin statik testleri `services/mcp-gateway/tests/test_deploy.py`'dedir: gateway imajı ve servisi, fork imajının etiketi, token'ların secret dosyalarından okunması, ağ yalıtımı, her secret'ın yalnızca gereken serviste olması, lab override'ı ve `make_secrets.py`.
+- `qradar` profilinin statik testleri `services/mcp-gateway/tests/test_deploy.py`'dedir: gateway imajı ve servisi, fork imajının checkout'tan build edilmesi ve `UPSTREAM` ile `server_version` eşitliği, token'ların secret dosyalarından okunması, ağ yalıtımı, her secret'ın yalnızca gereken serviste olması, lab override'ı ve `make_secrets.py`.
 - E-posta testi yalnızca Mailpit'i kullanır; veritabanını testler kendisi açar (Docker gerekir). Bir uyarı e-postasını gönderir, Mailpit'te konusunu, alıcılarını, başlıklarını ve gövdesini doğrular, sonra test e-postalarını siler:
 
   ```bash
@@ -367,7 +369,7 @@ Temporal server ve admin-tools aynı sürümde tutulur. LiteLLM imajları cosign
 | `postgres`, `temporal-schema`, `temporal`, `temporal-admin-tools`, `temporal-ui`, `otel-collector` | Dev'dekilerle aynı (etiket + digest) | `temporal-admin-tools` `default` namespace'ini kurar |
 | `litellm` | `ais0c-litellm:${AIS0C_VERSION}` | Dev'in LiteLLM imajı artı `config/litellm/litellm.prod.yaml`; dışarı port açılmaz |
 | `mcp-gateway` | `ais0c-mcp-gateway:${AIS0C_VERSION}` | Yalnızca iç ağda |
-| `qradar-mcp-read`, `qradar-mcp-note` | Dev'deki fork imajı (aynı commit etiketi) | `mcp` ağı `internal`; `qradar-egress` normal bir bridge'dir |
+| `qradar-mcp-read`, `qradar-mcp-note` | Fork imajı (`qradar-mcp-fork:${AIS0C_VERSION}`, D-46) | `mcp` ağı `internal`; `qradar-egress` normal bir bridge'dir |
 | `migrate` | `ais0c-platform:${AIS0C_VERSION}` | `ais0c_worker migrate`, `restart: "no"` |
 | `preflight` | aynı | `ais0c_worker preflight`, `restart: "no"`; worker'ların kapısı (aşağıda) |
 | `case-worker`, `batch-worker`, `executor-worker` | aynı | Komutlar: `ais0c_worker`, `ais0c_worker batch`, `ais0c_worker executor` |
@@ -394,7 +396,7 @@ Ağ ve ayrım:
      | xargs -n1 docker image inspect --format '{{.Id}}' >/dev/null && echo images ok
    ```
 
-   Yüklenen imajlar `ais0c-platform`, `ais0c-ui`, `ais0c-mcp-gateway`, `ais0c-litellm`, fork imajı `qradar-mcp-fork:<commit>` ve üçüncü parti imajlardır. Son komut `images ok` yazmazsa bir `etiket@digest` imajı bulunamıyordur: Docker'ın containerd imaj deposu kapalıdır (Notlar). Sonraki adımlar `ais0c-<sürüm>/deploy/compose/` dizininde yapılır.
+   Yüklenen imajlar `ais0c-platform`, `ais0c-ui`, `ais0c-mcp-gateway`, `ais0c-litellm`, fork imajı `qradar-mcp-fork:<sürüm>` ve üçüncü parti imajlardır. Son komut `images ok` yazmazsa bir `etiket@digest` imajı bulunamıyordur: Docker'ın containerd imaj deposu kapalıdır (Notlar). Sonraki adımlar `ais0c-<sürüm>/deploy/compose/` dizininde yapılır.
 2. **`.env.prod`.** `cp .env.prod.example .env.prod`, bütün değerleri doldur (sırlar için `openssl rand -hex 24`). Dosya git dışıdır.
 3. **Sır dizini.** Repo dışında, yalnızca bu sunucudaki bir dizin seç ve `.env.prod`'daki `AIS0C_SECRETS_DIR`'e yaz. Gateway ve MCP token'larını üret; QRadar token'ları QRadar'dan gelir (okuma token'ı yalnızca okuyabilmeli, not token'ı not ekleyebilmelidir):
 

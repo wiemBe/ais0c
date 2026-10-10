@@ -76,20 +76,17 @@ def prod_example() -> dict[str, str]:
 
 def prod_image_problems(compose: dict[str, Any]) -> dict[str, list[str]]:
     """Third-party images need tag and digest; our own need ${AIS0C_VERSION:?}, `pull_policy:
-    never` and no `build`. The fork is our own image, pinned by its commit tag."""
+    never` and no `build`. The fork (D-46) is one of our own images."""
     problems: dict[str, list[str]] = {}
     for where, reference in image_references(compose).items():
         service = compose["services"][where.partition(":")[0]]
         found: list[str]
         if reference.rpartition(":")[0].startswith(("ais0c-", "qradar-mcp-fork")):
             found = []
-            if reference.startswith("ais0c-"):
-                if not reference.endswith(":" + OWN_TAG + reference.split(OWN_TAG, 1)[-1]):
-                    found.append("does not use the release tag")
-                if OWN_TAG not in reference:
-                    found.append("does not use ${AIS0C_VERSION:?}")
-            else:
-                found.extend(image_problems(reference, local=True))
+            if not reference.endswith(":" + OWN_TAG + reference.split(OWN_TAG, 1)[-1]):
+                found.append("does not use the release tag")
+            if OWN_TAG not in reference:
+                found.append("does not use ${AIS0C_VERSION:?}")
             if service.get("pull_policy") != "never":
                 found.append("is not pull_policy: never")
             if "build" in service:
@@ -122,7 +119,9 @@ def test_third_party_images_equal_the_dev_images() -> None:
     assert third_party
     for where, reference in third_party.items():
         assert reference in dev.values(), f"{where}: {reference} is not a dev image"
-    assert prod["qradar-mcp-read"] == dev["qradar-mcp-read"]
+    # The fork is one of our own images (D-46): `:dev` built here, `:<release>` in prod.
+    assert dev["qradar-mcp-read"] == "qradar-mcp-fork:dev"
+    assert prod["qradar-mcp-read"].startswith("qradar-mcp-fork:" + OWN_TAG)
 
 
 @pytest.mark.parametrize(

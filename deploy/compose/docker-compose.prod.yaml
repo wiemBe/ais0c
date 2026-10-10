@@ -32,10 +32,10 @@ x-hardened: &hardened
   tmpfs: [/tmp]
   restart: unless-stopped
 
-# The qradar-mcp fork (T-006), the same commit as in the dev file; loaded from the release tar.
+# The qradar-mcp fork (T-006, D-46), one of our own images; loaded from the release tar.
 x-qradar-mcp: &qradar-mcp
   <<: *hardened
-  image: qradar-mcp-fork:7dcf3ce72062978e74975c7bca4f77e21d383a68
+  image: qradar-mcp-fork:${AIS0C_VERSION:?Set AIS0C_VERSION in .env.prod}
   pull_policy: never
 
 x-platform: &platform

@@ -114,6 +114,35 @@ jobs:
           pnpm gen:api
           git diff --exit-code -- src/api/schema.d.ts
 
+  qradar-mcp-fork:
+    name: qradar-mcp fork tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version: "0.12.22"
+
+      # The fork (D-46, services/qradar-mcp) is its own Python 3.11 project outside the uv
+      # workspace; tox.ini installs it in development mode and runs pytest on tests/.
+      - name: Install the fork's dependencies
+        id: fork-install
+        run: |
+          uv venv --python 3.11 "$RUNNER_TEMP/fork-venv"
+          uv pip install --python "$RUNNER_TEMP/fork-venv/bin/python" \
+            -r services/qradar-mcp/requirements.txt -r services/qradar-mcp/dev_requirements.txt
+          uv pip install --python "$RUNNER_TEMP/fork-venv/bin/python" --no-deps -e services/qradar-mcp
+
+      - name: Fork tests
+        id: fork-tests
+        if: ${{ !cancelled() && steps.fork-install.outcome == 'success' }}
+        working-directory: services/qradar-mcp
+        run: '"$RUNNER_TEMP/fork-venv/bin/python" -m pytest -n 5 --verbose tests'
+
   provider-names:
     name: Provider name check
     runs-on: ubuntu-24.04
