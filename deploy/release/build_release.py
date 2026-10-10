@@ -8,6 +8,7 @@ output is streamed through gzip; image archives are never accumulated in memory.
 import argparse
 import gzip
 import hashlib
+import json
 import re
 import shlex
 import shutil
@@ -67,11 +68,35 @@ class CommandFailed(RuntimeError):
         self.returncode = returncode
 
 
+class ImagePinMismatch(RuntimeError):
+    """A local image tag does not resolve to its Compose-pinned digest."""
+
+    def __init__(self, image: str) -> None:
+        super().__init__(f"image tag does not match pinned digest: {image}")
+        self.image = image
+
+
 def check_version(value: str) -> str:
     """Return a safe release version, or reject it."""
     if VERSION_PATTERN.fullmatch(value) is None:
         raise ValueError(f"invalid release version: {value!r}")
     return value
+
+
+def save_reference(reference: str) -> str:
+    """Return the tagged reference Docker must save for a digest-pinned image."""
+    name, separator, digest = reference.rpartition("@sha256:")
+    if separator and name and re.fullmatch(r"[0-9A-Fa-f]{64}", digest):
+        return name
+    return reference
+
+
+def repo_digest_matches(reference: str, repo_digests: Sequence[str]) -> bool:
+    """Whether RepoDigests contains the repository and digest pinned by `reference`."""
+    expected = _repository_digest(reference)
+    if expected is None:
+        return False
+    return any(_repository_digest(repo_digest) == expected for repo_digest in repo_digests)
 
 
 def compose_images(compose: Mapping[str, Any], version: str) -> tuple[str, ...]:
@@ -181,7 +206,7 @@ def commands(
         [
             "docker",
             "save",
-            *plan.images,
+            *(save_reference(image) for image in plan.images),
             "|",
             "gzip",
             ">",
@@ -343,7 +368,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             file=sys.stderr,
         )
         return 1
-    except (OSError, subprocess.SubprocessError) as error:
+    except (ImagePinMismatch, OSError, subprocess.SubprocessError) as error:
         print(f"build_release: release failed: {_one_line(error)}", file=sys.stderr)
         return 1
 
@@ -356,6 +381,31 @@ def _resolve_version(reference: str, version: str) -> str:
     if "${" in resolved:
         raise ValueError(f"unresolved variable in image reference: {reference}")
     return resolved
+
+
+def _repository_digest(reference: str) -> tuple[str, str] | None:
+    name, separator, digest = reference.rpartition("@sha256:")
+    if not separator or not name or re.fullmatch(r"[0-9A-Fa-f]{64}", digest) is None:
+        return None
+    last_slash = name.rfind("/")
+    last_colon = name.rfind(":")
+    repository = name[:last_colon] if last_colon > last_slash else name
+    return _normalized_repository(repository), digest.lower()
+
+
+def _normalized_repository(repository: str) -> str:
+    if repository.startswith("docker.io/"):
+        docker_path = repository.removeprefix("docker.io/")
+    else:
+        first_component = repository.partition("/")[0]
+        if "/" in repository and (
+            "." in first_component or ":" in first_component or first_component == "localhost"
+        ):
+            return repository
+        docker_path = repository
+    if "/" not in docker_path:
+        docker_path = f"library/{docker_path}"
+    return f"docker.io/{docker_path}"
 
 
 def _yaml_mapping(path: Path) -> Mapping[str, Any]:
@@ -428,13 +478,34 @@ def _prepare_images(plan: ReleasePlan, root: Path) -> dict[str, str]:
     local_images.add(f"qradar-mcp-fork:{plan.server_version}")
     image_ids: dict[str, str] = {}
     for image in plan.images:
-        inspect_returncode, image_id = _inspect_image(image, root)
-        if inspect_returncode != 0 and image not in local_images:
+        saved_image = save_reference(image)
+        if saved_image != image:
+            digest_returncode, repo_digests = _inspect_repo_digests(saved_image, root)
+            if digest_returncode != 0:
+                _run(["docker", "pull", image], cwd=root)
+                digest_returncode, repo_digests = _inspect_repo_digests(saved_image, root)
+            if digest_returncode != 0:
+                raise CommandFailed(
+                    [
+                        "docker",
+                        "image",
+                        "inspect",
+                        "--format",
+                        "{{json .RepoDigests}}",
+                        saved_image,
+                    ],
+                    digest_returncode,
+                )
+            if not repo_digest_matches(image, repo_digests):
+                raise ImagePinMismatch(image)
+
+        inspect_returncode, image_id = _inspect_image(saved_image, root)
+        if inspect_returncode != 0 and image not in local_images and saved_image == image:
             _run(["docker", "pull", image], cwd=root)
-            inspect_returncode, image_id = _inspect_image(image, root)
+            inspect_returncode, image_id = _inspect_image(saved_image, root)
         if inspect_returncode != 0:
             raise CommandFailed(
-                ["docker", "image", "inspect", "--format", "{{.Id}}", image],
+                ["docker", "image", "inspect", "--format", "{{.Id}}", saved_image],
                 inspect_returncode,
             )
         image_ids[image] = image_id
@@ -452,8 +523,32 @@ def _inspect_image(image: str, root: Path) -> tuple[int, str]:
     return done.returncode, done.stdout.strip()
 
 
+def _inspect_repo_digests(image: str, root: Path) -> tuple[int, tuple[str, ...]]:
+    done = subprocess.run(  # noqa: S603
+        ["docker", "image", "inspect", "--format", "{{json .RepoDigests}}", image],  # noqa: S607
+        cwd=root,
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+    if done.returncode != 0:
+        return done.returncode, ()
+    try:
+        loaded = json.loads(done.stdout)
+    except json.JSONDecodeError:
+        return 1, ()
+    if not isinstance(loaded, list):
+        return 1, ()
+    repo_digests: list[str] = []
+    for value in loaded:
+        if not isinstance(value, str):
+            return 1, ()
+        repo_digests.append(value)
+    return 0, tuple(repo_digests)
+
+
 def _save_images(plan: ReleasePlan, root: Path, destination: Path) -> None:
-    command = ["docker", "save", *plan.images]
+    command = ["docker", "save", *(save_reference(image) for image in plan.images)]
     process = subprocess.Popen(command, cwd=root, stdout=subprocess.PIPE)  # noqa: S603
     if process.stdout is None:
         raise RuntimeError("docker save stdout pipe was not created")

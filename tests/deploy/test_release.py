@@ -5,9 +5,11 @@
 
 import copy
 import io
+import json
 import os
 import subprocess
 import sys
+import tarfile
 from pathlib import Path
 
 import pytest
@@ -25,6 +27,8 @@ from build_release import (  # noqa: E402  # pyright: ignore[reportMissingImport
     compose_images,
     main,
     render_release_md,
+    repo_digest_matches,
+    save_reference,
     working_tree_clean,
     write_sha256sums,
 )
@@ -57,6 +61,36 @@ def test_compose_images_lists_every_prod_image() -> None:
     assert any(image.startswith("docker.io/pgvector/pgvector:") for image in images)
     assert any(image.startswith("docker.io/library/busybox:") for image in images)
     assert images.count("ais0c-litellm:9.9.9-test") == 1
+
+
+def test_save_reference_drops_the_digest() -> None:
+    compose = yaml.safe_load(PROD_COMPOSE.read_text(encoding="utf-8"))
+    images = compose_images(compose, "9.9.9-test")
+    pinned = [image for image in images if "@sha256:" in image]
+
+    assert len(pinned) == 6
+    for image in pinned:
+        assert save_reference(image) == image.split("@", 1)[0]
+    for image in images:
+        if image not in pinned:
+            assert save_reference(image) == image
+
+
+def test_repo_digest_matches_with_and_without_the_docker_io_prefix() -> None:
+    digest = "a" * 64
+
+    assert repo_digest_matches(
+        f"pgvector/pgvector@sha256:{digest}",
+        [f"docker.io/pgvector/pgvector:0.8.7-pg18-trixie@sha256:{digest}"],
+    )
+    assert repo_digest_matches(
+        f"busybox@sha256:{digest}",
+        [f"docker.io/library/busybox:1.37.0-musl@sha256:{digest}"],
+    )
+    assert not repo_digest_matches(
+        f"busybox@sha256:{digest}",
+        [f"docker.io/library/busybox:1.37.0-musl@sha256:{'b' * 64}"],
+    )
 
 
 def test_an_own_image_with_another_tag_is_refused() -> None:
@@ -220,6 +254,61 @@ def test_dry_run_prints_the_commands_in_order(
     assert not out.exists()
 
 
+def test_dry_run_saves_tag_references(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(build_release, "working_tree_clean", lambda root: True)
+    monkeypatch.setattr(build_release, "_fork_has_commit", lambda fork, version: True)
+
+    result = main(
+        [
+            "--version",
+            "9.9.9-test",
+            "--fork",
+            str(tmp_path / "fork"),
+            "--out",
+            str(tmp_path / "release"),
+            "--dry-run",
+        ]
+    )
+
+    assert result == 0
+    save_line = next(
+        line for line in capsys.readouterr().out.splitlines() if line.startswith("docker save ")
+    )
+    assert "@sha256:" not in save_line
+
+
+def test_a_tag_that_is_not_the_pinned_image_exits_1(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    plan = build_release.plan_release(ROOT, "0.1.0-test")
+    pinned_image = next(image for image in plan.images if "@sha256:" in image)
+    monkeypatch.setattr(build_release, "working_tree_clean", lambda root: True)
+    monkeypatch.setattr(build_release, "_fork_has_commit", lambda fork, version: True)
+    monkeypatch.setattr(build_release, "_inspect_image", lambda image, root: (0, "sha256:id"))
+    monkeypatch.setattr(
+        build_release,
+        "_inspect_repo_digests",
+        lambda image, root: (0, (f"{save_reference(image)}@sha256:{'f' * 64}",)),
+    )
+
+    result = main(
+        [
+            "--version",
+            plan.version,
+            "--fork",
+            str(tmp_path / "fork"),
+            "--out",
+            str(tmp_path / "release"),
+            "--skip-build",
+        ]
+    )
+
+    assert result == 1
+    assert pinned_image in capsys.readouterr().err
+
+
 def test_a_failed_step_exits_1_without_release_md(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -362,5 +451,26 @@ def test_a_real_release_builds_and_verifies(tmp_path: Path) -> None:
             text=True,
         )
         assert "manifest.json" in images_done.stdout.splitlines()
+        with tarfile.open(out / f"ais0c-images-{version}.tar.gz", "r:gz") as images_archive:
+            index_file = images_archive.extractfile("index.json")
+            assert index_file is not None
+            index = json.load(index_file)
+        manifests = index["manifests"]
+        assert all("io.containerd.image.name" in manifest["annotations"] for manifest in manifests)
+        saved_names = {
+            _normalized_saved_name(manifest["annotations"]["io.containerd.image.name"])
+            for manifest in manifests
+        }
+        plan = build_release.plan_release(ROOT, version)
+        expected_names = {_normalized_saved_name(save_reference(image)) for image in plan.images}
+        assert expected_names <= saved_names
     finally:
         subprocess.run(["docker", "image", "rm", *tags], check=False)
+
+
+def _normalized_saved_name(reference: str) -> str:
+    if reference.startswith("docker.io/"):
+        return reference
+    if "/" not in reference:
+        return f"docker.io/library/{reference}"
+    return reference
