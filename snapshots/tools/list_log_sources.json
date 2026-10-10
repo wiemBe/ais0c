@@ -1,0 +1,163 @@
+{
+  "inputSchema": {
+    "additionalProperties": false,
+    "properties": {
+      "fields": {
+        "description": "Optional comma-separated list of fields to include.",
+        "type": "string"
+      },
+      "filter": {
+        "description": "Optional filter expression.",
+        "type": "string"
+      },
+      "limit": {
+        "default": 10,
+        "description": "Maximum number of log sources to return (default: 10, max: 10000)",
+        "maximum": 10000,
+        "minimum": 1,
+        "type": "integer"
+      },
+      "offset": {
+        "default": 0,
+        "description": "Number of log sources to skip for pagination (default: 0)",
+        "minimum": 0,
+        "type": "integer"
+      },
+      "sort": {
+        "description": "Optional sort expression.",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  },
+  "name": "list_log_sources",
+  "outputSchema": {
+    "additionalProperties": true,
+    "properties": {
+      "items": {
+        "items": {
+          "additionalProperties": true,
+          "properties": {
+            "auto_discovered": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "average_eps": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "coalesce_events": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "creation_date": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "credibility": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "description": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "enabled": {
+              "type": "boolean"
+            },
+            "gateway": {
+              "type": "boolean"
+            },
+            "group_ids": {
+              "items": {
+                "type": "integer"
+              },
+              "type": "array"
+            },
+            "id": {
+              "type": "integer"
+            },
+            "internal": {
+              "type": "boolean"
+            },
+            "language_id": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "last_event_time": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "modified_date": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "name": {
+              "type": "string"
+            },
+            "protocol_type_id": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "requires_deploy": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "status": {
+              "type": [
+                "object",
+                "null"
+              ]
+            },
+            "store_event_payload": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "target_event_collector_id": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "type_id": {
+              "type": "integer"
+            }
+          },
+          "type": "object"
+        },
+        "type": "array"
+      }
+    },
+    "required": [
+      "items"
+    ],
+    "type": "object"
+  },
+  "profiles": [
+    "qradar-read"
+  ]
+}

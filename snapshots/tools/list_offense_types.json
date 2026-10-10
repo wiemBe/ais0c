@@ -1,0 +1,67 @@
+{
+  "inputSchema": {
+    "additionalProperties": false,
+    "properties": {
+      "fields": {
+        "description": "Optional comma-separated list of fields to return.",
+        "type": "string"
+      },
+      "filter": {
+        "description": "Optional AQL filter expression.",
+        "type": "string"
+      },
+      "limit": {
+        "default": 10,
+        "description": "Maximum number of results to return (default: 10)",
+        "maximum": 10000,
+        "minimum": 1,
+        "type": "integer"
+      },
+      "sort": {
+        "description": "Optional sort expression.",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  },
+  "name": "list_offense_types",
+  "outputSchema": {
+    "additionalProperties": true,
+    "properties": {
+      "items": {
+        "items": {
+          "additionalProperties": true,
+          "properties": {
+            "custom": {
+              "type": "boolean"
+            },
+            "database_type": {
+              "type": "string"
+            },
+            "id": {
+              "type": "integer"
+            },
+            "name": {
+              "type": "string"
+            },
+            "property_name": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "type": "object"
+        },
+        "type": "array"
+      }
+    },
+    "required": [
+      "items"
+    ],
+    "type": "object"
+  },
+  "profiles": [
+    "qradar-read"
+  ]
+}

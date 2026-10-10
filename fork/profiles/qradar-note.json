@@ -1,0 +1,10 @@
+{
+  "description": "qradar-note: add an offense note and read notes, nothing else (architecture 11.2). Used only by the Action Executor.",
+  "verb_toggles": {},
+  "group_toggles": {},
+  "per_tool_toggles": {
+    "AddOffenseNoteTool": true,
+    "GetOffenseNotesTool": true
+  },
+  "resource_toggles": {}
+}

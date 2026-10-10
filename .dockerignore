@@ -1,0 +1,73 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Testing
+tests/
+.tox/
+.coverage
+.coverage.*
+htmlcov/
+.pytest_cache/
+coverage-reports/
+xunit-reports/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Git
+.git/
+.gitignore
+
+# Documentation
+docs/
+docs/_build/
+README.md
+DEPLOYMENT.md
+
+# Local config (should use volume mounts instead)
+config.json
+config.example.json
+mcp_settings.json
+mcp_settings.example.json
+
+# Logs
+logs/
+*.log
+
+# Container-specific
+container/pip/
+container/rpm/
+container/conf/
+
+# Development
+dev_requirements.txt
+tox.ini
+.mypy_cache/
+docker-compose.yml
+Dockerfile
+.dockerignore
+
+# Fork: contract snapshots, CI and docs are not needed at runtime
+snapshots/
+.github/
+.ruff_cache/
+*.md
+secrets/

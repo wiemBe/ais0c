@@ -1,0 +1,53 @@
+# Example deployment of the platform fork: one instance per profile (architecture §11.2).
+#
+# - qradar-mcp-read  runs --profile qradar-read with a read-only QRadar token.
+# - qradar-mcp-note  runs --profile qradar-note with a token that can add offense notes.
+#
+# Only the MCP Policy Gateway should reach these services, so no port is published.
+# Secret files live in ./secrets/ (git-ignored) and must be readable by uid 1001.
+# Required: QRADAR_CONSOLE_FQDN in the environment or in .env.
+x-qradar-mcp: &qradar-mcp
+  build: .
+  image: qradar-mcp-fork:local
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  restart: unless-stopped
+  networks: [qradar-mcp]
+
+services:
+  qradar-mcp-read:
+    <<: *qradar-mcp
+    command: ["--profile", "qradar-read"]
+    environment:
+      QRADAR_CONSOLE_FQDN: ${QRADAR_CONSOLE_FQDN:?set QRADAR_CONSOLE_FQDN}
+      QRADAR_AUTH_TOKEN_FILE: /run/secrets/qradar_read_token
+      MCP_AUTH_TOKEN_FILE: /run/secrets/mcp_read_token
+      QRADAR_VERIFY_SSL: ${QRADAR_VERIFY_SSL:-true}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    secrets: [qradar_read_token, mcp_read_token]
+
+  qradar-mcp-note:
+    <<: *qradar-mcp
+    command: ["--profile", "qradar-note"]
+    environment:
+      QRADAR_CONSOLE_FQDN: ${QRADAR_CONSOLE_FQDN:?set QRADAR_CONSOLE_FQDN}
+      QRADAR_AUTH_TOKEN_FILE: /run/secrets/qradar_note_token
+      MCP_AUTH_TOKEN_FILE: /run/secrets/mcp_note_token
+      QRADAR_VERIFY_SSL: ${QRADAR_VERIFY_SSL:-true}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    secrets: [qradar_note_token, mcp_note_token]
+
+secrets:
+  qradar_read_token:
+    file: ./secrets/qradar_read_token
+  mcp_read_token:
+    file: ./secrets/mcp_read_token
+  qradar_note_token:
+    file: ./secrets/qradar_note_token
+  mcp_note_token:
+    file: ./secrets/mcp_note_token
+
+networks:
+  qradar-mcp:
+    name: qradar-mcp

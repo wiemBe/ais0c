@@ -1,0 +1,99 @@
+{
+  "inputSchema": {
+    "additionalProperties": false,
+    "properties": {
+      "fields": {
+        "description": "Optional comma-separated list of fields to return (e.g., 'id,name,type,enabled')",
+        "type": "string"
+      },
+      "rule_id": {
+        "description": "The ID of the analytics rule to retrieve",
+        "minimum": 0,
+        "type": "integer"
+      }
+    },
+    "required": [
+      "rule_id"
+    ],
+    "type": "object"
+  },
+  "name": "get_rule",
+  "outputSchema": {
+    "additionalProperties": true,
+    "properties": {
+      "average_capacity": {
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "base_capacity": {
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "base_host_id": {
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "capacity_timestamp": {
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "creation_date": {
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "enabled": {
+        "type": "boolean"
+      },
+      "id": {
+        "type": "integer"
+      },
+      "identifier": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "linked_rule_identifier": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "modification_date": {
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "name": {
+        "type": "string"
+      },
+      "origin": {
+        "type": "string"
+      },
+      "owner": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "type": {
+        "type": "string"
+      }
+    },
+    "type": "object"
+  },
+  "profiles": [
+    "qradar-read"
+  ]
+}

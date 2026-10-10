@@ -1,0 +1,156 @@
+[build-system]
+requires = ["setuptools", "wheel", "toml"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "qradar-mcp"
+description = "QRadar MCP Server - Model Context Protocol integration for QRadar"
+version = "1.0.0"
+requires-python = ">=3.11"
+authors = [
+    {name = "IBM QRadar Investigation Assistant Team"},
+]
+dependencies = [
+    "fastmcp>=3.2.0",
+    "uvicorn>=0.27.0",
+    "pydantic>=2.0.0",
+    "httpx>=0.27.0",
+    # Fork: strict validation of tool arguments (already installed through mcp).
+    "jsonschema>=4.0.0",
+]
+
+[project.scripts]
+# Fork: platform entry point, see fork/cli.py.
+qradar-mcp-fork = "qradar_mcp.fork.cli:run"
+
+[project.optional-dependencies]
+dev = [
+    "pylint>=3.0.0",
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-cov>=4.0.0",
+    "pytest-xdist>=3.0.0",
+    "qpylib>=2.0.9",
+]
+
+[project.urls]
+homepage = "https://github.com/IBM/qradar-mcp"
+
+[tool.setuptools]
+packages = ["qradar_mcp", "qradar_mcp.client", "qradar_mcp.tools", "qradar_mcp.tools.analytics", "qradar_mcp.tools.ariel", "qradar_mcp.tools.asset", "qradar_mcp.tools.config", "qradar_mcp.tools.data_classification", "qradar_mcp.tools.forensics", "qradar_mcp.tools.log_source", "qradar_mcp.tools.offense", "qradar_mcp.tools.qvm", "qradar_mcp.tools.reference_data", "qradar_mcp.tools.services", "qradar_mcp.tools.system", "qradar_mcp.utils", "qradar_mcp.resources", "qradar_mcp.fork"]
+package-dir = {"qradar_mcp" = "."}
+
+[tool.setuptools.package-data]
+qradar_mcp = ["feature_toggles.json"]
+"qradar_mcp.fork" = ["profiles/*.json"]
+
+# -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+# Pylint Configuration
+[tool.pylint.main]
+jobs = 1
+persistent = true
+recursive = true
+ignore = ["CVS", ".git", "__pycache__", ".venv", "venv", "env", "node_modules"]
+
+[tool.pylint."messages control"]
+disable = [
+    "C0111",  # missing-docstring (legacy, covered by C0114-C0116)
+    "R0903",  # too-few-public-methods (common in data classes/tools)
+    "C0301",  # line-too-long (handled by max-line-length setting)
+    "R0801",  # duplicate-code (can be noisy in tests)
+    "W0511",  # fixme (TODOs are okay during development)
+    "R0913",  # too-many-arguments (can be noisy in tests)
+]
+
+[tool.pylint.reports]
+output-format = "text"
+reports = false
+score = true
+
+[tool.pylint.basic]
+good-names = ["i", "j", "k", "ex", "Run", "_", "id", "db", "f", "e", "g"]
+bad-names = ["foo", "bar", "baz", "toto", "tutu", "tata"]
+
+[tool.pylint.format]
+max-line-length = 120
+max-module-lines = 1000
+indent-string = "    "
+indent-after-paren = 4
+
+[tool.pylint.logging]
+logging-format-style = "old"
+logging-modules = ["logging", "qpylib.qpylib"]
+
+[tool.pylint.design]
+max-args = 7
+max-attributes = 10
+max-bool-expr = 5
+max-branches = 12
+max-locals = 15
+max-parents = 7
+max-public-methods = 20
+max-returns = 7
+max-statements = 50
+min-public-methods = 2
+
+# -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+# Coverage.py Configuration
+[tool.coverage.report]
+fail_under = 0
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "if self\\.debug",
+    "def debug_",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if 0:",
+    "if __name__ == .__main__.:",
+]
+
+[tool.coverage.run]
+omit = ["*/tests/*", "setup.py", "version.py", "dev.py", "*/utils/generate_list_tool_schemas.py"]
+source = ["."]
+parallel = true
+
+# -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+
+# Pytest Configuration
+[tool.pytest.ini_options]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+
+testpaths = ["tests"]
+
+addopts = [
+    "-v",
+    "--tb=short",
+    "--strict-markers",
+]
+
+markers = [
+    "unit: Unit tests",
+    "integration: Integration tests",
+    "slow: Slow running tests",
+    "functional: marks tests as functional tests (deselect with '-m \"not functional\"')",
+    "lab: contract tests against a lab QRadar; skipped unless QRADAR_LAB_URL and QRADAR_LAB_TOKEN are set",
+]
+
+# -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+# Ruff (fork code only; upstream code keeps upstream's pylint setup)
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+include = ["fork/**/*.py", "tests/fork/**/*.py", "tests/lab/**/*.py"]
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "B", "UP", "S", "RUF", "ANN", "ASYNC", "BLE", "DTZ", "PT"]
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests use plain asserts and synthetic tokens, and check that the CLI passes 0.0.0.0 through.
+"tests/**" = ["S101", "S104", "S105", "S106"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["qradar_mcp"]

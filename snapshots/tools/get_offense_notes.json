@@ -1,0 +1,79 @@
+{
+  "inputSchema": {
+    "additionalProperties": false,
+    "properties": {
+      "fields": {
+        "description": "Optional comma-separated list of fields to return (e.g., 'id,note_text,create_time')",
+        "type": "string"
+      },
+      "filter": {
+        "description": "Optional filter to restrict notes",
+        "type": "string"
+      },
+      "limit": {
+        "default": 50,
+        "description": "Maximum number of notes to return",
+        "maximum": 100,
+        "minimum": 1,
+        "type": "integer"
+      },
+      "offense_id": {
+        "description": "The ID of the offense to retrieve notes for",
+        "minimum": 0,
+        "type": "integer"
+      },
+      "start": {
+        "default": 0,
+        "description": "Starting index for pagination (0-based)",
+        "minimum": 0,
+        "type": "integer"
+      }
+    },
+    "required": [
+      "offense_id"
+    ],
+    "type": "object"
+  },
+  "name": "get_offense_notes",
+  "outputSchema": {
+    "additionalProperties": true,
+    "properties": {
+      "notes": {
+        "items": {
+          "additionalProperties": true,
+          "properties": {
+            "create_time": {
+              "type": "integer"
+            },
+            "id": {
+              "type": "integer"
+            },
+            "note_text": {
+              "type": "string"
+            },
+            "username": {
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "offense_id": {
+        "type": "integer"
+      },
+      "total_notes": {
+        "type": "integer"
+      }
+    },
+    "required": [
+      "offense_id",
+      "total_notes",
+      "notes"
+    ],
+    "type": "object"
+  },
+  "profiles": [
+    "qradar-note"
+  ]
+}

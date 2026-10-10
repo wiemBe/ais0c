@@ -1,0 +1,138 @@
+{
+  "inputSchema": {
+    "additionalProperties": false,
+    "properties": {
+      "fields": {
+        "description": "Optional comma-separated list of fields to return (e.g., \"id,name,enabled,status\")",
+        "type": "string"
+      },
+      "log_source_id": {
+        "description": "The ID of the log source to retrieve",
+        "minimum": 0,
+        "type": "integer"
+      }
+    },
+    "required": [
+      "log_source_id"
+    ],
+    "type": "object"
+  },
+  "name": "get_log_source",
+  "outputSchema": {
+    "additionalProperties": true,
+    "properties": {
+      "auto_discovered": {
+        "type": [
+          "boolean",
+          "null"
+        ]
+      },
+      "average_eps": {
+        "type": [
+          "number",
+          "null"
+        ]
+      },
+      "coalesce_events": {
+        "type": [
+          "boolean",
+          "null"
+        ]
+      },
+      "creation_date": {
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "credibility": {
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "description": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "enabled": {
+        "type": "boolean"
+      },
+      "gateway": {
+        "type": "boolean"
+      },
+      "group_ids": {
+        "items": {
+          "type": "integer"
+        },
+        "type": "array"
+      },
+      "id": {
+        "type": "integer"
+      },
+      "internal": {
+        "type": "boolean"
+      },
+      "language_id": {
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "last_event_time": {
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "modified_date": {
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "name": {
+        "type": "string"
+      },
+      "protocol_type_id": {
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "requires_deploy": {
+        "type": [
+          "boolean",
+          "null"
+        ]
+      },
+      "status": {
+        "type": [
+          "object",
+          "null"
+        ]
+      },
+      "store_event_payload": {
+        "type": [
+          "boolean",
+          "null"
+        ]
+      },
+      "target_event_collector_id": {
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "type_id": {
+        "type": "integer"
+      }
+    },
+    "type": "object"
+  },
+  "profiles": [
+    "qradar-read"
+  ]
+}

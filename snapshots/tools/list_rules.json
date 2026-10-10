@@ -1,0 +1,120 @@
+{
+  "inputSchema": {
+    "additionalProperties": false,
+    "properties": {
+      "fields": {
+        "description": "Optional comma-separated list of fields to include.",
+        "type": "string"
+      },
+      "filter": {
+        "description": "Optional filter expression.",
+        "type": "string"
+      },
+      "limit": {
+        "default": 10,
+        "description": "Maximum number of rules to return (default: 10, max: 10000)",
+        "maximum": 10000,
+        "minimum": 1,
+        "type": "integer"
+      },
+      "offset": {
+        "default": 0,
+        "description": "Number of rules to skip for pagination (default: 0)",
+        "minimum": 0,
+        "type": "integer"
+      }
+    },
+    "type": "object"
+  },
+  "name": "list_rules",
+  "outputSchema": {
+    "additionalProperties": true,
+    "properties": {
+      "items": {
+        "items": {
+          "additionalProperties": true,
+          "properties": {
+            "average_capacity": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "base_capacity": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "base_host_id": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "capacity_timestamp": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "creation_date": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "enabled": {
+              "type": "boolean"
+            },
+            "id": {
+              "type": "integer"
+            },
+            "identifier": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "linked_rule_identifier": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "modification_date": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "name": {
+              "type": "string"
+            },
+            "origin": {
+              "type": "string"
+            },
+            "owner": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "type": {
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "type": "array"
+      }
+    },
+    "required": [
+      "items"
+    ],
+    "type": "object"
+  },
+  "profiles": [
+    "qradar-read"
+  ]
+}

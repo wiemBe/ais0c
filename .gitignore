@@ -1,0 +1,58 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Testing
+.tox/
+.coverage
+.coverage.*
+htmlcov/
+.pytest_cache/
+coverage-reports/
+xunit-reports/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Logs
+logs/
+*.log
+
+# Configuration files with sensitive data
+config.json
+mcp_settings.json
+.env
+
+# Build artifacts
+*.zip
+*.whl
+
+# Database
+*.db
+*.sqlite
+
+# Temporary files
+.cache/
+*.tmp
+
+# Fork: secret files for docker-compose.yml
+secrets/
+.ruff_cache/

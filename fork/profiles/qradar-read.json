@@ -1,0 +1,30 @@
+{
+  "description": "qradar-read: read tools and the Ariel search lifecycle (architecture 11.2). Verb and group toggles are empty, so nothing is enabled except the tools listed in per_tool_toggles.",
+  "verb_toggles": {},
+  "group_toggles": {},
+  "per_tool_toggles": {
+    "GetOffenseTool": true,
+    "ListOffensesTool": true,
+    "ListOffenseTypesTool": true,
+    "ListOffenseClosingReasonsTool": true,
+    "ListSourceAddressesTool": true,
+    "ListLocalDestinationAddressesTool": true,
+    "ListRulesTool": true,
+    "GetRuleTool": true,
+    "ListAssetsTool": true,
+    "ListLogSourcesTool": true,
+    "GetLogSourceTool": true,
+    "ListLogSourceTypesTool": true,
+    "ListReferenceSets": true,
+    "GetReferenceSetTool": true,
+    "ListReferenceMaps": true,
+    "GetReferenceMap": true,
+    "ListReferenceTables": true,
+    "GetReferenceTable": true,
+    "CreateArielSearchTool": true,
+    "GetArielSearchStatusTool": true,
+    "GetArielSearchResultsTool": true,
+    "DeleteArielSearchTool": true
+  },
+  "resource_toggles": {}
+}
