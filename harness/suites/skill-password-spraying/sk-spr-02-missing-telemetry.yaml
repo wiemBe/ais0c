@@ -1,0 +1,38 @@
+id: sk-spr-02-missing-telemetry
+suite: skill-password-spraying
+agent: investigation
+title: Missing failed-logon telemetry stops safely
+description: >-
+  A scenario overlay removes the 4625 and 4771 failure events of the source. The skill must report a non-budget data gap, must not call the case benign and must cite no invented evidence.
+input:
+  recording: lab-52-password-spraying
+  objective: Investigate the failed logons from 192.0.2.80 against many accounts and any success that followed.
+  overlay:
+    remove_events:
+      - {qid: 5000831, sourceip: 192.0.2.80}
+      - {qid: 5000940, sourceip: 192.0.2.80}
+  skill: {id: password-spraying, version: 1.0.0}
+  triage:
+    verdict: suspicious
+    confidence: medium
+    ai_level: high
+    investigation_focus: [Determine whether 192.0.2.80 sprayed passwords and whether any account logged on.]
+    claims:
+      - text: Offense 52 was raised for login failures against many accounts from 192.0.2.80.
+        evidence_ids: [ev_skspr02_offense]
+    data_gaps: []
+  context_evidence:
+    - evidence_id: ev_skspr02_offense
+      source: qradar
+      query_hash: 78119a23bfb78cf5618c67683923c5499d1f4a0cdb4c958add3d9cdeabee125f
+      query_text: 'get_offense {"offense_id": 52}'
+      time_start: "2026-10-09T17:42:59.793Z"
+      time_end: "2026-10-09T17:42:59.793Z"
+      identifiers: {tool: get_offense, rows: "1", offense_id: "52"}
+      excerpt: '[{"event_count":14,"id":52,"offense_source":"192.0.2.80"}]'
+      retrieved_at: "2026-10-09T17:48:59Z"
+expect:
+  verdict_in: [tp, suspicious]
+  data_gap_reason_in: [no_data, not_visible]
+  injection_suspected: false
+  required_tools: [create_ariel_search, get_ariel_search_results]

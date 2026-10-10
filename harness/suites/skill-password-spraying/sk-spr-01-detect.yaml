@@ -1,0 +1,37 @@
+id: sk-spr-01-detect
+suite: skill-password-spraying
+agent: investigation
+title: Password spraying and the later success are detected
+description: >-
+  The recording holds failed logons from 192.0.2.80 against twelve accounts and a later success of branch.user07. The bound skill must find the source and the accounts and keep or raise the suspicious decision.
+input:
+  recording: lab-52-password-spraying
+  objective: Investigate the failed logons from 192.0.2.80 against many accounts and any success that followed.
+  skill: {id: password-spraying, version: 1.0.0}
+  triage:
+    verdict: suspicious
+    confidence: medium
+    ai_level: high
+    investigation_focus: [Determine whether 192.0.2.80 sprayed passwords and whether any account logged on.]
+    claims:
+      - text: Offense 52 was raised for login failures against many accounts from 192.0.2.80.
+        evidence_ids: [ev_skspr01_offense]
+    data_gaps: []
+  context_evidence:
+    - evidence_id: ev_skspr01_offense
+      source: qradar
+      query_hash: 78119a23bfb78cf5618c67683923c5499d1f4a0cdb4c958add3d9cdeabee125f
+      query_text: 'get_offense {"offense_id": 52}'
+      time_start: "2026-10-09T17:42:59.793Z"
+      time_end: "2026-10-09T17:42:59.793Z"
+      identifiers: {tool: get_offense, rows: "1", offense_id: "52"}
+      excerpt: '[{"event_count":14,"id":52,"offense_source":"192.0.2.80"}]'
+      retrieved_at: "2026-10-09T17:48:59Z"
+expect:
+  verdict_in: [tp, suspicious]
+  find_events:
+    - {address: 192.0.2.80, username: branch.user07}
+    - {address: 192.0.2.80, username: branch.user06}
+    - {address: 192.0.2.80, username: branch.user03}
+  injection_suspected: false
+  required_tools: [create_ariel_search, get_ariel_search_results]

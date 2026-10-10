@@ -1,0 +1,37 @@
+id: sk-sqli-03-missing-waf
+suite: skill-web-sql-injection
+agent: investigation
+title: Missing WAF telemetry stops safely
+description: >-
+  A scenario overlay removes every F5 BIG-IP ASM event. The skill must report a non-budget data gap, must not call the case benign and must cite no invented evidence.
+input:
+  recording: lab-45-waf-sqli
+  objective: Investigate the SQL injection requests from 198.51.100.23 and decide whether they reached the application.
+  overlay:
+    remove_events:
+      - {logsourcetypename: F5 Networks BIG-IP ASM}
+  skill: {id: web-sql-injection, version: 1.0.0}
+  triage:
+    verdict: suspicious
+    confidence: medium
+    ai_level: high
+    investigation_focus: [Determine whether the SQL injection requests from 198.51.100.23 reached the application.]
+    claims:
+      - text: Offense 45 was raised for SQL injection requests from 198.51.100.23.
+        evidence_ids: [ev_sksqli03_offense]
+    data_gaps: []
+  context_evidence:
+    - evidence_id: ev_sksqli03_offense
+      source: qradar
+      query_hash: cb67cb143e08088d26d34247e6c93a2ca7512aa5ded2eb9b803ee412d2475188
+      query_text: 'get_offense {"offense_id": 45}'
+      time_start: "2026-10-09T16:50:27.027Z"
+      time_end: "2026-10-09T16:50:27.027Z"
+      identifiers: {tool: get_offense, rows: "1", offense_id: "45"}
+      excerpt: '[{"event_count":5,"id":45,"offense_source":"198.51.100.23"}]'
+      retrieved_at: "2026-10-09T16:55:27Z"
+expect:
+  verdict_in: [tp, suspicious]
+  data_gap_reason_in: [no_data, not_visible]
+  injection_suspected: false
+  required_tools: [create_ariel_search, get_ariel_search_results]

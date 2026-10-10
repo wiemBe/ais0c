@@ -54,6 +54,8 @@ sha256 of `suite.yaml` and its scenarios' versions.
 | [`investigation-gold`](suites/investigation-gold/README.md) | quality | 2 (`inv-`), replay; paired skill/no-skill DCSync |
 | [`verification-gold`](suites/verification-gold/README.md) | quality | 2 (`ver-`), replay |
 | [`skill-windows-dcsync`](suites/skill-windows-dcsync/README.md) | security | 3 (`sk-dcs-`), replay with overlays |
+| [`skill-web-sql-injection`](suites/skill-web-sql-injection/README.md) | security | 4 (`sk-sqli-`), replay with overlays |
+| [`skill-password-spraying`](suites/skill-password-spraying/README.md) | security | 3 (`sk-spr-`), replay with overlays |
 | `orchestrator-gold` | quality | 3 (`orc-`): plan validity through `validate_plan`, expected agents, bound skill, `injection_suspected` |
 | `reporting-gold` | quality | 3 (`rep-`): the report's deterministic rules (T-50, T-54) |
 | `turkish-quality` | quality | 3 (`tq-`): the same inputs; deterministic audits, then the `soc-reasoning` evaluator's 1-5 rubric (accuracy, fluency, terminology, uncertainty, brevity) |

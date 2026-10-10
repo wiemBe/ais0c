@@ -20,4 +20,4 @@ autonomy: L0
 can_delegate: false
 prompt: prompts/investigation/v2.md
 shared_rules: prompts/_shared/rules/v2.md
-eval_suites: [investigation-gold, skill-windows-dcsync, prompt-injection, failure-recovery, trust-layers]
+eval_suites: [investigation-gold, skill-windows-dcsync, skill-web-sql-injection, skill-password-spraying, prompt-injection, failure-recovery, trust-layers]

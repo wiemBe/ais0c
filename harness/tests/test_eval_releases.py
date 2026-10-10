@@ -40,7 +40,12 @@ def test_the_agents_of_each_alias_come_from_the_manifests() -> None:
     assert agents["soc-reasoning"] == [
         AgentSuites(
             agent_id="investigation",
-            suites=("investigation-gold", "skill-windows-dcsync"),
+            suites=(
+                "investigation-gold",
+                "skill-password-spraying",
+                "skill-web-sql-injection",
+                "skill-windows-dcsync",
+            ),
         ),
         AgentSuites(agent_id="orchestrator", suites=("orchestrator-gold",)),
     ]

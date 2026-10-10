@@ -1,0 +1,327 @@
+id: sk-sqli-02-blocked
+suite: skill-web-sql-injection
+agent: investigation
+title: A blocked SQL injection is still an attack
+description: >-
+  An overlay replaces the 16 requests with their blocked variants (request_status blocked, response code 0), although the offense rule name says not blocked. The skill must look at the events and must not call the blocked attack a false positive.
+input:
+  recording: lab-45-waf-sqli
+  objective: Investigate the SQL injection requests from 198.51.100.23 and decide whether they reached the application.
+  overlay:
+    remove_events:
+      - {qid: 55250100, sourceip: 198.51.100.23}
+    add_events:
+      - starttime: 1791564627027
+        endtime: 1791564627027
+        qid: 55250100
+        qidname: "SQL-Injection"
+        category: 5028
+        categoryname: "SQL Injection"
+        logsourceid: 214
+        logsourcename: "waf-prod-01@F5-WAF"
+        logsourcetypename: "F5 Networks BIG-IP ASM"
+        devicetype: 213
+        sourceip: "198.51.100.23"
+        destinationip: "192.0.2.17"
+        sourceport: 60695
+        destinationport: 443
+        username: null
+        eventcount: 1
+        magnitude: 6
+        payload: "<134>Oct  9 17:32:27 waf-prod-01 ASM:unit_hostname=\"waf-prod-01.bank.example\",management_ip_address=\"192.0.2.3\",http_class_name=\"/Common/bank_web_policy\",web_application_name=\"/Common/bank_web_policy\",policy_name=\"/Common/bank_web_policy\",policy_apply_date=\"2026-01-01 00:00:00\",violations=\"Attack signature detected\",support_id=\"5933893620649192225\",request_status=\"blocked\",response_code=\"0\",ip_client=\"198.51.100.23\",route_domain=\"0\",method=\"GET\",protocol=\"HTTP\",query_string=\"id=1 union select null,null\",x_forwarded_for_header_value=\"N/A\",sig_ids=\"200002147\",sig_names=\"SQL-INJ union select (Parameter)\",date_time=\"2026-10-09 17:32:27\",severity=\"Critical\",attack_type=\"SQL-Injection\",geo_location=\"N/A\",ip_address_intelligence=\"N/A\",username=\"N/A\",session_id=\"0\",src_port=\"60695\",dest_port=\"443\",dest_ip=\"192.0.2.17\",sub_violations=\"N/A\",virus_name=\"N/A\",violation_rating=\"5\",vs_name=\"/Common/bank_web_vs\",uri=\"/login\",request=\"GET /login?id=1 union select null,null HTTP/1.1 User-Agent: sqlmap/1.7.2 (https://sqlmap.example.com)\"\n"
+      - starttime: 1791564627027
+        endtime: 1791564627027
+        qid: 55250100
+        qidname: "SQL-Injection"
+        category: 5028
+        categoryname: "SQL Injection"
+        logsourceid: 214
+        logsourcename: "waf-prod-01@F5-WAF"
+        logsourcetypename: "F5 Networks BIG-IP ASM"
+        devicetype: 213
+        sourceip: "198.51.100.23"
+        destinationip: "192.0.2.22"
+        sourceport: 13406
+        destinationport: 443
+        username: null
+        eventcount: 1
+        magnitude: 6
+        payload: "<134>Oct  9 17:32:47 waf-prod-01 ASM:unit_hostname=\"waf-prod-01.bank.example\",management_ip_address=\"192.0.2.3\",http_class_name=\"/Common/bank_web_policy\",web_application_name=\"/Common/bank_web_policy\",policy_name=\"/Common/bank_web_policy\",policy_apply_date=\"2026-01-01 00:00:00\",violations=\"Attack signature detected\",support_id=\"3496739274475874038\",request_status=\"blocked\",response_code=\"0\",ip_client=\"198.51.100.23\",route_domain=\"0\",method=\"GET\",protocol=\"HTTP\",query_string=\"id=1 union select null,null\",x_forwarded_for_header_value=\"N/A\",sig_ids=\"200002147\",sig_names=\"SQL-INJ union select (Parameter)\",date_time=\"2026-10-09 17:32:47\",severity=\"Critical\",attack_type=\"SQL-Injection\",geo_location=\"N/A\",ip_address_intelligence=\"N/A\",username=\"N/A\",session_id=\"0\",src_port=\"13406\",dest_port=\"443\",dest_ip=\"192.0.2.22\",sub_violations=\"N/A\",virus_name=\"N/A\",violation_rating=\"5\",vs_name=\"/Common/bank_web_vs\",uri=\"/account/statement\",request=\"GET /account/statement?id=1 union select null,null HTTP/1.1 User-Agent: sqlmap/1.7.2 (https://sqlmap.example.com)\"\n"
+      - starttime: 1791564627027
+        endtime: 1791564627027
+        qid: 55250100
+        qidname: "SQL-Injection"
+        category: 5028
+        categoryname: "SQL Injection"
+        logsourceid: 214
+        logsourcename: "waf-prod-01@F5-WAF"
+        logsourcetypename: "F5 Networks BIG-IP ASM"
+        devicetype: 213
+        sourceip: "198.51.100.23"
+        destinationip: "192.0.2.29"
+        sourceport: 29550
+        destinationport: 443
+        username: null
+        eventcount: 1
+        magnitude: 6
+        payload: "<134>Oct  9 17:31:27 waf-prod-01 ASM:unit_hostname=\"waf-prod-01.bank.example\",management_ip_address=\"192.0.2.3\",http_class_name=\"/Common/bank_web_policy\",web_application_name=\"/Common/bank_web_policy\",policy_name=\"/Common/bank_web_policy\",policy_apply_date=\"2026-01-01 00:00:00\",violations=\"Attack signature detected\",support_id=\"6164459124402732148\",request_status=\"blocked\",response_code=\"0\",ip_client=\"198.51.100.23\",route_domain=\"0\",method=\"GET\",protocol=\"HTTP\",query_string=\"user=admin'--\",x_forwarded_for_header_value=\"N/A\",sig_ids=\"200002147\",sig_names=\"SQL-INJ union select (Parameter)\",date_time=\"2026-10-09 17:31:27\",severity=\"Critical\",attack_type=\"SQL-Injection\",geo_location=\"N/A\",ip_address_intelligence=\"N/A\",username=\"N/A\",session_id=\"0\",src_port=\"29550\",dest_port=\"443\",dest_ip=\"192.0.2.29\",sub_violations=\"N/A\",virus_name=\"N/A\",violation_rating=\"5\",vs_name=\"/Common/bank_web_vs\",uri=\"/search\",request=\"GET /search?user=admin'-- HTTP/1.1 User-Agent: sqlmap/1.7.2 (https://sqlmap.example.com)\"\n"
+      - starttime: 1791564627027
+        endtime: 1791564627027
+        qid: 55250100
+        qidname: "SQL-Injection"
+        category: 5028
+        categoryname: "SQL Injection"
+        logsourceid: 214
+        logsourcename: "waf-prod-01@F5-WAF"
+        logsourcetypename: "F5 Networks BIG-IP ASM"
+        devicetype: 213
+        sourceip: "198.51.100.23"
+        destinationip: "192.0.2.45"
+        sourceport: 46512
+        destinationport: 443
+        username: null
+        eventcount: 1
+        magnitude: 6
+        payload: "<134>Oct  9 17:31:07 waf-prod-01 ASM:unit_hostname=\"waf-prod-01.bank.example\",management_ip_address=\"192.0.2.3\",http_class_name=\"/Common/bank_web_policy\",web_application_name=\"/Common/bank_web_policy\",policy_name=\"/Common/bank_web_policy\",policy_apply_date=\"2026-01-01 00:00:00\",violations=\"Attack signature detected\",support_id=\"2215011536229792574\",request_status=\"blocked\",response_code=\"0\",ip_client=\"198.51.100.23\",route_domain=\"0\",method=\"GET\",protocol=\"HTTP\",query_string=\"id=1 union select null,null\",x_forwarded_for_header_value=\"N/A\",sig_ids=\"200002147\",sig_names=\"SQL-INJ union select (Parameter)\",date_time=\"2026-10-09 17:31:07\",severity=\"Critical\",attack_type=\"SQL-Injection\",geo_location=\"N/A\",ip_address_intelligence=\"N/A\",username=\"N/A\",session_id=\"0\",src_port=\"46512\",dest_port=\"443\",dest_ip=\"192.0.2.45\",sub_violations=\"N/A\",virus_name=\"N/A\",violation_rating=\"5\",vs_name=\"/Common/bank_web_vs\",uri=\"/login\",request=\"GET /login?id=1 union select null,null HTTP/1.1 User-Agent: sqlmap/1.7.2 (https://sqlmap.example.com)\"\n"
+      - starttime: 1791564627027
+        endtime: 1791564627027
+        qid: 55250100
+        qidname: "SQL-Injection"
+        category: 5028
+        categoryname: "SQL Injection"
+        logsourceid: 214
+        logsourcename: "waf-prod-01@F5-WAF"
+        logsourcetypename: "F5 Networks BIG-IP ASM"
+        devicetype: 213
+        sourceip: "198.51.100.23"
+        destinationip: "192.0.2.61"
+        sourceport: 37942
+        destinationport: 443
+        username: null
+        eventcount: 1
+        magnitude: 6
+        payload: "<134>Oct  9 17:32:07 waf-prod-01 ASM:unit_hostname=\"waf-prod-01.bank.example\",management_ip_address=\"192.0.2.3\",http_class_name=\"/Common/bank_web_policy\",web_application_name=\"/Common/bank_web_policy\",policy_name=\"/Common/bank_web_policy\",policy_apply_date=\"2026-01-01 00:00:00\",violations=\"Attack signature detected\",support_id=\"1157830462452157974\",request_status=\"blocked\",response_code=\"0\",ip_client=\"198.51.100.23\",route_domain=\"0\",method=\"GET\",protocol=\"HTTP\",query_string=\"id=1 union select null,null\",x_forwarded_for_header_value=\"N/A\",sig_ids=\"200002147\",sig_names=\"SQL-INJ union select (Parameter)\",date_time=\"2026-10-09 17:32:07\",severity=\"Critical\",attack_type=\"SQL-Injection\",geo_location=\"N/A\",ip_address_intelligence=\"N/A\",username=\"N/A\",session_id=\"0\",src_port=\"37942\",dest_port=\"443\",dest_ip=\"192.0.2.61\",sub_violations=\"N/A\",virus_name=\"N/A\",violation_rating=\"5\",vs_name=\"/Common/bank_web_vs\",uri=\"/api/v1/branches\",request=\"GET /api/v1/branches?id=1 union select null,null HTTP/1.1 User-Agent: sqlmap/1.7.2 (https://sqlmap.example.com)\"\n"
+      - starttime: 1791564627027
+        endtime: 1791564627027
+        qid: 55250100
+        qidname: "SQL-Injection"
+        category: 5028
+        categoryname: "SQL Injection"
+        logsourceid: 214
+        logsourcename: "waf-prod-01@F5-WAF"
+        logsourcetypename: "F5 Networks BIG-IP ASM"
+        devicetype: 213
+        sourceip: "198.51.100.23"
+        destinationip: "192.0.2.65"
+        sourceport: 42982
+        destinationport: 443
+        username: null
+        eventcount: 1
+        magnitude: 6
+        payload: "<134>Oct  9 17:30:47 waf-prod-01 ASM:unit_hostname=\"waf-prod-01.bank.example\",management_ip_address=\"192.0.2.3\",http_class_name=\"/Common/bank_web_policy\",web_application_name=\"/Common/bank_web_policy\",policy_name=\"/Common/bank_web_policy\",policy_apply_date=\"2026-01-01 00:00:00\",violations=\"Attack signature detected\",support_id=\"5105309042210713189\",request_status=\"blocked\",response_code=\"0\",ip_client=\"198.51.100.23\",route_domain=\"0\",method=\"GET\",protocol=\"HTTP\",query_string=\"id=1' or '1'='1\",x_forwarded_for_header_value=\"N/A\",sig_ids=\"200002147\",sig_names=\"SQL-INJ union select (Parameter)\",date_time=\"2026-10-09 17:30:47\",severity=\"Critical\",attack_type=\"SQL-Injection\",geo_location=\"N/A\",ip_address_intelligence=\"N/A\",username=\"N/A\",session_id=\"0\",src_port=\"42982\",dest_port=\"443\",dest_ip=\"192.0.2.65\",sub_violations=\"N/A\",virus_name=\"N/A\",violation_rating=\"5\",vs_name=\"/Common/bank_web_vs\",uri=\"/help\",request=\"GET /help?id=1' or '1'='1 HTTP/1.1 User-Agent: sqlmap/1.7.2 (https://sqlmap.example.com)\"\n"
+      - starttime: 1791564627027
+        endtime: 1791564627027
+        qid: 55250100
+        qidname: "SQL-Injection"
+        category: 5028
+        categoryname: "SQL Injection"
+        logsourceid: 214
+        logsourcename: "waf-prod-01@F5-WAF"
+        logsourcetypename: "F5 Networks BIG-IP ASM"
+        devicetype: 213
+        sourceip: "198.51.100.23"
+        destinationip: "192.0.2.68"
+        sourceport: 7110
+        destinationport: 443
+        username: null
+        eventcount: 1
+        magnitude: 6
+        payload: "<134>Oct  9 17:31:47 waf-prod-01 ASM:unit_hostname=\"waf-prod-01.bank.example\",management_ip_address=\"192.0.2.3\",http_class_name=\"/Common/bank_web_policy\",web_application_name=\"/Common/bank_web_policy\",policy_name=\"/Common/bank_web_policy\",policy_apply_date=\"2026-01-01 00:00:00\",violations=\"Attack signature detected\",support_id=\"4732978229416651494\",request_status=\"blocked\",response_code=\"0\",ip_client=\"198.51.100.23\",route_domain=\"0\",method=\"GET\",protocol=\"HTTP\",query_string=\"user=admin'--\",x_forwarded_for_header_value=\"N/A\",sig_ids=\"200002147\",sig_names=\"SQL-INJ union select (Parameter)\",date_time=\"2026-10-09 17:31:47\",severity=\"Critical\",attack_type=\"SQL-Injection\",geo_location=\"N/A\",ip_address_intelligence=\"N/A\",username=\"N/A\",session_id=\"0\",src_port=\"7110\",dest_port=\"443\",dest_ip=\"192.0.2.68\",sub_violations=\"N/A\",virus_name=\"N/A\",violation_rating=\"5\",vs_name=\"/Common/bank_web_vs\",uri=\"/help\",request=\"GET /help?user=admin'-- HTTP/1.1 User-Agent: sqlmap/1.7.2 (https://sqlmap.example.com)\"\n"
+      - starttime: 1791564627027
+        endtime: 1791564627027
+        qid: 55250100
+        qidname: "SQL-Injection"
+        category: 5028
+        categoryname: "SQL Injection"
+        logsourceid: 214
+        logsourcename: "waf-prod-01@F5-WAF"
+        logsourcetypename: "F5 Networks BIG-IP ASM"
+        devicetype: 213
+        sourceip: "198.51.100.23"
+        destinationip: "192.0.2.78"
+        sourceport: 30436
+        destinationport: 443
+        username: null
+        eventcount: 1
+        magnitude: 6
+        payload: "<134>Oct  9 17:30:27 waf-prod-01 ASM:unit_hostname=\"waf-prod-01.bank.example\",management_ip_address=\"192.0.2.3\",http_class_name=\"/Common/bank_web_policy\",web_application_name=\"/Common/bank_web_policy\",policy_name=\"/Common/bank_web_policy\",policy_apply_date=\"2026-01-01 00:00:00\",violations=\"Attack signature detected\",support_id=\"6689749581505759665\",request_status=\"blocked\",response_code=\"0\",ip_client=\"198.51.100.23\",route_domain=\"0\",method=\"GET\",protocol=\"HTTP\",query_string=\"user=admin'--\",x_forwarded_for_header_value=\"N/A\",sig_ids=\"200002147\",sig_names=\"SQL-INJ union select (Parameter)\",date_time=\"2026-10-09 17:30:27\",severity=\"Critical\",attack_type=\"SQL-Injection\",geo_location=\"N/A\",ip_address_intelligence=\"N/A\",username=\"N/A\",session_id=\"0\",src_port=\"30436\",dest_port=\"443\",dest_ip=\"192.0.2.78\",sub_violations=\"N/A\",virus_name=\"N/A\",violation_rating=\"5\",vs_name=\"/Common/bank_web_vs\",uri=\"/search\",request=\"GET /search?user=admin'-- HTTP/1.1 User-Agent: sqlmap/1.7.2 (https://sqlmap.example.com)\"\n"
+      - starttime: 1791566642208
+        endtime: 1791566642208
+        qid: 55250100
+        qidname: "SQL-Injection"
+        category: 5028
+        categoryname: "SQL Injection"
+        logsourceid: 214
+        logsourcename: "waf-prod-01@F5-WAF"
+        logsourcetypename: "F5 Networks BIG-IP ASM"
+        devicetype: 213
+        sourceip: "198.51.100.23"
+        destinationip: "192.0.2.17"
+        sourceport: 60695
+        destinationport: 443
+        username: null
+        eventcount: 1
+        magnitude: 6
+        payload: "<134>Oct  9 18:06:02 waf-prod-01 ASM:unit_hostname=\"waf-prod-01.bank.example\",management_ip_address=\"192.0.2.3\",http_class_name=\"/Common/bank_web_policy\",web_application_name=\"/Common/bank_web_policy\",policy_name=\"/Common/bank_web_policy\",policy_apply_date=\"2026-01-01 00:00:00\",violations=\"Attack signature detected\",support_id=\"5933893620649192225\",request_status=\"blocked\",response_code=\"0\",ip_client=\"198.51.100.23\",route_domain=\"0\",method=\"GET\",protocol=\"HTTP\",query_string=\"id=1 union select null,null\",x_forwarded_for_header_value=\"N/A\",sig_ids=\"200002147\",sig_names=\"SQL-INJ union select (Parameter)\",date_time=\"2026-10-09 18:06:02\",severity=\"Critical\",attack_type=\"SQL-Injection\",geo_location=\"N/A\",ip_address_intelligence=\"N/A\",username=\"N/A\",session_id=\"0\",src_port=\"60695\",dest_port=\"443\",dest_ip=\"192.0.2.17\",sub_violations=\"N/A\",virus_name=\"N/A\",violation_rating=\"5\",vs_name=\"/Common/bank_web_vs\",uri=\"/login\",request=\"GET /login?id=1 union select null,null HTTP/1.1 User-Agent: sqlmap/1.7.2 (https://sqlmap.example.com)\"\n"
+      - starttime: 1791566642208
+        endtime: 1791566642208
+        qid: 55250100
+        qidname: "SQL-Injection"
+        category: 5028
+        categoryname: "SQL Injection"
+        logsourceid: 214
+        logsourcename: "waf-prod-01@F5-WAF"
+        logsourcetypename: "F5 Networks BIG-IP ASM"
+        devicetype: 213
+        sourceip: "198.51.100.23"
+        destinationip: "192.0.2.22"
+        sourceport: 13406
+        destinationport: 443
+        username: null
+        eventcount: 1
+        magnitude: 6
+        payload: "<134>Oct  9 18:06:22 waf-prod-01 ASM:unit_hostname=\"waf-prod-01.bank.example\",management_ip_address=\"192.0.2.3\",http_class_name=\"/Common/bank_web_policy\",web_application_name=\"/Common/bank_web_policy\",policy_name=\"/Common/bank_web_policy\",policy_apply_date=\"2026-01-01 00:00:00\",violations=\"Attack signature detected\",support_id=\"3496739274475874038\",request_status=\"blocked\",response_code=\"0\",ip_client=\"198.51.100.23\",route_domain=\"0\",method=\"GET\",protocol=\"HTTP\",query_string=\"id=1 union select null,null\",x_forwarded_for_header_value=\"N/A\",sig_ids=\"200002147\",sig_names=\"SQL-INJ union select (Parameter)\",date_time=\"2026-10-09 18:06:22\",severity=\"Critical\",attack_type=\"SQL-Injection\",geo_location=\"N/A\",ip_address_intelligence=\"N/A\",username=\"N/A\",session_id=\"0\",src_port=\"13406\",dest_port=\"443\",dest_ip=\"192.0.2.22\",sub_violations=\"N/A\",virus_name=\"N/A\",violation_rating=\"5\",vs_name=\"/Common/bank_web_vs\",uri=\"/account/statement\",request=\"GET /account/statement?id=1 union select null,null HTTP/1.1 User-Agent: sqlmap/1.7.2 (https://sqlmap.example.com)\"\n"
+      - starttime: 1791566642208
+        endtime: 1791566642208
+        qid: 55250100
+        qidname: "SQL-Injection"
+        category: 5028
+        categoryname: "SQL Injection"
+        logsourceid: 214
+        logsourcename: "waf-prod-01@F5-WAF"
+        logsourcetypename: "F5 Networks BIG-IP ASM"
+        devicetype: 213
+        sourceip: "198.51.100.23"
+        destinationip: "192.0.2.29"
+        sourceport: 29550
+        destinationport: 443
+        username: null
+        eventcount: 1
+        magnitude: 6
+        payload: "<134>Oct  9 18:05:02 waf-prod-01 ASM:unit_hostname=\"waf-prod-01.bank.example\",management_ip_address=\"192.0.2.3\",http_class_name=\"/Common/bank_web_policy\",web_application_name=\"/Common/bank_web_policy\",policy_name=\"/Common/bank_web_policy\",policy_apply_date=\"2026-01-01 00:00:00\",violations=\"Attack signature detected\",support_id=\"6164459124402732148\",request_status=\"blocked\",response_code=\"0\",ip_client=\"198.51.100.23\",route_domain=\"0\",method=\"GET\",protocol=\"HTTP\",query_string=\"user=admin'--\",x_forwarded_for_header_value=\"N/A\",sig_ids=\"200002147\",sig_names=\"SQL-INJ union select (Parameter)\",date_time=\"2026-10-09 18:05:02\",severity=\"Critical\",attack_type=\"SQL-Injection\",geo_location=\"N/A\",ip_address_intelligence=\"N/A\",username=\"N/A\",session_id=\"0\",src_port=\"29550\",dest_port=\"443\",dest_ip=\"192.0.2.29\",sub_violations=\"N/A\",virus_name=\"N/A\",violation_rating=\"5\",vs_name=\"/Common/bank_web_vs\",uri=\"/search\",request=\"GET /search?user=admin'-- HTTP/1.1 User-Agent: sqlmap/1.7.2 (https://sqlmap.example.com)\"\n"
+      - starttime: 1791566642208
+        endtime: 1791566642208
+        qid: 55250100
+        qidname: "SQL-Injection"
+        category: 5028
+        categoryname: "SQL Injection"
+        logsourceid: 214
+        logsourcename: "waf-prod-01@F5-WAF"
+        logsourcetypename: "F5 Networks BIG-IP ASM"
+        devicetype: 213
+        sourceip: "198.51.100.23"
+        destinationip: "192.0.2.45"
+        sourceport: 46512
+        destinationport: 443
+        username: null
+        eventcount: 1
+        magnitude: 6
+        payload: "<134>Oct  9 18:04:42 waf-prod-01 ASM:unit_hostname=\"waf-prod-01.bank.example\",management_ip_address=\"192.0.2.3\",http_class_name=\"/Common/bank_web_policy\",web_application_name=\"/Common/bank_web_policy\",policy_name=\"/Common/bank_web_policy\",policy_apply_date=\"2026-01-01 00:00:00\",violations=\"Attack signature detected\",support_id=\"2215011536229792574\",request_status=\"blocked\",response_code=\"0\",ip_client=\"198.51.100.23\",route_domain=\"0\",method=\"GET\",protocol=\"HTTP\",query_string=\"id=1 union select null,null\",x_forwarded_for_header_value=\"N/A\",sig_ids=\"200002147\",sig_names=\"SQL-INJ union select (Parameter)\",date_time=\"2026-10-09 18:04:42\",severity=\"Critical\",attack_type=\"SQL-Injection\",geo_location=\"N/A\",ip_address_intelligence=\"N/A\",username=\"N/A\",session_id=\"0\",src_port=\"46512\",dest_port=\"443\",dest_ip=\"192.0.2.45\",sub_violations=\"N/A\",virus_name=\"N/A\",violation_rating=\"5\",vs_name=\"/Common/bank_web_vs\",uri=\"/login\",request=\"GET /login?id=1 union select null,null HTTP/1.1 User-Agent: sqlmap/1.7.2 (https://sqlmap.example.com)\"\n"
+      - starttime: 1791566642208
+        endtime: 1791566642208
+        qid: 55250100
+        qidname: "SQL-Injection"
+        category: 5028
+        categoryname: "SQL Injection"
+        logsourceid: 214
+        logsourcename: "waf-prod-01@F5-WAF"
+        logsourcetypename: "F5 Networks BIG-IP ASM"
+        devicetype: 213
+        sourceip: "198.51.100.23"
+        destinationip: "192.0.2.61"
+        sourceport: 37942
+        destinationport: 443
+        username: null
+        eventcount: 1
+        magnitude: 6
+        payload: "<134>Oct  9 18:05:42 waf-prod-01 ASM:unit_hostname=\"waf-prod-01.bank.example\",management_ip_address=\"192.0.2.3\",http_class_name=\"/Common/bank_web_policy\",web_application_name=\"/Common/bank_web_policy\",policy_name=\"/Common/bank_web_policy\",policy_apply_date=\"2026-01-01 00:00:00\",violations=\"Attack signature detected\",support_id=\"1157830462452157974\",request_status=\"blocked\",response_code=\"0\",ip_client=\"198.51.100.23\",route_domain=\"0\",method=\"GET\",protocol=\"HTTP\",query_string=\"id=1 union select null,null\",x_forwarded_for_header_value=\"N/A\",sig_ids=\"200002147\",sig_names=\"SQL-INJ union select (Parameter)\",date_time=\"2026-10-09 18:05:42\",severity=\"Critical\",attack_type=\"SQL-Injection\",geo_location=\"N/A\",ip_address_intelligence=\"N/A\",username=\"N/A\",session_id=\"0\",src_port=\"37942\",dest_port=\"443\",dest_ip=\"192.0.2.61\",sub_violations=\"N/A\",virus_name=\"N/A\",violation_rating=\"5\",vs_name=\"/Common/bank_web_vs\",uri=\"/api/v1/branches\",request=\"GET /api/v1/branches?id=1 union select null,null HTTP/1.1 User-Agent: sqlmap/1.7.2 (https://sqlmap.example.com)\"\n"
+      - starttime: 1791566642208
+        endtime: 1791566642208
+        qid: 55250100
+        qidname: "SQL-Injection"
+        category: 5028
+        categoryname: "SQL Injection"
+        logsourceid: 214
+        logsourcename: "waf-prod-01@F5-WAF"
+        logsourcetypename: "F5 Networks BIG-IP ASM"
+        devicetype: 213
+        sourceip: "198.51.100.23"
+        destinationip: "192.0.2.65"
+        sourceport: 42982
+        destinationport: 443
+        username: null
+        eventcount: 1
+        magnitude: 6
+        payload: "<134>Oct  9 18:04:22 waf-prod-01 ASM:unit_hostname=\"waf-prod-01.bank.example\",management_ip_address=\"192.0.2.3\",http_class_name=\"/Common/bank_web_policy\",web_application_name=\"/Common/bank_web_policy\",policy_name=\"/Common/bank_web_policy\",policy_apply_date=\"2026-01-01 00:00:00\",violations=\"Attack signature detected\",support_id=\"5105309042210713189\",request_status=\"blocked\",response_code=\"0\",ip_client=\"198.51.100.23\",route_domain=\"0\",method=\"GET\",protocol=\"HTTP\",query_string=\"id=1' or '1'='1\",x_forwarded_for_header_value=\"N/A\",sig_ids=\"200002147\",sig_names=\"SQL-INJ union select (Parameter)\",date_time=\"2026-10-09 18:04:22\",severity=\"Critical\",attack_type=\"SQL-Injection\",geo_location=\"N/A\",ip_address_intelligence=\"N/A\",username=\"N/A\",session_id=\"0\",src_port=\"42982\",dest_port=\"443\",dest_ip=\"192.0.2.65\",sub_violations=\"N/A\",virus_name=\"N/A\",violation_rating=\"5\",vs_name=\"/Common/bank_web_vs\",uri=\"/help\",request=\"GET /help?id=1' or '1'='1 HTTP/1.1 User-Agent: sqlmap/1.7.2 (https://sqlmap.example.com)\"\n"
+      - starttime: 1791566642208
+        endtime: 1791566642208
+        qid: 55250100
+        qidname: "SQL-Injection"
+        category: 5028
+        categoryname: "SQL Injection"
+        logsourceid: 214
+        logsourcename: "waf-prod-01@F5-WAF"
+        logsourcetypename: "F5 Networks BIG-IP ASM"
+        devicetype: 213
+        sourceip: "198.51.100.23"
+        destinationip: "192.0.2.68"
+        sourceport: 7110
+        destinationport: 443
+        username: null
+        eventcount: 1
+        magnitude: 6
+        payload: "<134>Oct  9 18:05:22 waf-prod-01 ASM:unit_hostname=\"waf-prod-01.bank.example\",management_ip_address=\"192.0.2.3\",http_class_name=\"/Common/bank_web_policy\",web_application_name=\"/Common/bank_web_policy\",policy_name=\"/Common/bank_web_policy\",policy_apply_date=\"2026-01-01 00:00:00\",violations=\"Attack signature detected\",support_id=\"4732978229416651494\",request_status=\"blocked\",response_code=\"0\",ip_client=\"198.51.100.23\",route_domain=\"0\",method=\"GET\",protocol=\"HTTP\",query_string=\"user=admin'--\",x_forwarded_for_header_value=\"N/A\",sig_ids=\"200002147\",sig_names=\"SQL-INJ union select (Parameter)\",date_time=\"2026-10-09 18:05:22\",severity=\"Critical\",attack_type=\"SQL-Injection\",geo_location=\"N/A\",ip_address_intelligence=\"N/A\",username=\"N/A\",session_id=\"0\",src_port=\"7110\",dest_port=\"443\",dest_ip=\"192.0.2.68\",sub_violations=\"N/A\",virus_name=\"N/A\",violation_rating=\"5\",vs_name=\"/Common/bank_web_vs\",uri=\"/help\",request=\"GET /help?user=admin'-- HTTP/1.1 User-Agent: sqlmap/1.7.2 (https://sqlmap.example.com)\"\n"
+      - starttime: 1791566642208
+        endtime: 1791566642208
+        qid: 55250100
+        qidname: "SQL-Injection"
+        category: 5028
+        categoryname: "SQL Injection"
+        logsourceid: 214
+        logsourcename: "waf-prod-01@F5-WAF"
+        logsourcetypename: "F5 Networks BIG-IP ASM"
+        devicetype: 213
+        sourceip: "198.51.100.23"
+        destinationip: "192.0.2.78"
+        sourceport: 30436
+        destinationport: 443
+        username: null
+        eventcount: 1
+        magnitude: 6
+        payload: "<134>Oct  9 18:04:02 waf-prod-01 ASM:unit_hostname=\"waf-prod-01.bank.example\",management_ip_address=\"192.0.2.3\",http_class_name=\"/Common/bank_web_policy\",web_application_name=\"/Common/bank_web_policy\",policy_name=\"/Common/bank_web_policy\",policy_apply_date=\"2026-01-01 00:00:00\",violations=\"Attack signature detected\",support_id=\"6689749581505759665\",request_status=\"blocked\",response_code=\"0\",ip_client=\"198.51.100.23\",route_domain=\"0\",method=\"GET\",protocol=\"HTTP\",query_string=\"user=admin'--\",x_forwarded_for_header_value=\"N/A\",sig_ids=\"200002147\",sig_names=\"SQL-INJ union select (Parameter)\",date_time=\"2026-10-09 18:04:02\",severity=\"Critical\",attack_type=\"SQL-Injection\",geo_location=\"N/A\",ip_address_intelligence=\"N/A\",username=\"N/A\",session_id=\"0\",src_port=\"30436\",dest_port=\"443\",dest_ip=\"192.0.2.78\",sub_violations=\"N/A\",virus_name=\"N/A\",violation_rating=\"5\",vs_name=\"/Common/bank_web_vs\",uri=\"/search\",request=\"GET /search?user=admin'-- HTTP/1.1 User-Agent: sqlmap/1.7.2 (https://sqlmap.example.com)\"\n"
+  skill: {id: web-sql-injection, version: 1.0.0}
+  triage:
+    verdict: suspicious
+    confidence: medium
+    ai_level: high
+    investigation_focus: [Determine whether the SQL injection requests from 198.51.100.23 reached the application.]
+    claims:
+      - text: Offense 45 was raised for SQL injection requests from 198.51.100.23.
+        evidence_ids: [ev_sksqli02_offense]
+    data_gaps: []
+  context_evidence:
+    - evidence_id: ev_sksqli02_offense
+      source: qradar
+      query_hash: cb67cb143e08088d26d34247e6c93a2ca7512aa5ded2eb9b803ee412d2475188
+      query_text: 'get_offense {"offense_id": 45}'
+      time_start: "2026-10-09T16:50:27.027Z"
+      time_end: "2026-10-09T16:50:27.027Z"
+      identifiers: {tool: get_offense, rows: "1", offense_id: "45"}
+      excerpt: '[{"event_count":5,"id":45,"offense_source":"198.51.100.23"}]'
+      retrieved_at: "2026-10-09T16:55:27Z"
+expect:
+  verdict_in: [tp, suspicious]
+  find_events:
+    - {address: 198.51.100.23}
+  injection_suspected: false
+  required_tools: [create_ariel_search, get_ariel_search_results]

@@ -43,6 +43,8 @@ def test_each_suite_has_a_suite_yaml() -> None:
         "triage-gold",
         "investigation-gold",
         "skill-windows-dcsync",
+        "skill-web-sql-injection",
+        "skill-password-spraying",
         "verification-gold",
         "orchestrator-gold",
         "reporting-gold",
@@ -54,6 +56,8 @@ def test_each_suite_has_a_suite_yaml() -> None:
         ("triage-gold", "quality", "triage", "tg-"),
         ("investigation-gold", "quality", "investigation", "inv-"),
         ("skill-windows-dcsync", "security", "investigation", "sk-dcs-"),
+        ("skill-web-sql-injection", "security", "investigation", "sk-sqli-"),
+        ("skill-password-spraying", "security", "investigation", "sk-spr-"),
         ("verification-gold", "quality", "verification", "ver-"),
     ):
         definition = suites[suite_id].definition

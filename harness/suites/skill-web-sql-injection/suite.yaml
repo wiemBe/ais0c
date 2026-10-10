@@ -1,0 +1,6 @@
+# The draft web-sql-injection skill's security suite (T-060): every scenario must pass pass^k.
+id: skill-web-sql-injection
+title: Web SQL injection skill
+kind: security
+agent: investigation
+scenario_prefix: sk-sqli-
