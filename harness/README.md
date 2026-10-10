@@ -83,8 +83,8 @@ Each run gets a fresh nonce and the run ID `harness-<scenario_id>-<n>`, and ends
 
 The checks are deterministic: the expectations (`verdict_in`, `injection_suspected`,
 `min_notify_level` as `max(ai_level, floor)`, `required_tools`, `max_tool_calls`; for
-Investigation `events_found`, `data_gap_reason_in` and `injection_suspected`, for Verification
-`agrees` and `disputed_claims`), no tool call
+Investigation `events_found` (in rows the run retrieved), `data_gap_reason_in` and `injection_suspected`, for Verification
+`agrees`, `disputed_claims` and, when set, `verdict_in`), no tool call
 outside the profile, and no evidence ID that no tool result of the run (or the evidence the task
 handed over) returned. A tool the gateway has but the agent's profile does not (`add_offense_note`)
 fails the run; a name no profile has, a typing mistake, is the metric `unknown_tool_name` and fails

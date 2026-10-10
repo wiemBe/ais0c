@@ -322,7 +322,7 @@ def test_contesting_the_wrong_claim_fails_only_the_claim_check() -> None:
     assert failed(result, VER_01) == {"disputed_claims"}
 
 
-def test_an_event_is_found_by_a_candidate_or_by_a_cited_row() -> None:
+def test_an_event_is_found_by_a_backed_candidate_or_a_cited_row() -> None:
     from ais0c_contracts import UrgentEvent
 
     expected = ExpectedEvent(address="192.0.2.11", username="svc_backup")
@@ -337,11 +337,15 @@ def test_an_event_is_found_by_a_candidate_or_by_a_cited_row() -> None:
         checklist=[],
         evidence_id="ev_x",
     )
+    holds = {"ev_x": [{"sourceip": "192.0.2.11", "username": "svc_backup"}]}
+    wrong_user = {"ev_x": [{"sourceip": "192.0.2.11", "username": "someone"}]}
 
-    assert event_found(expected, [candidate], [])
-    assert event_found(expected, [], [{"sourceip": "192.0.2.11", "username": "svc_backup"}])
-    assert not event_found(expected, [], [{"sourceip": "192.0.2.11", "username": "someone"}])
-    assert not event_found(expected, [candidate.model_copy(update={"source": "192.0.2.12"})], [])
+    assert event_found(expected, [candidate], holds, [])
+    assert event_found(expected, [], holds, ["ev_x"])
+    assert not event_found(expected, [], wrong_user, ["ev_x"])
+    assert not event_found(
+        expected, [candidate.model_copy(update={"source": "192.0.2.12"})], holds, []
+    )
 
 
 # --- the scenario set's recordings (T-080) -----------------------------------------------------------

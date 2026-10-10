@@ -63,6 +63,7 @@ from ais0c_policy import new_nonce
 
 AGREES: Final = "agrees"
 DISPUTED_CLAIMS: Final = "disputed_claims"
+VERDICT_IN: Final = "verdict_in"
 
 
 class VerificationInput(ReplayInput):
@@ -79,6 +80,8 @@ class VerificationExpectation(Expectation):
     disputed_claims: list[Annotated[int, Field(ge=0)]]
     """Positions in `input.claims` of the claims the verifier must contest, none for a decision
     it must accept."""
+    verdict_in: frozenset[CaseVerdict] = frozenset()
+    """Verdicts the verifier may return; empty: the verdict is not scored."""
 
 
 class VerificationScenario(ReplayScenario[VerificationInput]):
@@ -257,7 +260,7 @@ def verification_checks(scenario: VerificationScenario, result: VerificationResu
     contested = sorted(
         {texts.index(item.claim_text) for item in result.disagreements if item.claim_text in texts}
     )
-    return [
+    checks = [
         Check(
             name=AGREES,
             passed=result.agrees is expect.agrees,
@@ -270,6 +273,16 @@ def verification_checks(scenario: VerificationScenario, result: VerificationResu
             f"{sorted(set(expect.disputed_claims)) or 'none'}",
         ),
     ]
+    if expect.verdict_in:
+        verdicts = ", ".join(sorted(verdict.value for verdict in expect.verdict_in))
+        checks.append(
+            Check(
+                name=VERDICT_IN,
+                passed=result.verdict in expect.verdict_in,
+                detail=f"{result.verdict.value}, expected one of {verdicts}",
+            )
+        )
+    return checks
 
 
 def _verification(scenario: ScenarioBase) -> VerificationScenario:

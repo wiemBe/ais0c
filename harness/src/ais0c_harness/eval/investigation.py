@@ -11,15 +11,17 @@ as `agent.*` sources, the evaluation window and the manifest's budget. The agent
 The checks, besides the shared ones (evaluate.py):
 
 - `verdict_in`: the verdict the agent reaches;
-- `events_found`: every event in `find_events` is found: an urgent event candidate names its
-  source (or destination) and user, or a claim or timeline entry cites evidence whose rows hold
-  them. An expected event is the pair the recording's table can show.
+- `events_found`: every event in `find_events` is found in rows the run retrieved: an urgent event
+  candidate names its source (or destination) and user and the rows of the evidence it cites hold
+  both, or a claim or timeline entry cites evidence whose rows hold both. A candidate that names
+  the event but cites evidence without it does not count. An expected event is the pair the
+  recording's table can show.
 - `data_gap_reason_in`: a missing required telemetry scenario ends with one of its allowed,
   non-budget data-gap reasons;
 - `injection_suspected`: when set, the result's flag must match it.
 
 Evidence the task handed over (`context_evidence`) may be cited too: it is not a tool result of
-the run, but the gateway recorded it.
+the run, but the gateway recorded it. It is not a source of rows for `events_found`.
 """
 
 from collections.abc import Collection, Mapping, Sequence
@@ -348,16 +350,16 @@ def investigation_checks(
     ]
     if expect.find_events:
         cited = set(cited_claim_evidence(result))
-        rows = [
-            row
-            for exchange in exchanges
-            if exchange.executed and exchange.result.evidence_id in cited
-            for row in exchange.result.data
-        ]
+        rows_by_evidence: dict[str, list[Mapping[str, JsonValue]]] = {}
+        for exchange in exchanges:
+            if exchange.executed and exchange.result.evidence_id is not None:
+                rows_by_evidence.setdefault(exchange.result.evidence_id, []).extend(
+                    exchange.result.data
+                )
         missing = [
             f"{event.address}/{event.username or '*'}"
             for event in expect.find_events
-            if not event_found(event, result.urgent_event_candidates, rows)
+            if not event_found(event, result.urgent_event_candidates, rows_by_evidence, cited)
         ]
         checks.append(
             Check(
@@ -402,14 +404,25 @@ def cited_claim_evidence(result: InvestigationResult) -> list[str]:
 def event_found(
     expected: ExpectedEvent,
     candidates: Sequence[UrgentEvent],
-    rows: Collection[Mapping[str, JsonValue]],
+    rows_by_evidence: Mapping[str, Sequence[Mapping[str, JsonValue]]],
+    cited: Collection[str],
 ) -> bool:
-    """Whether an urgent event candidate or a cited row shows the expected event."""
+    """Whether the run shows the expected event in rows it retrieved.
+
+    A candidate counts when it names the address (as source or destination) and the user, and
+    the rows of the evidence it cites hold both. A claim or a timeline entry counts when a row
+    of evidence it cites holds both.
+    """
     for candidate in candidates:
         if expected.address in (candidate.source, candidate.destination) and (
             expected.username is None or expected.username == candidate.username
         ):
-            return True
+            if _rows_hold(expected, rows_by_evidence.get(candidate.evidence_id, ())):
+                return True
+    return any(_rows_hold(expected, rows_by_evidence.get(evidence_id, ())) for evidence_id in cited)
+
+
+def _rows_hold(expected: ExpectedEvent, rows: Sequence[Mapping[str, JsonValue]]) -> bool:
     for row in rows:
         values = {str(value) for value in row.values() if value is not None}
         if expected.address in values and (

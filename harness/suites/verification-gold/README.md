@@ -27,6 +27,7 @@ rejected. `input.recording`, `input.objective` and `input.evaluated_at` are as i
 | `input.critical` | Whether the workflow marks the claims critical |
 | `expect.agrees` | The `agrees` the verifier must return |
 | `expect.disputed_claims` | Positions in `input.claims` of the claims the verifier must contest; empty exactly when `agrees` is true |
+| `expect.verdict_in` | Optional. Verdicts the verifier may return; empty (the default): the verdict is not scored |
 
 The task is built by the worker's own function (`verification_task`), the agent by
 `build_verification_agent` with the profile `qradar-verify-read`: a two hour query window, 200

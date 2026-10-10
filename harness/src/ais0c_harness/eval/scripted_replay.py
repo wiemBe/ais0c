@@ -42,13 +42,16 @@ RESULTS_ALIAS: Final = "ev_3"
 
 
 def search_query(recording: Recording, *, columns: str) -> str:
-    """The query a scripted model runs: the offense's user within a second of the offense."""
+    """The query a scripted model runs: the offense's source within a second of the offense.
+
+    A Source IP offense is searched by `sourceip`, any other type by `username`."""
     offense = recording.offense
     low = int(offense.start_time.timestamp() * 1000) - 1000
     high = int(offense.last_updated_time.timestamp() * 1000) + 1000
-    user = offense.offense_source.replace("'", "''")
+    source = offense.offense_source.replace("'", "''")
+    field = "sourceip" if offense.offense_type == "Source IP" else "username"
     return (
-        f"SELECT {columns} FROM events WHERE username = '{user}' "
+        f"SELECT {columns} FROM events WHERE {field} = '{source}' "
         f"AND starttime BETWEEN {low} AND {high} ORDER BY starttime ASC LIMIT 50 "
         f"START {low} STOP {high}"
     )
@@ -96,13 +99,13 @@ def investigation_answer(
         {
             "rank": rank,
             "time": start,
-            "log_source": "Windows security log",
-            "event_name": "Success Audit: An operation was performed on an object",
+            "log_source": "Recorded events",
+            "event_name": "The expected event",
             "qid": None,
             "source": event.address,
             "destination": None,
             "username": event.username,
-            "reason": "Directory replication rights used by a non-machine account.",
+            "reason": "The event the scenario expects, in the search results.",
             "checklist": ["Check the source host."],
             "aql": None,
             "evidence_id": RESULTS_ALIAS,
@@ -128,7 +131,7 @@ def investigation_answer(
             {
                 "text": "Required replication telemetry is absent."
                 if gap_reason is not None
-                else "The account is abused for DCSync.",
+                else "The offense's activity is malicious.",
                 "status": "open" if gap_reason is not None else "supported",
             }
         ],
@@ -163,9 +166,15 @@ def verification_answer(scenario: VerificationScenario) -> dict[str, JsonValue]:
         {"claim_text": claims[position].text, "reason": "The events do not show it."}
         for position in sorted(set(expect.disputed_claims))
     ]
+    reviewed = scenario.input.reviewed.verdict
+    verdict = (
+        reviewed
+        if not expect.verdict_in or reviewed in expect.verdict_in
+        else sorted(expect.verdict_in, key=lambda item: item.value)[0]
+    )
     return {
         "agrees": expect.agrees,
-        "verdict": scenario.input.reviewed.verdict.value,
+        "verdict": verdict.value,
         "confidence": scenario.input.reviewed.confidence.value,
         "disagreements": disagreements,
         "checked_evidence_ids": [f"ev_c{n}" for n in range(1, len(scenario.input.evidence) + 1)],

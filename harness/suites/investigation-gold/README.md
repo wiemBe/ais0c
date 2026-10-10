@@ -30,7 +30,7 @@ events.
 | `input.skill` | Optional: `{id, version}` of a skill under `skills/` (loaded in dev mode, drafts allowed) |
 | `input.evaluated_at` | Optional: the moment of the evaluation; default the offense's last update plus 5 minutes. The task's window is `evaluation_window(offense, evaluated_at)`; `LAST n` counts back from it |
 | `expect.verdict_in` | Verdicts the agent may return |
-| `expect.find_events` | Events the run must find: `{address, username}`. An urgent event candidate names it (source or destination, and user), or a claim or timeline entry cites evidence whose rows hold both |
+| `expect.find_events` | Events the run must find: `{address, username}`. An urgent event candidate names it (source or destination, and user) and the rows of the evidence it cites hold both, or a claim or timeline entry cites evidence whose rows hold both. Handed-over evidence (`context_evidence`) is not a source of rows |
 | `expect.required_tools`, `expect.max_tool_calls` | as in every scenario |
 
 The task is built by the worker's own function (`investigation_task`), the agent by
