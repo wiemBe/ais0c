@@ -23,6 +23,7 @@ import yaml
 
 HERE: Final = Path(__file__).resolve().parent
 ROOT: Final = HERE.parents[1]
+DEFAULT_FORK: Final = ROOT.parent / "qradar-mcp"
 COMPOSE_FILE: Final = ROOT / "deploy/compose/docker-compose.prod.yaml"
 CONNECTOR_FILE: Final = ROOT / "config/connectors/qradar.yaml"
 VERSION_PATTERN: Final = re.compile(r"^\d+\.\d+\.\d+(?:-[0-9A-Za-z]+(?:\.[0-9A-Za-z]+)*)?$")
@@ -260,7 +261,7 @@ def render_release_md(
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Build a production shadow release package.")
     parser.add_argument("--version", required=True)
-    parser.add_argument("--fork", type=Path, default=Path("../qradar-mcp"))
+    parser.add_argument("--fork", type=Path, default=DEFAULT_FORK)
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--skip-build", action="store_true")
     parser.add_argument("--dry-run", action="store_true")

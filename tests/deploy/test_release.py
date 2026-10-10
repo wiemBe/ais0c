@@ -4,6 +4,7 @@
 # ruff: noqa: S603, S607
 
 import copy
+import io
 import os
 import subprocess
 import sys
@@ -126,6 +127,24 @@ def test_a_non_empty_out_dir_stops_with_exit_2(
     assert "not empty" in capsys.readouterr().err
 
 
+def test_the_default_fork_is_next_to_the_repository(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    observed_forks: list[Path] = []
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(build_release, "working_tree_clean", lambda root: True)
+    monkeypatch.setattr(
+        build_release,
+        "_fork_has_commit",
+        lambda fork, version: observed_forks.append(fork) is None,
+    )
+
+    result = main(["--version", "0.1.0-test", "--out", str(tmp_path / "out"), "--dry-run"])
+
+    assert result == 0
+    assert observed_forks == [ROOT.parent / "qradar-mcp"]
+
+
 def test_archived_paths_exist_and_hold_no_secret() -> None:
     archived_files: set[str] = set()
     for path in ARCHIVED:
@@ -199,6 +218,82 @@ def test_dry_run_prints_the_commands_in_order(
     assert skip_lines[1].startswith("git -C ")
     assert all("docker build" not in line for line in skip_lines)
     assert not out.exists()
+
+
+def test_a_failed_step_exits_1_without_release_md(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    out = tmp_path / "release"
+    monkeypatch.setattr(build_release, "working_tree_clean", lambda root: True)
+    monkeypatch.setattr(build_release, "_fork_has_commit", lambda fork, version: True)
+    monkeypatch.setattr(
+        build_release,
+        "_prepare_images",
+        lambda plan, root: {
+            image: f"sha256:{index:064x}" for index, image in enumerate(plan.images)
+        },
+    )
+
+    def fail_save(plan: ReleasePlan, root: Path, destination: Path) -> None:
+        raise build_release.CommandFailed(["docker", "save", *plan.images], 17)
+
+    monkeypatch.setattr(build_release, "_save_images", fail_save)
+
+    result = main(
+        [
+            "--version",
+            "0.1.0-test",
+            "--fork",
+            str(tmp_path / "fork"),
+            "--out",
+            str(out),
+            "--skip-build",
+        ]
+    )
+
+    assert result == 1
+    error = capsys.readouterr().err
+    assert "docker save" in error
+    assert "exit 17" in error
+    assert not (out / "RELEASE.md").exists()
+
+
+def test_a_failing_fork_build_exits_1(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    class Process:
+        def __init__(self, returncode: int, *, with_stdout: bool = False) -> None:
+            self.returncode = returncode
+            self.stdout = io.BytesIO() if with_stdout else None
+
+        def wait(self) -> int:
+            return self.returncode
+
+    def popen(command: list[str], **kwargs: object) -> Process:
+        return Process(23, with_stdout=True) if command[0] == "git" else Process(0)
+
+    plan = build_release.plan_release(ROOT, "0.1.0-test")
+    monkeypatch.setattr(build_release.subprocess, "Popen", popen)
+
+    with pytest.raises(build_release.CommandFailed) as raised:
+        build_release._build_fork(plan, ROOT, tmp_path / "fork")
+    assert raised.value.returncode == 23
+
+    monkeypatch.setattr(build_release, "plan_release", lambda root, version: plan)
+    monkeypatch.setattr(build_release, "working_tree_clean", lambda root: True)
+    monkeypatch.setattr(build_release, "_fork_has_commit", lambda fork, version: True)
+    monkeypatch.setattr(build_release, "_run", lambda command, cwd: None)
+
+    result = main(
+        [
+            "--version",
+            "0.1.0-test",
+            "--fork",
+            str(tmp_path / "fork"),
+            "--out",
+            str(tmp_path / "out"),
+        ]
+    )
+
+    assert result == 1
 
 
 def test_sha256sums_pass_sha256sum_check(tmp_path: Path) -> None:
