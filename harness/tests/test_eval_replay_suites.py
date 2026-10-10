@@ -49,6 +49,13 @@ INV_01 = "inv-01-dcsync"
 INV_02 = "inv-02-dcsync-no-skill"
 VER_01 = "ver-01-refutable-ip"
 VER_02 = "ver-02-all-correct"
+INV_03 = "inv-03-waf-xss"
+INV_04 = "inv-04-waf-scan-blocked"
+INV_05 = "inv-05-approved-scanner"
+INV_06 = "inv-06-kerberoasting"
+VER_03 = "ver-03-xss-wrong-family"
+VER_04 = "ver-04-approved-scanner-fp"
+VER_05 = "ver-05-kerberoasting-logon"
 RECORDING = "lab-30-dcsync"
 
 
@@ -129,8 +136,21 @@ def failed(run: EvalRun, scenario_id: str) -> set[str]:
 def test_the_gold_suites_are_quality_suites_with_the_planned_scenarios() -> None:
     suites = {suite.id: suite for suite in load_suites(REPO_ROOT, [INVESTIGATION, VERIFICATION])}
 
-    assert [item.id for item in suites[INVESTIGATION].scenarios] == [INV_01, INV_02]
-    assert [item.id for item in suites[VERIFICATION].scenarios] == [VER_01, VER_02]
+    assert [item.id for item in suites[INVESTIGATION].scenarios] == [
+        INV_01,
+        INV_02,
+        INV_03,
+        INV_04,
+        INV_05,
+        INV_06,
+    ]
+    assert [item.id for item in suites[VERIFICATION].scenarios] == [
+        VER_01,
+        VER_02,
+        VER_03,
+        VER_04,
+        VER_05,
+    ]
     assert {suite.kind for suite in suites.values()} == {"quality"}
     assert [suites[INVESTIGATION].agent, suites[VERIFICATION].agent] == [
         "investigation",
@@ -144,8 +164,8 @@ def test_every_gold_scenario_passes_with_a_scripted_model_k_2() -> None:
 
     assert report.settings.execution_mode == "replay"
     assert {suite.id: (suite.passes, suite.runs) for suite in report.suites} == {
-        INVESTIGATION: (4, 4),
-        VERIFICATION: (4, 4),
+        INVESTIGATION: (12, 12),
+        VERIFICATION: (10, 10),
     }
     for record in report.runs:
         assert record.outcome == "pass", (record.envelope.scenario_id, record.checks, record.error)
@@ -154,6 +174,7 @@ def test_every_gold_scenario_passes_with_a_scripted_model_k_2() -> None:
         assert record.metrics.unknown_tool_name == 0
         assert record.metrics.denied_calls == 0
         assert record.metrics.tool_calls == 3
+        assert record.metrics.ungrounded_evidence == 0
     assert report.passed
 
 
@@ -321,6 +342,129 @@ def test_an_event_is_found_by_a_candidate_or_by_a_cited_row() -> None:
     assert event_found(expected, [], [{"sourceip": "192.0.2.11", "username": "svc_backup"}])
     assert not event_found(expected, [], [{"sourceip": "192.0.2.11", "username": "someone"}])
     assert not event_found(expected, [candidate.model_copy(update={"source": "192.0.2.12"})], [])
+
+
+# --- the scenario set's recordings (T-080) -----------------------------------------------------------
+
+NEW_INVESTIGATIONS = (INV_03, INV_04, INV_05, INV_06)
+
+
+def investigation_of(scenario_id: str) -> InvestigationScenario:
+    played = scenario_of(INVESTIGATION, scenario_id)
+    assert isinstance(played, InvestigationScenario)
+    return played
+
+
+def test_the_new_gold_scenarios_name_events_their_recordings_hold() -> None:
+    for scenario_id in NEW_INVESTIGATIONS:
+        played = investigation_of(scenario_id)
+        played.check_files(REPO_ROOT)  # raises when the recording, an event or the skill is missing
+        assert played.expect.find_events
+        stored = recording_of(REPO_ROOT.resolve(), played.input.recording)
+        for expected in played.expect.find_events:
+            assert any(
+                expected.address in (event.sourceip, event.destinationip)
+                and (expected.username is None or event.username == expected.username)
+                for event in stored.events
+            ), (scenario_id, expected)
+
+
+def test_a_blocked_attack_called_fp_fails() -> None:
+    result = play([INVESTIGATION], answers=only(INV_04, verdict="fp"), scenario_ids=[INV_04])
+
+    assert failed(result, INV_04) == {"verdict_in"}
+
+
+def test_the_approved_scanner_called_tp_fails() -> None:
+    result = play([INVESTIGATION], answers=only(INV_05, verdict="tp"), scenario_ids=[INV_05])
+
+    assert failed(result, INV_05) == {"verdict_in"}
+
+
+def test_agreeing_with_the_wrong_attack_family_fails() -> None:
+    result = play(
+        [VERIFICATION],
+        answers=only(VER_03, agrees=True, disagreements=[]),
+        scenario_ids=[VER_03],
+    )
+
+    assert failed(result, VER_03) == {"agrees", "disputed_claims"}
+
+
+def test_agreeing_with_an_invented_logon_fails() -> None:
+    result = play(
+        [VERIFICATION],
+        answers=only(VER_05, agrees=True, disagreements=[]),
+        scenario_ids=[VER_05],
+    )
+
+    assert failed(result, VER_05) == {"agrees", "disputed_claims"}
+
+
+def _excerpt_rows(scenario: VerificationScenario, evidence_id: str) -> tuple[str, list[Any], int]:
+    ref = next(item for item in scenario.input.evidence if item.evidence_id == evidence_id)
+    return ref.query_text, json.loads(ref.excerpt), int(ref.identifiers["rows"])
+
+
+def _recomputed(query: str, events: list[Any]) -> list[dict[str, Any]]:
+    """Run the simple AQL of the verification scenarios over recorded events."""
+    import re
+
+    select, rest = re.match(r"SELECT (.*?) FROM events WHERE (.*?) LIMIT", query).groups()  # type: ignore[union-attr]
+    where, _, group = rest.partition(" GROUP BY ")
+    if not group:
+        group = ""
+    matching = events
+    for column, quoted, number in re.findall(r"(\w+) = (?:'([^']*)'|(\d+))", where):
+        wanted: object = quoted if quoted else int(number)
+        matching = [event for event in matching if getattr(event, column) == wanted]
+
+    def value(event: object, column: str) -> object:
+        return getattr(event, "qidname" if column == "QIDNAME(qid)" else column)
+
+    columns = [part.strip() for part in select.split(", ")]
+    if group:
+        key = group.split(" LIMIT")[0].strip()
+        groups: dict[object, list[Any]] = {}
+        for event in matching:
+            groups.setdefault(getattr(event, key), []).append(event)
+        rows: list[dict[str, Any]] = []
+        for members in groups.values():
+            row: dict[str, Any] = {}
+            for column in columns:
+                name = column.split(" AS ")[-1]
+                row[name] = (
+                    len(members)
+                    if column.startswith("COUNT(*)")
+                    else value(members[0], column.split(" AS ")[0])
+                )
+            rows.append(row)
+        return rows
+    return [
+        {column.split(" AS ")[-1]: value(event, column.split(" AS ")[0]) for column in columns}
+        for event in matching
+    ]
+
+
+def _canonical(rows: list[Any]) -> list[str]:
+    return sorted(json.dumps(row, sort_keys=True) for row in rows)
+
+
+def test_the_verification_excerpts_match_their_recordings() -> None:
+    cases = {
+        VER_03: ["ev_ver03_xss"],
+        VER_04: ["ev_ver04_requests", "ev_ver04_source"],
+        VER_05: ["ev_ver05_tickets", "ev_ver05_source"],
+    }
+    for scenario_id, evidence_ids in cases.items():
+        played = verification(scenario_id)
+        stored = recording_of(REPO_ROOT.resolve(), played.input.recording)
+        for evidence_id in evidence_ids:
+            query, excerpt, rows = _excerpt_rows(played, evidence_id)
+            computed = _recomputed(query, list(stored.events))  # type: ignore[attr-defined]
+            assert computed, evidence_id
+            assert _canonical(excerpt) == _canonical(computed), evidence_id
+            assert rows == len(excerpt)
 
 
 # --- the scenario files ---------------------------------------------------------------------------
@@ -575,5 +719,9 @@ def test_run_files_arrive_in_the_order_the_runs_end() -> None:
         )
     )
 
-    assert seen == [(VER_01, 1), (VER_01, 2), (VER_02, 1), (VER_02, 2)]
-    assert len(result.files) == 4
+    assert seen == [
+        (scenario_id, run_number)
+        for scenario_id in (VER_01, VER_02, VER_03, VER_04, VER_05)
+        for run_number in (1, 2)
+    ]
+    assert len(result.files) == 10

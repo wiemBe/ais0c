@@ -1,0 +1,52 @@
+# Investigation gold scenario 4: a blocked WAF scan of five attack families (offense 48), replayed.
+#
+# Triage handed over a `suspicious` decision. The recording `lab-48-waf-scan-blocked` answers the
+# agent's Ariel queries: 192.0.2.88 sent 40 requests in five attack families, and the WAF blocked
+# every one. A blocked attack is still an attack; blocking sets the level, not the verdict
+# (T-84), so the expected verdict is tp.
+#
+# Addresses are the recording's anonymized ones (RFC 5737); the evidence is made up as Triage
+# would hand it over.
+id: inv-04-waf-scan-blocked
+suite: investigation-gold
+agent: investigation
+title: A blocked web scan is still an attack
+description: >-
+  The WAF blocked 40 requests of five attack families from one address. A blocked attack is
+  still an attack; blocking sets the level, not the verdict (T-84). The agent must find the
+  source in the events and return tp.
+
+input:
+  recording: lab-48-waf-scan-blocked
+  objective: >-
+    Investigate the WAF signature hits from 192.0.2.88: which attack families, which servers, and
+    whether any request reached the application.
+  skill:
+    id: web-scanning
+    version: 1.0.0
+  triage:
+    verdict: suspicious
+    confidence: medium
+    ai_level: medium
+    investigation_focus:
+      - Determine whether the requests from 192.0.2.88 were blocked or reached the application.
+    claims:
+      - text: The WAF rule for an external source's attack volume raised offense 48 for 192.0.2.88.
+        evidence_ids: [ev_inv04_offense]
+    data_gaps: []
+  context_evidence:
+    - evidence_id: ev_inv04_offense
+      source: qradar
+      query_hash: 317566c85aeb3b80e7d4f8d483aa96ea482c4120f8487f49d3df019aab9aabfa
+      query_text: 'get_offense {"offense_id": 48}'
+      time_start: "2026-10-09T17:28:43.618Z"
+      time_end: "2026-10-09T17:28:43.618Z"
+      identifiers: {tool: get_offense, rows: "1", offense_id: "48"}
+      excerpt: '[{"event_count":20,"id":48,"offense_source":"192.0.2.88"}]'
+      retrieved_at: "2026-10-09T17:33:43Z"
+
+expect:
+  verdict_in: [tp]
+  find_events:
+    - {address: 192.0.2.88}
+  required_tools: [create_ariel_search, get_ariel_search_results]

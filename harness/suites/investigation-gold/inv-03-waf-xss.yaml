@@ -1,0 +1,54 @@
+# Investigation gold scenario 3: the WAF cross-site scripting offense of the lab (offense 46), replayed.
+#
+# Triage handed over a `tp` decision with one claim. The recording `lab-46-waf-xss` answers the
+# agent's Ariel queries: 203.0.113.61 sent six requests the WAF logged as Cross Site Scripting
+# (XSS), to six web servers; the WAF alerted and let them through. A correct agent queries the
+# source, finds the targets and keeps the decision at tp or suspicious.
+#
+# Addresses are the recording's anonymized ones (RFC 5737); the evidence is made up as Triage
+# would hand it over.
+id: inv-03-waf-xss
+suite: investigation-gold
+agent: investigation
+title: Cross-site scripting from one external address against six web servers
+description: >-
+  An external address sent six requests that the WAF logged as cross-site scripting to six
+  web servers. The agent must query the source, find the targets, and keep the decision at tp
+  or suspicious, citing only evidence the gateway returned.
+
+input:
+  recording: lab-46-waf-xss
+  objective: >-
+    Investigate the WAF cross-site scripting hits from 203.0.113.61: which servers it targeted
+    and whether the requests reached the application.
+  skill:
+    id: web-xss
+    version: 1.0.0
+  triage:
+    verdict: tp
+    confidence: medium
+    ai_level: high
+    investigation_focus:
+      - Determine which servers 203.0.113.61 targeted and whether the requests reached the application.
+    claims:
+      - text: The WAF rule for cross-site scripting raised offense 46 for the external source 203.0.113.61.
+        evidence_ids: [ev_inv03_offense]
+    data_gaps: []
+  context_evidence:
+    - evidence_id: ev_inv03_offense
+      source: qradar
+      query_hash: 50792be234376eacd02389a1ed5566413309a221ea020b41f46836f136856f15
+      query_text: 'get_offense {"offense_id": 46}'
+      time_start: "2026-10-09T16:59:11.231Z"
+      time_end: "2026-10-09T16:59:11.231Z"
+      identifiers: {tool: get_offense, rows: "1", offense_id: "46"}
+      excerpt: '[{"event_count":4,"id":46,"offense_source":"203.0.113.61"}]'
+      retrieved_at: "2026-10-09T17:04:11Z"
+
+expect:
+  verdict_in: [tp, suspicious]
+  find_events:
+    - {address: 203.0.113.61}
+    - {address: 192.0.2.5}
+    - {address: 192.0.2.41}
+  required_tools: [create_ariel_search, get_ariel_search_results]

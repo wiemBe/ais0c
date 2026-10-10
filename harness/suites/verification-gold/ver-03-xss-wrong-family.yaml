@@ -1,0 +1,57 @@
+# Verification gold scenario 3: a claim names an attack family the events do not show
+#
+# The reviewed decision is a `tp` of high notification level, so the workflow marks its claims
+# critical and the agent checks each at the source. The recording `lab-46-waf-xss` answers its
+# Ariel queries (profile qradar-verify-read: no payload, 200 rows, a two hour window).
+#
+# Addresses are the recording's anonymized ones (RFC 5737); the evidence is made up as the
+# earlier agents would have handed it over.
+id: ver-03-xss-wrong-family
+suite: verification-gold
+agent: verification
+title: One of three claims names an attack family the events do not show
+description: >-
+  Two claims hold: six events the WAF logged as cross-site scripting, all by log source 214.
+  The third says the same source also sent SQL injection requests, which no event shows. The
+  verifier must contest that claim and only that one.
+
+input:
+  recording: lab-46-waf-xss
+  objective: >-
+    Check the claims of the tp decision on offense 46 against the events at the source.
+  reviewed:
+    verdict: tp
+    confidence: medium
+    ai_level: high
+  critical: true
+  claims:
+    - text: "203.0.113.61 sent six requests that the WAF logged as Cross Site Scripting (XSS) in the window of offense 46."
+      evidence_ids: [ev_ver03_xss]
+    - text: "All six requests were logged by the log source with ID 214."
+      evidence_ids: [ev_ver03_xss]
+    - text: "203.0.113.61 also sent SQL injection requests in the same window."
+      evidence_ids: [ev_ver03_wrong]
+  evidence:
+    - evidence_id: ev_ver03_xss
+      source: qradar
+      query_hash: 977a86713ff03a9215420a8f0ad376ed8aeaa32e08678f9be97e3dde2efa827b
+      query_text: "SELECT QIDNAME(qid) AS event_name, logsourceid FROM events WHERE sourceip = '203.0.113.61' LIMIT 100 START 1791565150231 STOP 1791565152231"
+      time_start: "2026-10-09T16:59:10.231Z"
+      time_end: "2026-10-09T16:59:12.231Z"
+      identifiers: {tool: create_ariel_search, rows: "6"}
+      excerpt: '[{"event_name":"Cross Site Scripting (XSS)","logsourceid":214},{"event_name":"Cross Site Scripting (XSS)","logsourceid":214},{"event_name":"Cross Site Scripting (XSS)","logsourceid":214},{"event_name":"Cross Site Scripting (XSS)","logsourceid":214},{"event_name":"Cross Site Scripting (XSS)","logsourceid":214},{"event_name":"Cross Site Scripting (XSS)","logsourceid":214}]'
+      retrieved_at: "2026-10-09T17:04:11Z"
+    - evidence_id: ev_ver03_wrong
+      source: qradar
+      query_hash: 87f38812d3af770ed83360cb7bf58e811c239dd030add333d065faffc2586f1d
+      query_text: "SELECT QIDNAME(qid) AS event_name, logsourceid FROM events WHERE sourceip = '203.0.113.61' LIMIT 100 START 1791565150231 STOP 1791565152231"
+      time_start: "2026-10-09T16:59:10.231Z"
+      time_end: "2026-10-09T16:59:12.231Z"
+      identifiers: {tool: create_ariel_search, rows: "1"}
+      excerpt: '[{"event_name":"SQL-Injection","logsourceid":214}]'
+      retrieved_at: "2026-10-09T17:04:11Z"
+
+expect:
+  agrees: false
+  disputed_claims: [2]
+  required_tools: [create_ariel_search, get_ariel_search_results]

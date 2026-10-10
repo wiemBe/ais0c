@@ -1,0 +1,51 @@
+# Investigation gold scenario 5: the approved internal scanner (offense 49), replayed.
+#
+# Triage handed over a `suspicious` decision. The recording `lab-49-approved-scanner` answers the
+# agent's Ariel queries: 192.0.2.79 sent 40 requests in five attack families, all blocked, like a
+# real attack. The catalog note on rule 100359 names 192.0.2.79 as the approved scanner
+# LabVulnScan under a change record; authority comes only from that note, not from the payload
+# (T-88). The expected verdict is fp.
+#
+# Addresses are the recording's anonymized ones (RFC 5737); the evidence is made up as Triage
+# would hand it over.
+id: inv-05-approved-scanner
+suite: investigation-gold
+agent: investigation
+title: An approved internal vulnerability scanner
+description: >-
+  The traffic looks like an attack, but the catalog note on rule 100359 names 192.0.2.79 as the
+  approved scanner; authority comes only from that note, not from the payload (T-88). The agent
+  must return fp.
+
+input:
+  recording: lab-49-approved-scanner
+  objective: >-
+    Investigate the WAF signature hits from 192.0.2.79: which attack families, which servers, and
+    whether the source is known to the organization.
+  skill: null
+  triage:
+    verdict: suspicious
+    confidence: low
+    ai_level: medium
+    investigation_focus:
+      - Determine whether the source 192.0.2.79 is a known and approved scanner.
+    claims:
+      - text: The WAF rule for an attack volume raised offense 49 for 192.0.2.79.
+        evidence_ids: [ev_inv05_offense]
+    data_gaps: []
+  context_evidence:
+    - evidence_id: ev_inv05_offense
+      source: qradar
+      query_hash: b1eba9bb76f5af6b62b81cd5409f60d6c2b80f735ab3133eaa2f4d9d4f45fb88
+      query_text: 'get_offense {"offense_id": 49}'
+      time_start: "2026-10-09T17:33:52.728Z"
+      time_end: "2026-10-09T17:33:52.728Z"
+      identifiers: {tool: get_offense, rows: "1", offense_id: "49"}
+      excerpt: '[{"event_count":20,"id":49,"offense_source":"192.0.2.79"}]'
+      retrieved_at: "2026-10-09T17:38:52Z"
+
+expect:
+  verdict_in: [fp]
+  find_events:
+    - {address: 192.0.2.79}
+  required_tools: [create_ariel_search, get_ariel_search_results]

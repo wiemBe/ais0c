@@ -1,0 +1,66 @@
+# Verification gold scenario 5: a claim invents a logon the events do not show
+#
+# The reviewed decision is a `tp` of high notification level, so the workflow marks its claims
+# critical and the agent checks each at the source. The recording `lab-50-kerberoasting` answers its
+# Ariel queries (profile qradar-verify-read: no payload, 200 rows, a two hour window).
+#
+# Addresses are the recording's anonymized ones (RFC 5737); the evidence is made up as the
+# earlier agents would have handed it over.
+id: ver-05-kerberoasting-logon
+suite: verification-gold
+agent: verification
+title: One of three claims invents a logon the events do not show
+description: >-
+  Two claims hold: 16 service tickets for the account, all logged by log source 213. The
+  third says the account also logged on from 192.0.2.98, but the account has no logon event.
+  The verifier must contest that claim and only that one.
+
+input:
+  recording: lab-50-kerberoasting
+  objective: >-
+    Check the claims of the tp decision on offense 50 against the events at the source.
+  reviewed:
+    verdict: tp
+    confidence: medium
+    ai_level: high
+  critical: true
+  claims:
+    - text: "The account branch.user05 was granted 16 Kerberos service tickets in the window of offense 50."
+      evidence_ids: [ev_ver05_tickets]
+    - text: "All 16 tickets were logged by the log source with ID 213."
+      evidence_ids: [ev_ver05_source]
+    - text: "The account branch.user05 also logged on successfully from 192.0.2.98 in the same window."
+      evidence_ids: [ev_ver05_wrong]
+  evidence:
+    - evidence_id: ev_ver05_tickets
+      source: qradar
+      query_hash: c552954f843d395e18837759a74a26345a1c06c7c33b38b1443552eac6b0a2fd
+      query_text: "SELECT sourceip FROM events WHERE username = 'branch.user05' AND qid = 5000938 LIMIT 100 START 1791567443865 STOP 1791567445865"
+      time_start: "2026-10-09T17:37:23.865Z"
+      time_end: "2026-10-09T17:37:25.865Z"
+      identifiers: {tool: create_ariel_search, rows: "16"}
+      excerpt: '[{"sourceip":"192.0.2.98"},{"sourceip":"192.0.2.120"},{"sourceip":"192.0.2.99"},{"sourceip":"192.0.2.101"},{"sourceip":"192.0.2.100"},{"sourceip":"192.0.2.112"},{"sourceip":"192.0.2.114"},{"sourceip":"192.0.2.127"},{"sourceip":"192.0.2.122"},{"sourceip":"192.0.2.130"},{"sourceip":"192.0.2.97"},{"sourceip":"192.0.2.83"},{"sourceip":"192.0.2.125"},{"sourceip":"192.0.2.107"},{"sourceip":"192.0.2.115"},{"sourceip":"192.0.2.94"}]'
+      retrieved_at: "2026-10-09T17:42:24Z"
+    - evidence_id: ev_ver05_source
+      source: qradar
+      query_hash: f01382c9481df0286e34151f5a96b47fae592d5b126bdd836832c020e7c4506c
+      query_text: "SELECT logsourceid, COUNT(*) AS tickets FROM events WHERE username = 'branch.user05' AND qid = 5000938 GROUP BY logsourceid LIMIT 100 START 1791567443865 STOP 1791567445865"
+      time_start: "2026-10-09T17:37:23.865Z"
+      time_end: "2026-10-09T17:37:25.865Z"
+      identifiers: {tool: create_ariel_search, rows: "1"}
+      excerpt: '[{"logsourceid":213,"tickets":16}]'
+      retrieved_at: "2026-10-09T17:42:24Z"
+    - evidence_id: ev_ver05_wrong
+      source: qradar
+      query_hash: a6176bce7a44030486f6876a4ba700c69aa0bc07bd394ead0bca380477c54b80
+      query_text: "SELECT sourceip, username, QIDNAME(qid) AS event_name FROM events WHERE username = 'branch.user05' AND qid = 5000830 LIMIT 100 START 1791567443865 STOP 1791567445865"
+      time_start: "2026-10-09T17:37:23.865Z"
+      time_end: "2026-10-09T17:37:25.865Z"
+      identifiers: {tool: create_ariel_search, rows: "1"}
+      excerpt: '[{"sourceip":"192.0.2.98","username":"branch.user05","event_name":"Success Audit: An account was successfully logged on"}]'
+      retrieved_at: "2026-10-09T17:42:24Z"
+
+expect:
+  agrees: false
+  disputed_claims: [2]
+  required_tools: [create_ariel_search, get_ariel_search_results]

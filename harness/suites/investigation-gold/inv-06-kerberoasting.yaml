@@ -1,0 +1,53 @@
+# Investigation gold scenario 6: Kerberoasting by one account (offense 50), replayed.
+#
+# Triage handed over a `suspicious` decision. The recording `lab-50-kerberoasting` answers the
+# agent's Ariel queries: branch.user05 was granted 16 service tickets (event 4769, RC4) for eight
+# service accounts, two each, every ticket from a different address, and the account has no
+# logon event. A correct agent queries the account, finds the tickets and calls it tp.
+#
+# Addresses are the recording's anonymized ones (RFC 5737); the evidence is made up as Triage
+# would hand it over.
+id: inv-06-kerberoasting
+suite: investigation-gold
+agent: investigation
+title: Kerberoasting by one account against eight service accounts
+description: >-
+  One account asked for RC4 service tickets of eight service accounts, two each, from many
+  addresses. The agent must query the account, find the tickets, and return tp.
+
+input:
+  recording: lab-50-kerberoasting
+  objective: >-
+    Investigate the Kerberos service ticket requests of branch.user05: which service accounts,
+    which encryption type and from which hosts.
+  skill:
+    id: windows-kerberoasting
+    version: 1.0.0
+  triage:
+    verdict: suspicious
+    confidence: low
+    ai_level: high
+    investigation_focus:
+      - Determine which service accounts branch.user05 requested tickets for and from which hosts.
+    claims:
+      - text: The Kerberoasting rule raised offense 50 for the account branch.user05.
+        evidence_ids: [ev_inv06_offense]
+    data_gaps: []
+  context_evidence:
+    - evidence_id: ev_inv06_offense
+      source: qradar
+      query_hash: 72c324196baa621c60d4f1b3a4f6890e872e2dd8c0187d08ef6ced6d300ddb56
+      query_text: 'get_offense {"offense_id": 50}'
+      time_start: "2026-10-09T17:37:24.865Z"
+      time_end: "2026-10-09T17:37:24.865Z"
+      identifiers: {tool: get_offense, rows: "1", offense_id: "50"}
+      excerpt: '[{"event_count":5,"id":50,"offense_source":"branch.user05"}]'
+      retrieved_at: "2026-10-09T17:42:24Z"
+
+expect:
+  verdict_in: [tp]
+  find_events:
+    - {address: 192.0.2.98, username: branch.user05}
+    - {address: 192.0.2.99, username: branch.user05}
+    - {address: 192.0.2.101, username: branch.user05}
+  required_tools: [create_ariel_search, get_ariel_search_results]

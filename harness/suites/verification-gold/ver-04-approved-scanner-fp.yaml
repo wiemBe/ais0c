@@ -1,0 +1,56 @@
+# Verification gold scenario 4: every claim of an fp decision holds
+#
+# The reviewed decision is an `fp` of low notification level, so the workflow marks its claims
+# critical and the agent checks each at the source. The recording `lab-49-approved-scanner` answers its
+# Ariel queries (profile qradar-verify-read: no payload, 200 rows, a two hour window).
+#
+# Addresses are the recording's anonymized ones (RFC 5737); the evidence is made up as the
+# earlier agents would have handed it over.
+id: ver-04-approved-scanner-fp
+suite: verification-gold
+agent: verification
+title: Every claim of the fp decision on the approved scanner holds
+description: >-
+  The three claims count the scanner's requests, name their five families and name the log
+  source. All hold in the events, so the verifier agrees.
+
+input:
+  recording: lab-49-approved-scanner
+  objective: >-
+    Check the claims of the fp decision on offense 49 against the events at the source.
+  reviewed:
+    verdict: fp
+    confidence: medium
+    ai_level: low
+  critical: true
+  claims:
+    - text: "192.0.2.79 sent 40 requests that the WAF logged in the window of offense 49."
+      evidence_ids: [ev_ver04_requests]
+    - text: "The requests fall into five families: SQL injection, command execution, path traversal, cross-site scripting and vulnerability scan."
+      evidence_ids: [ev_ver04_requests]
+    - text: "All 40 requests were logged by the log source with ID 214."
+      evidence_ids: [ev_ver04_source]
+  evidence:
+    - evidence_id: ev_ver04_requests
+      source: qradar
+      query_hash: 752e102e69ddb4a589ffec901c78966ab2e5cb06481562845a54382152fd318f
+      query_text: "SELECT QIDNAME(qid) AS event_name, COUNT(*) AS requests FROM events WHERE sourceip = '192.0.2.79' GROUP BY qid LIMIT 100 START 1791567231728 STOP 1791567233728"
+      time_start: "2026-10-09T17:33:51.728Z"
+      time_end: "2026-10-09T17:33:53.728Z"
+      identifiers: {tool: create_ariel_search, rows: "5"}
+      excerpt: '[{"event_name":"Command Execution","requests":9},{"event_name":"SQL-Injection","requests":10},{"event_name":"Cross Site Scripting (XSS)","requests":6},{"event_name":"Vulnerability Scan","requests":6},{"event_name":"Path Traversal","requests":9}]'
+      retrieved_at: "2026-10-09T17:38:52Z"
+    - evidence_id: ev_ver04_source
+      source: qradar
+      query_hash: 2cd9ea97f8d492a11ea280844b6cb34935db6f730f9a5f94004c49ce8115c56c
+      query_text: "SELECT logsourceid, COUNT(*) AS requests FROM events WHERE sourceip = '192.0.2.79' GROUP BY logsourceid LIMIT 100 START 1791567231728 STOP 1791567233728"
+      time_start: "2026-10-09T17:33:51.728Z"
+      time_end: "2026-10-09T17:33:53.728Z"
+      identifiers: {tool: create_ariel_search, rows: "1"}
+      excerpt: '[{"logsourceid":214,"requests":40}]'
+      retrieved_at: "2026-10-09T17:38:52Z"
+
+expect:
+  agrees: true
+  disputed_claims: []
+  required_tools: [create_ariel_search, get_ariel_search_results]

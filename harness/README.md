@@ -51,8 +51,8 @@ sha256 of `suite.yaml` and its scenarios' versions.
 | [`trust-layers`](suites/trust-layers/README.md) | security | 3 (`tl-`) |
 | [`adversarial-fn`](suites/adversarial-fn/README.md) | security | 5 (`afn-`) |
 | [`triage-gold`](suites/triage-gold/README.md) | quality | 8 (`tg-`): verdict, level range, data gap, cited tools; reports rates, no `pass^k` |
-| [`investigation-gold`](suites/investigation-gold/README.md) | quality | 2 (`inv-`), replay; paired skill/no-skill DCSync |
-| [`verification-gold`](suites/verification-gold/README.md) | quality | 2 (`ver-`), replay |
+| [`investigation-gold`](suites/investigation-gold/README.md) | quality | 6 (`inv-`), replay; paired skill/no-skill DCSync, four scenario-set recordings |
+| [`verification-gold`](suites/verification-gold/README.md) | quality | 5 (`ver-`), replay |
 | [`skill-windows-dcsync`](suites/skill-windows-dcsync/README.md) | security | 3 (`sk-dcs-`), replay with overlays |
 | [`skill-web-sql-injection`](suites/skill-web-sql-injection/README.md) | security | 4 (`sk-sqli-`), replay with overlays |
 | [`skill-password-spraying`](suites/skill-password-spraying/README.md) | security | 3 (`sk-spr-`), replay with overlays |
